@@ -10,15 +10,6 @@ import qualified Data.Vector          as V
 import           Trout.Bitboard
 import           Trout.MoveGen.Magics
 
-fromSqs :: [Int] -> Bitboard
-fromSqs = foldl' setBit 0
-
-xyToSq :: Int -> Int -> Int
-xyToSq x y = y * 8 + x
-
-inBoard :: Int -> Bool
-inBoard sq = 0 < sq && sq < 64
-
 -- NW, NE, SE, SW
 -- lists are probably fine, it's only 4 elements and only used in table init
 bishopRays :: [Vector Bitboard]
@@ -82,13 +73,13 @@ movesClassic rayss sq block = movesDir countLeadingZeros (rayss !! 0)
   where
     movesDir scan rays
         | masked == 0 = rays ! sq
-        | otherwise   = (rays ! sq) .&. (complement $ rays ! scan masked)
+        | otherwise   = (rays ! sq) .&. complement (rays ! scan masked)
         where masked = block .&. (rays ! sq)
 
 mapToMask :: Bitboard -> Int -> Bitboard
 mapToMask 0 _ = 0
 mapToMask mask idx = mapToMask
-    (mask .&. ((fromIntegral $ complement (idx .&. 1)) !<<. (countLeadingZeros mask)))
+    (mask .&. fromIntegral (complement (idx .&. 1)) !<<. countLeadingZeros mask)
     (idx !>>. 1)
 
 -- maps all possible blockers to the mask

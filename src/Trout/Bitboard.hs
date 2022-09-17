@@ -1,14 +1,35 @@
 module Trout.Bitboard
     ( Bitboard
+    , fromSqs
+    , toSqs
+    , xyToSq
+    , inBoard
+    , rank1, rank2, rank3, rank4, rank5, rank6, rank7, rank8
+    , fileA, fileB, fileC, fileD, fileE, fileF, fileG, fileH
 #if !MIN_VERSION_base(4, 17, 0)
     , (!>>.), (!<<.)
 #endif
     ) where
 
 import Data.Bits
+import Data.Foldable
 import Data.Word
 
 type Bitboard = Word64
+
+fromSqs :: [Int] -> Bitboard
+fromSqs = foldl' setBit 0
+
+toSqs :: Bitboard -> [Int]
+toSqs 0 = []
+toSqs b = leading : toSqs (clearBit b leading)
+  where leading = countLeadingZeros b
+
+xyToSq :: Int -> Int -> Int
+xyToSq x y = y * 8 + x
+
+inBoard :: Int -> Bool
+inBoard sq = 0 < sq && sq < 64
 
 #if !MIN_VERSION_base(4, 17, 0)
 -- same code as in new base

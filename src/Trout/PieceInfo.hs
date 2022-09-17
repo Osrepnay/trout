@@ -1,5 +1,5 @@
 module Trout.PieceInfo
-    ( Color
+    ( Color (..)
     ) where
 
 data Color = White | Black
