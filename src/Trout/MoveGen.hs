@@ -1,4 +1,4 @@
-module Trout.MoveGen.MoveGen
+module Trout.MoveGen
     ( pawnMoves
     , knightMoves
     , bishopMoves
@@ -9,7 +9,7 @@ module Trout.MoveGen.MoveGen
 
 import Data.Maybe
 import Trout.Bitboard
-import Trout.MoveGen.SlidingMoveGen
+import Trout.MoveGen.Sliding
 import Trout.PieceInfo
 
 -- consider moving non sliding movegen to a table
