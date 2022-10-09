@@ -47,11 +47,13 @@ rookMagicTable =
         <$> (magicSquare <$> rookBits <*> rookMasks)
 
 bishopMovesMagic :: Int -> Bitboard -> Bitboard
-bishopMovesMagic sq block = (masked * (bishopMagics ! sq)) !>>.
-    (64 - (bishopBits ! sq))
+bishopMovesMagic sq block = bishopMagicTable
+    ! sq
+    ! fromIntegral ((masked * (bishopMagics ! sq)) !>>. (64 - (bishopBits ! sq)))
   where masked = block .&. (bishopMasks ! sq)
 
 rookMovesMagic :: Int -> Bitboard -> Bitboard
-rookMovesMagic sq block = (masked * (rookMagics ! sq)) !>>.
-    (64 - (rookBits ! sq))
+rookMovesMagic sq block = rookMagicTable
+    ! sq
+    ! fromIntegral ((masked * (rookMagics ! sq)) !>>. (64 - (rookBits ! sq)))
   where masked = block .&. (rookMasks ! sq)
