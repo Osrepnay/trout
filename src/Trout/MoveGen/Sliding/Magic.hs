@@ -11,7 +11,7 @@ import           Trout.MoveGen.Sliding.Classic
 import           Trout.MoveGen.Sliding.Magics
 
 bishopMasks :: Vector Bitboard
-bishopMasks = (.&.complement 0x7E7E7E7E7E7E00) . foldl' (.|.) 0
+bishopMasks = (.&. complement 0x7E7E7E7E7E7E00) . foldl' (.|.) 0
     <$> sequence bishopRays
 
 rookMasks :: Vector Bitboard
