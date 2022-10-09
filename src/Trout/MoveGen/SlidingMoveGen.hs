@@ -3,7 +3,6 @@ module Trout.MoveGen.SlidingMoveGen
     , rookMovesMagic
     ) where
 
-import           Data.Bits
 import           Data.Foldable
 import           Data.Vector          (Vector, (!))
 import qualified Data.Vector          as V
@@ -87,10 +86,12 @@ magicSquare :: Int -> Bitboard -> Vector Bitboard
 magicSquare bits mask = mapToMask mask <$> V.fromList [0..bit bits]
 
 bishopMagicTable :: Vector (Vector Bitboard)
-bishopMagicTable = magicSquare <$> bishopBits <*> bishopMasks
+bishopMagicTable = fmap (uncurry $ movesClassic bishopRays) . V.zip (V.fromList [0..63])
+    <$> (magicSquare <$> bishopBits <*> bishopMasks)
 
 rookMagicTable :: Vector (Vector Bitboard)
-rookMagicTable = magicSquare <$> rookBits <*> rookMasks
+rookMagicTable = fmap (uncurry $ movesClassic rookRays) . V.zip (V.fromList [0..63])
+    <$> (magicSquare <$> rookBits <*> rookMasks)
 
 bishopMovesMagic :: Int -> Bitboard -> Bitboard
 bishopMovesMagic sq block = (masked * (bishopMagics ! sq)) !>>.

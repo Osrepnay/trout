@@ -6,6 +6,7 @@ module Trout.Bitboard
     , inBoard
     , rank1, rank2, rank3, rank4, rank5, rank6, rank7, rank8
     , fileA, fileB, fileC, fileD, fileE, fileF, fileG, fileH
+    , module Data.Bits
 #if !MIN_VERSION_base(4, 17, 0)
     , (!>>.), (!<<.)
 #endif

@@ -7,7 +7,6 @@ module Trout.MoveGen.MoveGen
     , kingMoves
     ) where
 
-import Data.Bits
 import Data.Maybe
 import Trout.Bitboard
 import Trout.MoveGen.SlidingMoveGen
