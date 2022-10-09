@@ -1,7 +1,8 @@
 module Trout.MoveGen.Sliding.Classic
     ( bishopRays
     , rookRays
-    , slidingMovesClassic
+    , bishopMovesClassic
+    , rookMovesClassic
     ) where
 
 import           Data.Vector    (Vector, (!))
@@ -59,3 +60,9 @@ slidingMovesClassic rayss sq block = movesDir countLeadingZeros (rayss !! 0)
         | masked == 0 = rays ! sq
         | otherwise   = (rays ! sq) .&. complement (rays ! scan masked)
         where masked = block .&. (rays ! sq)
+
+bishopMovesClassic :: Int -> Bitboard -> Bitboard
+bishopMovesClassic = slidingMovesClassic bishopRays
+
+rookMovesClassic :: Int -> Bitboard -> Bitboard
+rookMovesClassic = slidingMovesClassic rookRays

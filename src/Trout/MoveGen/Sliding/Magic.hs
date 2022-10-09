@@ -1,4 +1,4 @@
-module Trout.MoveGen.Sliding
+module Trout.MoveGen.Sliding.Magic
     ( bishopMovesMagic
     , rookMovesMagic
     ) where
@@ -7,8 +7,8 @@ import           Data.Foldable
 import           Data.Vector                   (Vector, (!))
 import qualified Data.Vector                   as V
 import           Trout.Bitboard
-import           Trout.MoveGen.Magics
 import           Trout.MoveGen.Sliding.Classic
+import           Trout.MoveGen.Sliding.Magics
 
 bishopMasks :: Vector Bitboard
 bishopMasks = (.&.complement 0x7E7E7E7E7E7E00) . foldl' (.|.) 0
@@ -36,13 +36,13 @@ magicSquare bits mask = mapToMask mask <$> V.fromList [0..bit bits]
 
 bishopMagicTable :: Vector (Vector Bitboard)
 bishopMagicTable =
-    fmap (uncurry $ slidingMovesClassic bishopRays)
+    fmap (uncurry bishopMovesClassic)
     . V.zip (V.fromList [0..63])
         <$> (magicSquare <$> bishopBits <*> bishopMasks)
 
 rookMagicTable :: Vector (Vector Bitboard)
 rookMagicTable =
-    fmap (uncurry $ slidingMovesClassic rookRays)
+    fmap (uncurry rookMovesClassic)
     . V.zip (V.fromList [0..63])
         <$> (magicSquare <$> rookBits <*> rookMasks)
 

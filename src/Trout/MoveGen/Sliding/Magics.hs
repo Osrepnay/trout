@@ -1,4 +1,4 @@
-module Trout.MoveGen.Magics
+module Trout.MoveGen.Sliding.Magics
     ( bishopMagics
     , rookMagics
     , bishopBits

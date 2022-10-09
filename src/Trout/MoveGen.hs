@@ -9,7 +9,7 @@ module Trout.MoveGen
 
 import Data.Maybe
 import Trout.Bitboard
-import Trout.MoveGen.Sliding
+import Trout.MoveGen.Sliding.Magic
 import Trout.PieceInfo
 
 -- consider moving non sliding movegen to a table
@@ -24,7 +24,7 @@ data Move = Move Int Int Bool SpecialMove
 
 -- TODO incomplete
 pawnMoves :: Maybe Int -> Int -> Color -> Bitboard -> [Move]
-pawnMoves enPSq sq White block = 
+pawnMoves enPSq sq White block =
     [Move sq (sq + 8) False p | frontOpen,    p <- promotes] ++
     [Move sq (sq + 7) True  p | captureLeft,  p <- promotes] ++
     [Move sq (sq + 9) True  p | captureRight, p <- promotes] ++
@@ -42,7 +42,7 @@ pawnMoves enPSq sq White block =
     captureLeft  = not $ unblocked (sq + 7)
     captureRight = not $ unblocked (sq + 9)
     unblocked s = inBoard s && not (testBit block s)
-pawnMoves enPSq sq Black block = 
+pawnMoves enPSq sq Black block =
     [Move sq (sq - 8) False p | frontOpen,    p <- promotes] ++
     [Move sq (sq - 9) False p | captureLeft,  p <- promotes] ++
     [Move sq (sq - 7) True  p | captureRight, p <- promotes] ++
