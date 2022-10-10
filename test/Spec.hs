@@ -1,2 +1,8 @@
+import MagicMoves
+import Test.Hspec
+
 main :: IO ()
-main = putStrLn "Test suite not yet implemented"
+main = hspec $
+    describe "magic moves generation" $ do
+        bishopMagicsSpec
+        rookMagicsSpec

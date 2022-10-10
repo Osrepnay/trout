@@ -3,11 +3,13 @@ module Trout.MoveGen.Sliding.Magics
     , rookMagics
     , bishopBits
     , rookBits
+    , genKey
     ) where
 
-import           Data.Vector (Vector)
-import qualified Data.Vector as V
+import           Data.Vector    (Vector)
+import qualified Data.Vector    as V
 import           Data.Word
+import           Trout.Bitboard
 
 bishopMagics :: Vector Word64
 bishopMagics = V.fromList
@@ -168,3 +170,6 @@ rookBits = V.fromList
     , 11,10,10,10,10,10,10,11
     , 12,11,11,11,11,11,11,12
     ]
+
+genKey :: Bitboard -> Word64 -> Int -> Int
+genKey masked magic bits = fromIntegral $ (masked * magic) !>>. (64 - bits)

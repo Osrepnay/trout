@@ -1,59 +1,69 @@
 module Trout.MoveGen.Sliding.Magic
-    ( bishopMovesMagic
+    {-( bishopMovesMagic
     , rookMovesMagic
-    ) where
+    )-} where
 
 import           Data.Foldable
+import           Data.IntMap.Strict            (IntMap)
+import qualified Data.IntMap.Strict            as I
 import           Data.Vector                   (Vector, (!))
 import qualified Data.Vector                   as V
+import           Data.Word
 import           Trout.Bitboard
 import           Trout.MoveGen.Sliding.Classic
 import           Trout.MoveGen.Sliding.Magics
 
 bishopMasks :: Vector Bitboard
-bishopMasks = (.&. complement 0x7E7E7E7E7E7E00) . foldl' (.|.) 0
-    <$> sequence bishopRays
+bishopMasks = (complement (rank1 .|. rank8 .|. fileA .|. fileH) .&.)
+    . foldl' (.|.) 0
+    . (<$> bishopRays)
+    . flip (!)
+        <$> V.fromList [0..63]
 
 rookMasks :: Vector Bitboard
 rookMasks = foldl' (.|.) 0
-    . zipWith (\r e -> r .&. complement e)
-        [ 0xFF00000000000000
-        , 0x8080808080808080
-        , 0x00000000000000FF
-        , 0x0101010101010101
-        ]
-    <$> sequence rookRays
+    . zipWith (.&.)
+        (complement <$>
+            [ rank8
+            , fileH
+            , rank1
+            , fileA
+            ])
+    . (<$> rookRays)
+    . flip (!)
+        <$> V.fromList [0..63]
 
+-- maps an index to a mask
+-- index has to be less than or equal to the number of set bits in the mask
 mapToMask :: Bitboard -> Int -> Bitboard
 mapToMask 0 _ = 0
-mapToMask mask idx = mapToMask
-    (mask .&. fromIntegral (complement (idx .&. 1)) !<<. countLeadingZeros mask)
-    (idx !>>. 1)
+mapToMask mask idx = ((fromIntegral idx .&. 1) !<<. maskLowest)
+    .|. mapToMask (clearBit mask maskLowest) (idx !>>. 1)
+  where maskLowest = countTrailingZeros mask
 
 -- maps all possible blockers to the mask
-magicSquare :: Int -> Bitboard -> Vector Bitboard
-magicSquare bits mask = mapToMask mask <$> V.fromList [0..bit bits]
+allMapped :: Word64 -> Int -> Bitboard -> IntMap Bitboard
+allMapped magic bits mask = I.fromList $
+    (\b -> (genKey b magic bits, b)) . mapToMask mask <$> [0..bit bits]
 
-bishopMagicTable :: Vector (Vector Bitboard)
-bishopMagicTable =
-    fmap (uncurry bishopMovesClassic)
-    . V.zip (V.fromList [0..63])
-        <$> (magicSquare <$> bishopBits <*> bishopMasks)
+bishopMagicTable :: Vector (IntMap Bitboard)
+bishopMagicTable = V.zipWith (<$>)
+    (bishopMovesClassic <$> V.fromList [0..63])
+    (V.zipWith3 allMapped bishopMagics bishopBits bishopMasks)
 
-rookMagicTable :: Vector (Vector Bitboard)
-rookMagicTable =
-    fmap (uncurry rookMovesClassic)
-    . V.zip (V.fromList [0..63])
-        <$> (magicSquare <$> rookBits <*> rookMasks)
+rookMagicTable :: Vector (IntMap Bitboard)
+rookMagicTable = V.zipWith (<$>)
+    (rookMovesClassic <$> V.fromList [0..63])
+    (V.zipWith3 allMapped rookMagics rookBits rookMasks)
 
 bishopMovesMagic :: Int -> Bitboard -> Bitboard
 bishopMovesMagic sq block = bishopMagicTable
     ! sq
-    ! fromIntegral ((masked * (bishopMagics ! sq)) !>>. (64 - (bishopBits ! sq)))
+    I.! genKey masked (bishopMagics ! sq) (bishopBits ! sq)
   where masked = block .&. (bishopMasks ! sq)
 
 rookMovesMagic :: Int -> Bitboard -> Bitboard
 rookMovesMagic sq block = rookMagicTable
     ! sq
-    ! fromIntegral ((masked * (rookMagics ! sq)) !>>. (64 - (rookBits ! sq)))
+    I.! genKey masked (rookMagics ! sq) (rookBits ! sq)
   where masked = block .&. (rookMasks ! sq)

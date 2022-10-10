@@ -4,6 +4,7 @@ module Trout.Bitboard
     , toSqs
     , xyToSq
     , inBoard
+    , showBitboard
     , rank1, rank2, rank3, rank4, rank5, rank6, rank7, rank8
     , fileA, fileB, fileC, fileD, fileE, fileF, fileG, fileH
     , module Data.Bits
@@ -12,9 +13,9 @@ module Trout.Bitboard
 #endif
     ) where
 
-import Data.Bits
-import Data.Foldable
-import Data.Word
+import           Data.Bits
+import           Data.Foldable
+import           Data.Word
 
 type Bitboard = Word64
 
@@ -42,6 +43,12 @@ infixl 8 !>>.
 (!<<.) = unsafeShiftL
 infixl 8 !<<.
 #endif
+
+showBitboard :: Bitboard -> String
+showBitboard bb = init $ concat [[
+    if testBit bb (r * 8 + c)
+       then '#'
+       else '*' | c <- [0..7]] ++ "\n" | r <- [7, 6..0]]
 
 rank1 :: Bitboard
 rank2 :: Bitboard

@@ -9,6 +9,9 @@ import           Data.Vector    (Vector, (!))
 import qualified Data.Vector    as V
 import           Trout.Bitboard
 
+xyInBoard :: (Int, Int) -> Bool
+xyInBoard (x, y) = 0 <= x && 0 <= y && x < 8 && y < 8
+
 -- NW, NE, SE, SW
 -- lists are probably fine, it's only 4 elements and only used in table init
 bishopRays :: [Vector Bitboard]
@@ -23,11 +26,12 @@ bishopRays =
         [ fromSqs
             [ sq
             | d <- [1..7]
-            , let sq = xyToSq (sx `fx` d) (sy `fy` d)
-            , inBoard sq
+            , let dc = (sx `fx` d, sy `fy` d)
+            , xyInBoard dc
+            , let sq = uncurry xyToSq dc
             ]
-        | sx <- [0..8]
-        , sy <- [0..8]
+        | sy <- [0..7]
+        , sx <- [0..7]
         ]
 
 -- N E S W
@@ -43,23 +47,24 @@ rookRays =
         [ fromSqs
             [ sq
             | d <- [1..7]
-            , let sq = if horz then xyToSq (sx `f` d) sy else xyToSq sx (sy `f` d)
-            , inBoard sq
+            , let dc = if horz then (sx `f` d, sy) else (sx, sy `f` d)
+            , xyInBoard dc
+            , let sq = uncurry xyToSq dc
             ]
-        | sx <- [0..8]
-        , sy <- [0..8]
+        | sy <- [0..7]
+        , sx <- [0..7]
         ]
 
 slidingMovesClassic :: [Vector Bitboard] -> Int -> Bitboard -> Bitboard
-slidingMovesClassic rayss sq block = movesDir countLeadingZeros (rayss !! 0)
-    .|. movesDir countLeadingZeros (rayss !! 1)
-    .|. movesDir countTrailingZeros (rayss !! 2)
-    .|. movesDir countTrailingZeros (rayss !! 3)
+slidingMovesClassic rayss sq block = movesDir countTrailingZeros (rayss !! 0)
+    .|. movesDir countTrailingZeros (rayss !! 1)
+    .|. movesDir ((63 -) . countLeadingZeros) (rayss !! 2)
+    .|. movesDir ((63 -) . countLeadingZeros) (rayss !! 3)
   where
     movesDir scan rays
         | masked == 0 = rays ! sq
         | otherwise   = (rays ! sq) .&. complement (rays ! scan masked)
-        where masked = block .&. (rays ! sq)
+      where masked = block .&. (rays ! sq)
 
 bishopMovesClassic :: Int -> Bitboard -> Bitboard
 bishopMovesClassic = slidingMovesClassic bishopRays
