@@ -1,7 +1,7 @@
 module Trout.MoveGen.Sliding.Magic
-    {-( bishopMovesMagic
+    ( bishopMovesMagic
     , rookMovesMagic
-    )-} where
+    ) where
 
 import           Data.Foldable
 import           Data.IntMap.Strict            (IntMap)
