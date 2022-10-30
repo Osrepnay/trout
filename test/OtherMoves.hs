@@ -55,6 +55,8 @@ kingCastleSpec = context "when castling is available" $ do
         kingMoves True True 4 0 `shouldContain` [Move (Castle True) 4 6]
     it "returns castling move for queenside" $
         kingMoves True True 60 0 `shouldContain` [Move (Castle False) 60 58]
+    it "doesn't return castling when blocked" $
+        kingMoves True False 4 (bit 6) `shouldSatisfy` ((== 5) . length)
 
 kingSpec :: Spec
 kingSpec = describe "kingMoves" kingCastleSpec
