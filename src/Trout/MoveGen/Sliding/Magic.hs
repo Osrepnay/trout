@@ -18,7 +18,7 @@ bishopMasks = (complement (rank1 .|. rank8 .|. fileA .|. fileH) .&.)
     . foldl' (.|.) 0
     . (<$> bishopRays)
     . flip (!)
-        <$> V.fromList [0..63]
+    <$> V.fromList [0..63]
 
 rookMasks :: Vector Bitboard
 rookMasks = foldl' (.|.) 0
@@ -31,7 +31,7 @@ rookMasks = foldl' (.|.) 0
             ])
     . (<$> rookRays)
     . flip (!)
-        <$> V.fromList [0..63]
+    <$> V.fromList [0..63]
 
 -- maps an index to a mask
 -- index has to be less than or equal to the number of set bits in the mask
