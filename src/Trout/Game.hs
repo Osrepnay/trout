@@ -1,13 +1,11 @@
 module Trout.Game
-    ( Pieces
-    , CanCastle
-    , CanEnPassant
-    , SideInfo
-    , Game
+    ( Pieces(..)
+    , CanCastle(..)
+    , CanEnPassant(..)
+    , SideInfo(..)
+    , Game(..)
     ) where
 
-import           Data.Vector     (Vector, (!))
-import qualified Data.Vector     as V
 import           Trout.Bitboard
 import           Trout.PieceInfo
 
