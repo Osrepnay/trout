@@ -24,8 +24,8 @@ fromSqs = foldl' setBit 0
 
 toSqs :: Bitboard -> [Int]
 toSqs 0 = []
-toSqs b = leading : toSqs (clearBit b leading)
-  where leading = countLeadingZeros b
+toSqs b = trailing : toSqs (clearBit b trailing)
+  where trailing = countTrailingZeros b
 
 xyToSq :: Int -> Int -> Int
 xyToSq x y = y * 8 + x

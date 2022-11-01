@@ -20,21 +20,27 @@ import Trout.PieceInfo
 -- moves that dont fit normal piece things
 data SpecialMove
     = Normal
+    | PawnDouble -- double moe forware
     | Castle Bool -- kingside?
     | EnPassant Int -- en passant pawn squaree
     | Promotion Int -- promote piece
-    | PawnDouble -- double moe forware
     deriving (Eq, Show)
--- from, to
-data Move = Move SpecialMove Int Int deriving (Eq, Show)
 
-pawnMoves :: Maybe Int -> Int -> Color -> Bitboard -> [Move]
-pawnMoves enPSq sq White block =
-    [Move p sq (sq + 8) | frontOpen,    p <- promotes] ++
-    [Move p sq (sq + 7) | captureLeft,  p <- promotes] ++
-    [Move p sq (sq + 9) | captureRight, p <- promotes] ++
-    [Move PawnDouble sq (sq + 16) | doubleFrontOpen] ++ -- can't promote
-    [Move (EnPassant en) sq (en + 8) | en <- enPassant]
+-- piece, special move type, from, to
+data Move = Move
+    { movePiece :: Piece
+    , moveSpecial :: SpecialMove
+    , moveFrom :: Int
+    , moveTo :: Int
+    } deriving (Eq, Show)
+
+pawnMoves :: Maybe Int -> Color -> Bitboard -> Int -> [Move]
+pawnMoves enPSq White block sq =
+    [Move pawn p sq (sq + 8) | frontOpen,    p <- promotes] ++
+    [Move pawn p sq (sq + 7) | captureLeft,  p <- promotes] ++
+    [Move pawn p sq (sq + 9) | captureRight, p <- promotes] ++
+    [Move pawn PawnDouble sq (sq + 16) | doubleFrontOpen] ++ -- can't promote
+    [Move pawn (EnPassant en) sq (en + 8) | en <- enPassant]
   where
     enPassant = filter
         ((rank5 .&. bit sq /= 0 &&) . (== 1) . abs . (sq -))
@@ -46,12 +52,12 @@ pawnMoves enPSq sq White block =
     captureRight = blocked (sq + 9) && fileH .&. bit sq == 0
     unblocked s = inBoard s && not (testBit block s)
     blocked s = inBoard s && testBit block s
-pawnMoves enPSq sq Black block =
-    [Move p sq (sq - 8) | frontOpen,    p <- promotes] ++
-    [Move p sq (sq - 9) | captureLeft,  p <- promotes] ++
-    [Move p sq (sq - 7) | captureRight, p <- promotes] ++
-    [Move PawnDouble sq (sq - 16) | doubleFrontOpen] ++
-    [Move (EnPassant en) sq (en - 8) | en <- enPassant]
+pawnMoves enPSq Black block sq =
+    [Move pawn p sq (sq - 8) | frontOpen,    p <- promotes] ++
+    [Move pawn p sq (sq - 9) | captureLeft,  p <- promotes] ++
+    [Move pawn p sq (sq - 7) | captureRight, p <- promotes] ++
+    [Move pawn PawnDouble sq (sq - 16) | doubleFrontOpen] ++
+    [Move pawn (EnPassant en) sq (en - 8) | en <- enPassant]
   where
     enPassant = filter
         ((rank4 .&. bit sq /= 0 &&) . (== 1) . abs . (sq -))
@@ -64,30 +70,45 @@ pawnMoves enPSq sq Black block =
     unblocked s = inBoard s && not (testBit block s)
     blocked s = inBoard s && testBit block s
 
-knightMoves :: Int -> Bitboard -> [Move]
-knightMoves sq _ = Move Normal sq
-    <$> filter inBoard ((sq +) <$> possDiffs)
+knightMoves :: Bitboard -> Int -> [Move]
+knightMoves _ sq = Move knight Normal sq <$> newSqs
   where
-    possDiffs = filter inBoard 
-        (mconcat [[a * 8 + b, b * 8 + a] | a <- [-2, 2], b <- [-1, 1]])
+    sqx = sq `rem` 8
+    sqy = sq `quot` 8
+    ds =
+        [ (-2, -1), (-2, 1)
+        , (-1, -2), (-1, 2)
+        , ( 1, -2), ( 1, 2)
+        , ( 2, -1), ( 2, 1)
+        ]
+    newSqs =
+        [ nsq
+        | (dx, dy) <- ds
+        , let nsqx = sqx + dx
+        , 0 <= nsqx, nsqx < 8
+        , let nsqy = sqy + dy
+        , 0 <= nsqy, nsqy < 8
+        , let nsq = xyToSq nsqx nsqy
+        , inBoard nsq
+        ]
 
-bishopMoves :: Int -> Bitboard -> [Move]
-bishopMoves sq block = Move Normal sq
+bishopMoves :: Bitboard -> Int -> [Move]
+bishopMoves block sq = Move bishop Normal sq
     <$> toSqs (bishopMovesMagic sq block)
 
-rookMoves :: Int -> Bitboard -> [Move]
-rookMoves sq block = Move Normal sq
+rookMoves :: Bitboard -> Int -> [Move]
+rookMoves block sq = Move rook Normal sq
     <$> toSqs (rookMovesMagic sq block)
 
-queenMoves :: Int -> Bitboard -> [Move]
-queenMoves sq block = Move Normal sq
+queenMoves :: Bitboard -> Int -> [Move]
+queenMoves block sq = Move queen Normal sq
     <$> toSqs (bishopMovesMagic sq block .|. rookMovesMagic sq block)
 
-kingMoves :: Bool -> Bool -> Int -> Bitboard -> [Move]
-kingMoves kAllowed qAllowed sq block =
-    [Move (Castle True) sq (sq + 2) | castleK] ++
-    [Move (Castle False) sq (sq - 2) | castleQ] ++
-    (Move Normal sq <$> filter inBoard ((sq +) <$> possDiffs))
+kingMoves :: Bool -> Bool -> Bitboard -> Int -> [Move]
+kingMoves kAllowed qAllowed block sq =
+    [Move king (Castle True) sq (sq + 2) | castleK] ++
+    [Move king (Castle False) sq (sq - 2) | castleQ] ++
+    (Move king Normal sq <$> filter inBoard ((sq +) <$> possDiffs))
   where
     possDiffs = [xyToSq x y | x <- [-1..1], y <- [-1..1], x /= 0 || y /= 0]
     castleK = kAllowed && unblocked (sq + 1) && unblocked (sq + 2)
