@@ -5,7 +5,7 @@ module Trout.Game
     , SideInfo(..)
     , Game(..)
     , startingGame
-    , turnSide
+    , turnSide, otherTurnSide
     , allMoves
     ) where
 
@@ -59,24 +59,29 @@ turnSide :: Game -> SideInfo
 turnSide (Game w _ _ White) = w
 turnSide (Game b _ _ Black) = b
 
-vecMoveGens :: Game -> Bitboard -> Vector (Int -> [Move])
-vecMoveGens game block = V.fromList
-    [ pawnMoves (unCanEnPassant (gameEnPassant game)) (gameTurn game) block
-    , knightMoves block
-    , bishopMoves block
-    , rookMoves block
-    , queenMoves block
+otherTurnSide :: Game -> SideInfo
+otherTurnSide (Game w _ _ Black) = w
+otherTurnSide (Game b _ _ White) = b
+
+vecMoveGens :: Game -> Bitboard -> Bitboard -> Vector (Int -> [Move])
+vecMoveGens game block myBlock = V.fromList
+    [ pawnMoves (unCanEnPassant (gameEnPassant game)) (gameTurn game) block myBlock
+    , knightMoves block myBlock
+    , bishopMoves block myBlock
+    , rookMoves block myBlock
+    , queenMoves block myBlock
     , kingMoves
         (canCastleKing (sideCanCastle (turnSide game)))
         (canCastleQueen (sideCanCastle (turnSide game)))
         block
+        myBlock
     ]
 
 allMoves :: Game -> [Move]
 allMoves game = foldl' (++) [] $
     concat . uncurry fmap
-    <$> V.zip (vecMoveGens game block) (toSqs <$> unPieces (sidePieces (turnSide game)))
+    <$> V.zip (vecMoveGens game block myBlock) (toSqs <$> unPieces (sidePieces (turnSide game)))
   where
     -- TODO update incrementally
-    block = foldl' (.|.) 0 (unPieces (sidePieces (gameWhite game)))
-        .|. foldl' (.|.) 0 (unPieces (sidePieces (gameBlack game)))
+    block = myBlock .|. foldl' (.|.) 0 (unPieces (sidePieces (otherTurnSide game)))
+    myBlock = foldl' (.|.) 0 (unPieces (sidePieces (turnSide game)))

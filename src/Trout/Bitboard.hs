@@ -4,6 +4,7 @@ module Trout.Bitboard
     , toSqs
     , xyToSq
     , inBoard
+    , blocked, unblocked
     , showBitboard
     , rank1, rank2, rank3, rank4, rank5, rank6, rank7, rank8
     , fileA, fileB, fileC, fileD, fileE, fileF, fileG, fileH
@@ -32,6 +33,12 @@ xyToSq x y = y * 8 + x
 
 inBoard :: Int -> Bool
 inBoard sq = 0 < sq && sq < 64
+
+blocked :: Bitboard -> Int -> Bool
+blocked block sq = inBoard sq && testBit block sq
+
+unblocked :: Bitboard -> Int -> Bool
+unblocked block sq = inBoard sq && not (testBit block sq)
 
 #if !MIN_VERSION_base(4, 17, 0)
 -- same code as in new base
