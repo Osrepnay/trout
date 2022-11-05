@@ -1,3 +1,4 @@
+import CountMoves
 import MagicMoves
 import OtherMoves
 import Test.Hspec
@@ -10,3 +11,4 @@ main = hspec $ do
     describe "pawn moves" $ do
         pawnSpec
         kingSpec
+    startMovesSpec
