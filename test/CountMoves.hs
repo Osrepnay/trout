@@ -9,4 +9,4 @@ startMovesSpec :: Spec
 startMovesSpec = describe "allMoves" $
     context "at starting position" $ 
         it "should return the right amount of moves" $
-            allMoves startingGame `shouldSatisfy` ((== 20) . length)
+            allMoves startingGame `shouldSatisfy` ((== 8 + 8 + 2 + 2) . length)
