@@ -55,8 +55,8 @@ rookRays =
         , sx <- [0..7]
         ]
 
-slidingMovesClassic :: [Vector Bitboard] -> Int -> Bitboard -> Bitboard
-slidingMovesClassic rayss sq block = movesDir countTrailingZeros (rayss !! 0)
+slidingMovesClassic :: [Vector Bitboard] -> Bitboard -> Int -> Bitboard
+slidingMovesClassic rayss block sq = movesDir countTrailingZeros (rayss !! 0)
     .|. movesDir countTrailingZeros (rayss !! 1)
     .|. movesDir ((63 -) . countLeadingZeros) (rayss !! 2)
     .|. movesDir ((63 -) . countLeadingZeros) (rayss !! 3)
@@ -66,8 +66,8 @@ slidingMovesClassic rayss sq block = movesDir countTrailingZeros (rayss !! 0)
         | otherwise   = (rays ! sq) .&. complement (rays ! scan masked)
       where masked = block .&. (rays ! sq)
 
-bishopMovesClassic :: Int -> Bitboard -> Bitboard
+bishopMovesClassic :: Bitboard -> Int -> Bitboard
 bishopMovesClassic = slidingMovesClassic bishopRays
 
-rookMovesClassic :: Int -> Bitboard -> Bitboard
+rookMovesClassic :: Bitboard -> Int -> Bitboard
 rookMovesClassic = slidingMovesClassic rookRays

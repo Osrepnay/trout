@@ -1,18 +1,20 @@
 module Trout.MoveGen
-    ( pawnMoves
-    , knightMoves
+    ( pawnWhiteAttackTable, pawnBlackAttackTable, pawnMoves
+    , knightTable, knightMoves
     , bishopMoves
     , rookMoves
     , queenMoves
-    , kingMoves
+    , kingTable, kingMoves
     , SpecialMove(..)
     , Move(..)
     ) where
 
-import Data.Maybe
-import Trout.Bitboard
-import Trout.MoveGen.Sliding.Magic
-import Trout.PieceInfo
+import           Data.Maybe
+import           Data.Vector                 (Vector, (!))
+import qualified Data.Vector                 as V
+import           Trout.Bitboard
+import           Trout.MoveGen.Sliding.Magic
+import           Trout.PieceInfo
 
 -- consider moving non sliding movegen to a table
 -- cache can be weird though? idk
@@ -26,13 +28,35 @@ data SpecialMove
     | Promotion Int -- promote piece
     deriving (Eq, Show)
 
--- piece, special move type, from, to
 data Move = Move
-    { movePiece :: Piece
+    { movePiece   :: Piece
     , moveSpecial :: SpecialMove
-    , moveFrom :: Int
-    , moveTo :: Int
+    , moveFrom    :: Int
+    , moveTo      :: Int
     } deriving (Eq, Show)
+
+tableGen :: [(Int, Int)] -> Vector Bitboard
+tableGen ds = V.fromList
+    [ fromSqs
+        [ xyToSq nSqX nSqY
+        | (dx, dy) <- ds
+        , let nSqX = sqX + dx
+        , 0 <= nSqX, nSqX < 8
+        , let nSqY = sqY + dy
+        , 0 <= nSqY, nSqY < 8
+        ]
+    | sq <- [0..63]
+    , let sqX = sq `rem` 8
+    , let sqY = sq `quot` 8
+    ]
+
+-- only used for check detection rn
+-- might use in actual pawnmoves, need perft speed test first
+pawnWhiteAttackTable :: Vector Bitboard
+pawnWhiteAttackTable = tableGen [(-1, 1), (1, 1)]
+
+pawnBlackAttackTable :: Vector Bitboard
+pawnBlackAttackTable = tableGen [(-1, -1), (1, -1)]
 
 pawnMoves :: Maybe Int -> Color -> Bitboard -> Bitboard -> Int -> [Move]
 pawnMoves enPSq White block myBlock sq =
@@ -70,47 +94,43 @@ pawnMoves enPSq Black block myBlock sq =
     captureRight = blocked (block .&. complement myBlock) (sq - 7) &&
         fileH .&. bit sq == 0
 
+knightTable :: Vector Bitboard
+knightTable = tableGen
+    [ (-2, -1), (-2, 1)
+    , (-1, -2), (-1, 2)
+    , ( 1, -2), ( 1, 2)
+    , ( 2, -1), ( 2, 1)
+    ]
+
 knightMoves :: Bitboard -> Bitboard -> Int -> [Move]
-knightMoves _ myBlock sq = Move knight Normal sq <$> newSqs
-  where
-    sqx = sq `rem` 8
-    sqy = sq `quot` 8
-    ds =
-        [ (-2, -1), (-2, 1)
-        , (-1, -2), (-1, 2)
-        , ( 1, -2), ( 1, 2)
-        , ( 2, -1), ( 2, 1)
-        ]
-    newSqs =
-        [ nsq
-        | (dx, dy) <- ds
-        , let nsqx = sqx + dx
-        , 0 <= nsqx, nsqx < 8
-        , let nsqy = sqy + dy
-        , 0 <= nsqy, nsqy < 8
-        , let nsq = xyToSq nsqx nsqy
-        , unblocked myBlock nsq
-        ]
+knightMoves _ myBlock sq = Move knight Normal sq
+    <$> toSqs (knightTable ! sq .&. complement myBlock)
 
 bishopMoves :: Bitboard -> Bitboard -> Int -> [Move]
 bishopMoves block myBlock sq = Move bishop Normal sq
-    <$> toSqs (bishopMovesMagic sq block .&. complement myBlock)
+    <$> toSqs (bishopMovesMagic block sq .&. complement myBlock)
 
 rookMoves :: Bitboard -> Bitboard -> Int -> [Move]
 rookMoves block myBlock sq = Move rook Normal sq
-    <$> toSqs (rookMovesMagic sq block .&. complement myBlock)
+    <$> toSqs (rookMovesMagic block sq .&. complement myBlock)
 
 queenMoves :: Bitboard -> Bitboard -> Int -> [Move]
 queenMoves block myBlock sq = Move queen Normal sq
-    <$> toSqs ((bishopMovesMagic sq block .|. rookMovesMagic sq block) .&. complement myBlock)
+    <$> toSqs ((bishopMovesMagic block sq .|. rookMovesMagic block sq) .&. complement myBlock)
+
+kingTable :: Vector Bitboard
+kingTable = tableGen
+    [ (-1, -1), (-1, 0), (-1, 1)
+    , ( 0, -1),          ( 0, 1)
+    , ( 1, -1), ( 1, 0), ( 1, 1)
+    ]
 
 kingMoves :: Bool -> Bool -> Bitboard -> Bitboard -> Int -> [Move]
 kingMoves kAllowed qAllowed block myBlock sq =
     [Move king (Castle True) sq (sq + 2) | castleK] ++
     [Move king (Castle False) sq (sq - 2) | castleQ] ++
-    (Move king Normal sq <$> filter (unblocked myBlock) ((sq +) <$> possDiffs))
+    (Move king Normal sq <$> toSqs (kingTable ! sq .&. complement myBlock))
   where
-    possDiffs = [xyToSq x y | x <- [-1..1], y <- [-1..1], x /= 0 || y /= 0]
     castleK = kAllowed && unblocked block (sq + 1) && unblocked block (sq + 2)
     castleQ = qAllowed &&
         unblocked block (sq - 1) &&

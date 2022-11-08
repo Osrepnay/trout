@@ -5,32 +5,34 @@ module Trout.Game
     , SideInfo(..)
     , Game(..)
     , startingGame
-    , turnSide, otherTurnSide
+    , turnSide, turnOtherSide
     , allMoves
+    , inCheck
     ) where
 
 import           Data.Foldable
-import           Data.Vector     (Vector)
+import           Data.Vector     (Vector, (!))
 import qualified Data.Vector     as V
 import           Trout.Bitboard
 import           Trout.MoveGen
+import           Trout.MoveGen.Sliding.Magic
 import           Trout.PieceInfo
 
 newtype Pieces = Pieces { unPieces :: Vector Bitboard }
 data CanCastle = CanCastle
-    { canCastleKing :: Bool
+    { canCastleKing  :: Bool
     , canCastleQueen :: Bool
     }
 newtype CanEnPassant = CanEnPassant { unCanEnPassant :: Maybe Int }
 data SideInfo = SideInfo
-    { sidePieces :: Pieces
+    { sidePieces    :: Pieces
     , sideCanCastle :: CanCastle
     }
 data Game = Game
-    { gameWhite :: SideInfo
-    , gameBlack :: SideInfo
+    { gameWhite     :: SideInfo
+    , gameBlack     :: SideInfo
     , gameEnPassant :: CanEnPassant
-    , gameTurn :: Color
+    , gameTurn      :: Color
     }
 
 -- https://tearth.dev/bitboard-viewer/
@@ -55,16 +57,20 @@ startingGame = Game
     (CanEnPassant Nothing)
     White
 
+flipSide :: Game -> Game
+flipSide (Game w b enP White) = Game w b enP Black
+flipSide (Game w b enP Black) = Game w b enP White
+
 turnSide :: Game -> SideInfo
 turnSide (Game w _ _ White) = w
-turnSide (Game b _ _ Black) = b
+turnSide (Game _ b _ Black) = b
 
-otherTurnSide :: Game -> SideInfo
-otherTurnSide (Game w _ _ Black) = w
-otherTurnSide (Game b _ _ White) = b
+turnOtherSide :: Game -> SideInfo
+turnOtherSide (Game w _ _ Black) = w
+turnOtherSide (Game _ b _ White) = b
 
-vecMoveGens :: Game -> Bitboard -> Bitboard -> Vector (Int -> [Move])
-vecMoveGens game block myBlock = V.fromList
+moveGens :: Game -> Bitboard -> Bitboard -> Vector (Int -> [Move])
+moveGens game block myBlock = V.fromList
     [ pawnMoves (unCanEnPassant (gameEnPassant game)) (gameTurn game) block myBlock
     , knightMoves block myBlock
     , bishopMoves block myBlock
@@ -77,11 +83,51 @@ vecMoveGens game block myBlock = V.fromList
         myBlock
     ]
 
+piecesBlockers :: Pieces -> Bitboard
+piecesBlockers (Pieces ps) = foldl' (.|.) 0 ps
+
+gameBlockers :: Game -> Bitboard
+gameBlockers game = piecesBlockers (sidePieces (turnSide game))
+    .|. piecesBlockers (sidePieces (turnOtherSide game))
+
 allMoves :: Game -> [Move]
 allMoves game = foldl' (++) [] $
     concat . uncurry fmap
-    <$> V.zip (vecMoveGens game block myBlock) (toSqs <$> unPieces (sidePieces (turnSide game)))
+    <$> V.zip (moveGens game block myBlock) (toSqs <$> unPieces (sidePieces (turnSide game)))
   where
     -- TODO update incrementally
-    block = myBlock .|. foldl' (.|.) 0 (unPieces (sidePieces (otherTurnSide game)))
-    myBlock = foldl' (.|.) 0 (unPieces (sidePieces (turnSide game)))
+    block = myBlock .|. piecesBlockers (sidePieces (turnOtherSide game))
+    myBlock = piecesBlockers (sidePieces (turnSide game))
+
+-- like moveGens but bitboards instead
+checkMasks :: Color -> Bitboard -> Vector (Vector Bitboard)
+checkMasks White block = V.fromList
+    [ pawnWhiteAttackTable
+    , knightTable
+    , bishopMovesMagic block <$> V.fromList [0..63]
+    , rookMovesMagic block <$> V.fromList [0..63]
+    , (\s -> bishopMovesMagic block s .|. rookMovesMagic block s) <$> V.fromList [0..63]
+    , kingTable
+    ]
+checkMasks Black block = V.fromList
+    [ pawnBlackAttackTable
+    , knightTable
+    , bishopMovesMagic block <$> V.fromList [0..63]
+    , rookMovesMagic block <$> V.fromList [0..63]
+    , (\s -> bishopMovesMagic block s .|. rookMovesMagic block s) <$> V.fromList [0..63]
+    , kingTable
+    ]
+
+-- TODO make movegen have a bitboard thing so we dont have to loop
+-- simplified movegen with only possible king attacks?
+inCheck :: Game -> Bool
+inCheck game = foldl' (.|.) 0
+    (V.zipWith (.&.) checkMasksKing (unPieces (sidePieces (turnOtherSide game))))
+    /= 0
+  where
+    kingMask = unPieces (sidePieces (turnSide game)) ! king
+    kingSq = countTrailingZeros kingMask
+    checkMasksKing = (! kingSq) <$> checkMasks (gameTurn game) (gameBlockers game)
+
+-- makeMove :: Game -> Move -> Maybe Game
+-- makeMove game move = 

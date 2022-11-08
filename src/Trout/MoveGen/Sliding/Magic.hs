@@ -48,22 +48,22 @@ allMapped magic bits mask = I.fromList $
 
 bishopMagicTable :: Vector (IntMap Bitboard)
 bishopMagicTable = V.zipWith (<$>)
-    (bishopMovesClassic <$> V.fromList [0..63])
+    (flip bishopMovesClassic <$> V.fromList [0..63])
     (V.zipWith3 allMapped bishopMagics bishopBits bishopMasks)
 
 rookMagicTable :: Vector (IntMap Bitboard)
 rookMagicTable = V.zipWith (<$>)
-    (rookMovesClassic <$> V.fromList [0..63])
+    (flip rookMovesClassic <$> V.fromList [0..63])
     (V.zipWith3 allMapped rookMagics rookBits rookMasks)
 
-bishopMovesMagic :: Int -> Bitboard -> Bitboard
-bishopMovesMagic sq block = bishopMagicTable
+bishopMovesMagic :: Bitboard -> Int -> Bitboard
+bishopMovesMagic block sq = bishopMagicTable
     ! sq
     I.! genKey masked (bishopMagics ! sq) (bishopBits ! sq)
   where masked = block .&. (bishopMasks ! sq)
 
-rookMovesMagic :: Int -> Bitboard -> Bitboard
-rookMovesMagic sq block = rookMagicTable
+rookMovesMagic :: Bitboard -> Int -> Bitboard
+rookMovesMagic block sq = rookMagicTable
     ! sq
     I.! genKey masked (rookMagics ! sq) (rookBits ! sq)
   where masked = block .&. (rookMasks ! sq)

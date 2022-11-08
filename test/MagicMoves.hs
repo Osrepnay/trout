@@ -14,10 +14,10 @@ bishopMagicsSpec :: Spec
 bishopMagicsSpec = describe "bishopMovesMagic" $
     prop "should return the same values as bishopMovesClassic" $
     forAll (chooseInt (0, 63)) $
-        \sq block -> bishopMovesClassic sq block `shouldBe` bishopMovesMagic sq block
+        \sq block -> bishopMovesClassic block sq `shouldBe` bishopMovesMagic block sq
 
 rookMagicsSpec :: Spec
 rookMagicsSpec = describe "rookMovesMagic" $
     prop "should return the same values as rookMovesClassic" $
     forAll (chooseInt (0, 63)) $
-        \sq block -> rookMovesClassic sq block `shouldBe` rookMovesMagic sq block
+        \sq block -> rookMovesClassic block sq `shouldBe` rookMovesMagic block sq
