@@ -100,22 +100,22 @@ allMoves game = foldl' (++) [] $
     myBlock = piecesBlockers (sidePieces (turnSide game))
 
 -- like moveGens but bitboards instead
-checkMasks :: Color -> Bitboard -> Vector (Vector Bitboard)
-checkMasks White block = V.fromList
-    [ pawnWhiteAttackTable
-    , knightTable
-    , bishopMovesMagic block <$> V.fromList [0..63]
-    , rookMovesMagic block <$> V.fromList [0..63]
-    , (\s -> bishopMovesMagic block s .|. rookMovesMagic block s) <$> V.fromList [0..63]
-    , kingTable
+checkMasks :: Color -> Bitboard -> Int -> Vector Bitboard
+checkMasks White block sq = V.fromList
+    [ pawnWhiteAttackTable ! sq
+    , knightTable ! sq
+    , bishopMovesMagic block sq
+    , rookMovesMagic block sq
+    , bishopMovesMagic block sq .|. rookMovesMagic block sq
+    , kingTable ! sq
     ]
-checkMasks Black block = V.fromList
-    [ pawnBlackAttackTable
-    , knightTable
-    , bishopMovesMagic block <$> V.fromList [0..63]
-    , rookMovesMagic block <$> V.fromList [0..63]
-    , (\s -> bishopMovesMagic block s .|. rookMovesMagic block s) <$> V.fromList [0..63]
-    , kingTable
+checkMasks Black block sq = V.fromList
+    [ pawnBlackAttackTable ! sq
+    , knightTable ! sq
+    , bishopMovesMagic block sq
+    , rookMovesMagic block sq
+    , bishopMovesMagic block sq .|. rookMovesMagic block sq
+    , kingTable ! sq
     ]
 
 -- TODO make movegen have a bitboard thing so we dont have to loop
@@ -127,7 +127,7 @@ inCheck game = foldl' (.|.) 0
   where
     kingMask = unPieces (sidePieces (turnSide game)) ! king
     kingSq = countTrailingZeros kingMask
-    checkMasksKing = (! kingSq) <$> checkMasks (gameTurn game) (gameBlockers game)
+    checkMasksKing = checkMasks (gameTurn game) (gameBlockers game) kingSq
 
 -- makeMove :: Game -> Move -> Maybe Game
 -- makeMove game move = 
