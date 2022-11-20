@@ -64,3 +64,14 @@ tests:
     - trout
     - hspec
     - QuickCheck
+  trout-bench:
+    main:                Bench.hs
+    source-dirs:         test/bench
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - trout
+    - criterion
+    - deepseq

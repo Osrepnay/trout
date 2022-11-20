@@ -129,5 +129,7 @@ inCheck game = foldl' (.|.) 0
     kingSq = countTrailingZeros kingMask
     checkMasksKing = checkMasks (gameTurn game) (gameBlockers game) kingSq
 
--- makeMove :: Game -> Move -> Maybe Game
--- makeMove game move = 
+{- makeMove :: Move -> Game -> Maybe Game
+makeMove move game = Nothing
+  where
+    doMove game = game {  } -}
