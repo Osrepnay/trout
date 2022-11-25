@@ -6,8 +6,8 @@ module MagicMoves
 import Test.Hspec
 import Test.Hspec.QuickCheck
 import Test.QuickCheck
-import Trout.MoveGen.Sliding.Classic
-import Trout.MoveGen.Sliding.Magic
+import Trout.Game.MoveGen.Sliding.Classic
+import Trout.Game.MoveGen.Sliding.Magic
 
 -- checks that sliding and magic movegen make the same moves
 bishopMagicsSpec :: Spec

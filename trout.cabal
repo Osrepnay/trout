@@ -27,10 +27,11 @@ library
   exposed-modules:
       Trout.Bitboard
       Trout.Game
-      Trout.MoveGen
-      Trout.MoveGen.Sliding.Classic
-      Trout.MoveGen.Sliding.Magic
-      Trout.MoveGen.Sliding.Magics
+      Trout.Game.Move
+      Trout.Game.MoveGen
+      Trout.Game.MoveGen.Sliding.Classic
+      Trout.Game.MoveGen.Sliding.Magic
+      Trout.Game.MoveGen.Sliding.Magics
       Trout.PieceInfo
   other-modules:
       Paths_trout

@@ -1,17 +1,17 @@
-module Trout.MoveGen.Sliding.Magic
+module Trout.Game.MoveGen.Sliding.Magic
     ( bishopMovesMagic
     , rookMovesMagic
     ) where
 
 import           Data.Foldable
-import           Data.IntMap.Strict            (IntMap)
-import qualified Data.IntMap.Strict            as I
-import           Data.Vector                   (Vector, (!))
-import qualified Data.Vector                   as V
+import           Data.IntMap.Strict                 (IntMap)
+import qualified Data.IntMap.Strict                 as I
+import           Data.Vector                        (Vector, (!))
+import qualified Data.Vector                        as V
 import           Data.Word
 import           Trout.Bitboard
-import           Trout.MoveGen.Sliding.Classic
-import           Trout.MoveGen.Sliding.Magics
+import           Trout.Game.MoveGen.Sliding.Classic
+import           Trout.Game.MoveGen.Sliding.Magics
 
 bishopMasks :: Vector Bitboard
 bishopMasks = (complement (rank1 .|. rank8 .|. fileA .|. fileH) .&.)

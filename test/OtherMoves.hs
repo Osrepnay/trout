@@ -8,8 +8,8 @@ import Test.Hspec
 import Test.Hspec.QuickCheck
 import Test.QuickCheck
 import Trout.Bitboard
+import Trout.Game.MoveGen
 import Trout.PieceInfo
-import Trout.MoveGen
 
 pawnBlockNoMoveSpec :: Spec
 pawnBlockNoMoveSpec = context "when pawn is blocked in front" $

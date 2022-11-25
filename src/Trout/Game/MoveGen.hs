@@ -1,4 +1,4 @@
-module Trout.MoveGen
+module Trout.Game.MoveGen
     ( pawnWhiteAttackTable, pawnBlackAttackTable, pawnMoves
     , knightTable, knightMoves
     , bishopMoves
@@ -10,30 +10,12 @@ module Trout.MoveGen
     ) where
 
 import           Data.Maybe
-import           Data.Vector                 (Vector, (!))
-import qualified Data.Vector                 as V
+import           Data.Vector                      (Vector, (!))
+import qualified Data.Vector                      as V
 import           Trout.Bitboard
-import           Trout.MoveGen.Sliding.Magic
+import           Trout.Game.Move
+import           Trout.Game.MoveGen.Sliding.Magic
 import           Trout.PieceInfo
-
--- consider moving non sliding movegen to a table
--- cache can be weird though? idk
-
--- moves that dont fit normal piece things
-data SpecialMove
-    = Normal
-    | PawnDouble -- double moe forware
-    | Castle Bool -- kingside?
-    | EnPassant Int -- en passant pawn squaree
-    | Promotion Int -- promote piece
-    deriving (Eq, Show)
-
-data Move = Move
-    { movePiece   :: Piece
-    , moveSpecial :: SpecialMove
-    , moveFrom    :: Int
-    , moveTo      :: Int
-    } deriving (Eq, Show)
 
 tableGen :: [(Int, Int)] -> Vector Bitboard
 tableGen ds = V.fromList
@@ -59,12 +41,13 @@ pawnBlackAttackTable :: Vector Bitboard
 pawnBlackAttackTable = tableGen [(-1, -1), (1, -1)]
 
 pawnMoves :: Maybe Int -> Color -> Bitboard -> Bitboard -> Int -> [Move]
-pawnMoves enPSq White block myBlock sq =
-    [Move pawn p sq (sq + 8) | frontOpen,    p <- promotes] ++
-    [Move pawn p sq (sq + 7) | captureLeft,  p <- promotes] ++
-    [Move pawn p sq (sq + 9) | captureRight, p <- promotes] ++
-    [Move pawn PawnDouble sq (sq + 16) | doubleFrontOpen] ++ -- can't promote
-    [Move pawn (EnPassant en) sq (en + 8) | en <- enPassant]
+pawnMoves enPSq White block myBlock sq = concat
+    [ [Move pawn p sq (sq + 8) | frontOpen,    p <- promotes]
+    , [Move pawn p sq (sq + 7) | captureLeft,  p <- promotes]
+    , [Move pawn p sq (sq + 9) | captureRight, p <- promotes]
+    , [Move pawn PawnDouble sq (sq + 16) | doubleFrontOpen] -- can't promote
+    , [Move pawn (EnPassant en) sq (en + 8) | en <- enPassant]
+    ]
   where
     enPassant = filter
         ((rank5 .&. bit sq /= 0 &&) . (== 1) . abs . (sq -))
@@ -76,12 +59,13 @@ pawnMoves enPSq White block myBlock sq =
         fileA .&. bit sq == 0
     captureRight = blocked (block .&. complement myBlock) (sq + 9) &&
         fileH .&. bit sq == 0
-pawnMoves enPSq Black block myBlock sq =
-    [Move pawn p sq (sq - 8) | frontOpen,    p <- promotes] ++
-    [Move pawn p sq (sq - 9) | captureLeft,  p <- promotes] ++
-    [Move pawn p sq (sq - 7) | captureRight, p <- promotes] ++
-    [Move pawn PawnDouble sq (sq - 16) | doubleFrontOpen] ++
-    [Move pawn (EnPassant en) sq (en - 8) | en <- enPassant]
+pawnMoves enPSq Black block myBlock sq = concat
+    [ [Move pawn p sq (sq - 8) | frontOpen,    p <- promotes]
+    , [Move pawn p sq (sq - 9) | captureLeft,  p <- promotes]
+    , [Move pawn p sq (sq - 7) | captureRight, p <- promotes]
+    , [Move pawn PawnDouble sq (sq - 16) | doubleFrontOpen]
+    , [Move pawn (EnPassant en) sq (en - 8) | en <- enPassant]
+    ]
   where
     enPassant = filter
         ((rank4 .&. bit sq /= 0 &&) . (== 1) . abs . (sq -))
@@ -126,10 +110,11 @@ kingTable = tableGen
     ]
 
 kingMoves :: Bool -> Bool -> Bitboard -> Bitboard -> Int -> [Move]
-kingMoves kAllowed qAllowed block myBlock sq =
-    [Move king (Castle True) sq (sq + 2) | castleK] ++
-    [Move king (Castle False) sq (sq - 2) | castleQ] ++
-    (Move king Normal sq <$> toSqs (kingTable ! sq .&. complement myBlock))
+kingMoves kAllowed qAllowed block myBlock sq = concat
+    [ [Move king (Castle True) sq (sq + 2) | castleK]
+    , [Move king (Castle False) sq (sq - 2) | castleQ]
+    , Move king Normal sq <$> toSqs (kingTable ! sq .&. complement myBlock)
+    ]
   where
     castleK = kAllowed && unblocked block (sq + 1) && unblocked block (sq + 2)
     castleQ = qAllowed &&

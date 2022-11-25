@@ -1,4 +1,4 @@
-module Trout.MoveGen.Sliding.Classic
+module Trout.Game.MoveGen.Sliding.Classic
     ( bishopRays
     , rookRays
     , bishopMovesClassic

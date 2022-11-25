@@ -10,20 +10,26 @@ module Trout.Game
     , inCheck
     ) where
 
-import           Data.Foldable
-import           Data.Vector     (Vector, (!))
-import qualified Data.Vector     as V
+import           Data.Vector                      ((!))
 import           Trout.Bitboard
-import           Trout.MoveGen
-import           Trout.MoveGen.Sliding.Magic
+import           Trout.Game.Move
+import           Trout.Game.MoveGen
+import           Trout.Game.MoveGen.Sliding.Magic
 import           Trout.PieceInfo
 
-newtype Pieces = Pieces { unPieces :: Vector Bitboard }
+data Pieces = Pieces
+    { pawns   :: Bitboard
+    , knights :: Bitboard
+    , bishops :: Bitboard
+    , rooks   :: Bitboard
+    , queens  :: Bitboard
+    , kings   :: Bitboard
+    }
 data CanCastle = CanCastle
     { canCastleKing  :: Bool
     , canCastleQueen :: Bool
     }
-newtype CanEnPassant = CanEnPassant { unCanEnPassant :: Maybe Int }
+newtype CanEnPassant = CanEnPassant { unEPassant :: Maybe Int }
 data SideInfo = SideInfo
     { sidePieces    :: Pieces
     , sideCanCastle :: CanCastle
@@ -38,22 +44,20 @@ data Game = Game
 -- https://tearth.dev/bitboard-viewer/
 startingGame :: Game
 startingGame = Game
-    (SideInfo (Pieces (V.fromList
-        [ 65280
-        , 66
-        , 36
-        , 129
-        , 8
-        , 16
-        ])) (CanCastle True True))
-    (SideInfo (Pieces (V.fromList
-        [ 71776119061217280
-        , 4755801206503243776
-        , 2594073385365405696
-        , 9295429630892703744
-        , 576460752303423488
-        , 1152921504606846976
-        ])) (CanCastle True True))
+    (SideInfo (Pieces
+        65280
+        66
+        36
+        129
+        8
+        16) (CanCastle True True))
+    (SideInfo (Pieces
+        71776119061217280
+        4755801206503243776
+        2594073385365405696
+        9295429630892703744
+        576460752303423488
+        1152921504606846976) (CanCastle True True))
     (CanEnPassant Nothing)
     White
 
@@ -69,7 +73,13 @@ turnOtherSide :: Game -> SideInfo
 turnOtherSide (Game w _ _ Black) = w
 turnOtherSide (Game _ b _ White) = b
 
-moveGens :: Game -> Bitboard -> Bitboard -> Vector (Int -> [Move])
+turnPieces :: Game -> Pieces
+turnPieces = sidePieces . turnSide
+
+turnOtherPieces :: Game -> Pieces
+turnOtherPieces = sidePieces . turnOtherSide
+
+{- moveGens :: Game -> Bitboard -> Bitboard -> Vector (Int -> [Move])
 moveGens game block myBlock = V.fromList
     [ pawnMoves (unCanEnPassant (gameEnPassant game)) (gameTurn game) block myBlock
     , knightMoves block myBlock
@@ -81,53 +91,53 @@ moveGens game block myBlock = V.fromList
         (canCastleQueen (sideCanCastle (turnSide game)))
         block
         myBlock
-    ]
+    ] -}
 
+-- need... lens....
 piecesBlockers :: Pieces -> Bitboard
-piecesBlockers (Pieces ps) = foldl' (.|.) 0 ps
+piecesBlockers (Pieces p n b r q k) = p .|. n .|. b .|. r .|. q .|. k
 
 gameBlockers :: Game -> Bitboard
 gameBlockers game = piecesBlockers (sidePieces (turnSide game))
     .|. piecesBlockers (sidePieces (turnOtherSide game))
 
 allMoves :: Game -> [Move]
-allMoves game = foldl' (++) [] $
-    concat . uncurry fmap
-    <$> V.zip (moveGens game block myBlock) (toSqs <$> unPieces (sidePieces (turnSide game)))
+allMoves game = concat
+    [ moveSqs (pawnMoves (unEPassant (gameEnPassant game)) (gameTurn game)) pawns
+    , moveSqs knightMoves knights
+    , moveSqs bishopMoves bishops
+    , moveSqs queenMoves queens
+    , moveSqs (kingMoves kingside queenside) kings
+    ]
   where
+    kingside = canCastleKing $ sideCanCastle $ turnSide game
+    queenside = canCastleQueen $ sideCanCastle $ turnSide game
+    -- gets and concats the move for a set of squares (for a piece)
+    moveSqs mover piece = concatMap (mover block myBlock) (toSqs (piece (turnPieces game)))
     -- TODO update incrementally
     block = myBlock .|. piecesBlockers (sidePieces (turnOtherSide game))
     myBlock = piecesBlockers (sidePieces (turnSide game))
 
--- like moveGens but bitboards instead
-checkMasks :: Color -> Bitboard -> Int -> Vector Bitboard
-checkMasks White block sq = V.fromList
+    {-
     [ pawnWhiteAttackTable ! sq
     , knightTable ! sq
     , bishopMovesMagic block sq
     , rookMovesMagic block sq
     , bishopMovesMagic block sq .|. rookMovesMagic block sq
     , kingTable ! sq
-    ]
-checkMasks Black block sq = V.fromList
-    [ pawnBlackAttackTable ! sq
-    , knightTable ! sq
-    , bishopMovesMagic block sq
-    , rookMovesMagic block sq
-    , bishopMovesMagic block sq .|. rookMovesMagic block sq
-    , kingTable ! sq
-    ]
-
--- TODO make movegen have a bitboard thing so we dont have to loop
--- simplified movegen with only possible king attacks?
+        -}
+-- use || instead of .|. with a /= 0 at the end for short circuit
 inCheck :: Game -> Bool
-inCheck game = foldl' (.|.) 0
-    (V.zipWith (.&.) checkMasksKing (unPieces (sidePieces (turnOtherSide game))))
-    /= 0
+inCheck game = pawnWhiteAttackTable ! kingSq .&. pawns (sidePieces (turnSide game)) /= 0
+    || knightTable ! kingSq .&. knights (sidePieces (turnSide game)) /= 0
+    || bishopMovesMagic block kingSq .&. bishops (sidePieces (turnSide game)) /= 0
+    || rookMovesMagic block kingSq .&. rooks (sidePieces (turnSide game)) /= 0
+    || rookMovesMagic block kingSq .&. rooks (sidePieces (turnSide game)) /= 0
   where
-    kingMask = unPieces (sidePieces (turnSide game)) ! king
+    kingMask = kings (sidePieces (turnSide game))
     kingSq = countTrailingZeros kingMask
-    checkMasksKing = checkMasks (gameTurn game) (gameBlockers game) kingSq
+    block = piecesBlockers (sidePieces (turnSide game))
+        .|. piecesBlockers (sidePieces (turnOtherSide game)) -- nice
 
 {- makeMove :: Move -> Game -> Maybe Game
 makeMove move game = Nothing

@@ -1,7 +1,7 @@
 import Control.DeepSeq
 import Criterion.Main
 import Trout.Game
-import Trout.MoveGen
+import Trout.Game.MoveGen
 
 instance NFData Move where
   -- too excessive? idk
