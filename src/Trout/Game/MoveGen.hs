@@ -5,8 +5,8 @@ module Trout.Game.MoveGen
     , rookMoves
     , queenMoves
     , kingTable, kingMoves
-    , SpecialMove(..)
-    , Move(..)
+    , SpecialMove (..)
+    , Move (..)
     ) where
 
 import           Data.Maybe
@@ -42,11 +42,11 @@ pawnBlackAttackTable = tableGen [(-1, -1), (1, -1)]
 
 pawnMoves :: Maybe Int -> Color -> Bitboard -> Bitboard -> Int -> [Move]
 pawnMoves enPSq White block myBlock sq = concat
-    [ [Move pawn p sq (sq + 8) | frontOpen,    p <- promotes]
-    , [Move pawn p sq (sq + 7) | captureLeft,  p <- promotes]
-    , [Move pawn p sq (sq + 9) | captureRight, p <- promotes]
-    , [Move pawn PawnDouble sq (sq + 16) | doubleFrontOpen] -- can't promote
-    , [Move pawn (EnPassant en) sq (en + 8) | en <- enPassant]
+    [ [Move Pawn p sq (sq + 8) | frontOpen,    p <- promotes]
+    , [Move Pawn p sq (sq + 7) | captureLeft,  p <- promotes]
+    , [Move Pawn p sq (sq + 9) | captureRight, p <- promotes]
+    , [Move Pawn PawnDouble sq (sq + 16) | doubleFrontOpen] -- can't promote
+    , [Move Pawn (EnPassant en) sq (en + 8) | en <- enPassant]
     ]
   where
     enPassant = filter
@@ -60,11 +60,11 @@ pawnMoves enPSq White block myBlock sq = concat
     captureRight = blocked (block .&. complement myBlock) (sq + 9) &&
         fileH .&. bit sq == 0
 pawnMoves enPSq Black block myBlock sq = concat
-    [ [Move pawn p sq (sq - 8) | frontOpen,    p <- promotes]
-    , [Move pawn p sq (sq - 9) | captureLeft,  p <- promotes]
-    , [Move pawn p sq (sq - 7) | captureRight, p <- promotes]
-    , [Move pawn PawnDouble sq (sq - 16) | doubleFrontOpen]
-    , [Move pawn (EnPassant en) sq (en - 8) | en <- enPassant]
+    [ [Move Pawn p sq (sq - 8) | frontOpen,    p <- promotes]
+    , [Move Pawn p sq (sq - 9) | captureLeft,  p <- promotes]
+    , [Move Pawn p sq (sq - 7) | captureRight, p <- promotes]
+    , [Move Pawn PawnDouble sq (sq - 16) | doubleFrontOpen]
+    , [Move Pawn (EnPassant en) sq (en - 8) | en <- enPassant]
     ]
   where
     enPassant = filter
@@ -87,19 +87,19 @@ knightTable = tableGen
     ]
 
 knightMoves :: Bitboard -> Bitboard -> Int -> [Move]
-knightMoves _ myBlock sq = Move knight Normal sq
+knightMoves _ myBlock sq = Move Knight Normal sq
     <$> toSqs (knightTable ! sq .&. complement myBlock)
 
 bishopMoves :: Bitboard -> Bitboard -> Int -> [Move]
-bishopMoves block myBlock sq = Move bishop Normal sq
+bishopMoves block myBlock sq = Move Bishop Normal sq
     <$> toSqs (bishopMovesMagic block sq .&. complement myBlock)
 
 rookMoves :: Bitboard -> Bitboard -> Int -> [Move]
-rookMoves block myBlock sq = Move rook Normal sq
+rookMoves block myBlock sq = Move Rook Normal sq
     <$> toSqs (rookMovesMagic block sq .&. complement myBlock)
 
 queenMoves :: Bitboard -> Bitboard -> Int -> [Move]
-queenMoves block myBlock sq = Move queen Normal sq
+queenMoves block myBlock sq = Move Queen Normal sq
     <$> toSqs ((bishopMovesMagic block sq .|. rookMovesMagic block sq) .&. complement myBlock)
 
 kingTable :: Vector Bitboard
@@ -111,9 +111,9 @@ kingTable = tableGen
 
 kingMoves :: Bool -> Bool -> Bitboard -> Bitboard -> Int -> [Move]
 kingMoves kAllowed qAllowed block myBlock sq = concat
-    [ [Move king (Castle True) sq (sq + 2) | castleK]
-    , [Move king (Castle False) sq (sq - 2) | castleQ]
-    , Move king Normal sq <$> toSqs (kingTable ! sq .&. complement myBlock)
+    [ [Move King (Castle True) sq (sq + 2) | castleK]
+    , [Move King (Castle False) sq (sq - 2) | castleQ]
+    , Move King Normal sq <$> toSqs (kingTable ! sq .&. complement myBlock)
     ]
   where
     castleK = kAllowed && unblocked block (sq + 1) && unblocked block (sq + 2)

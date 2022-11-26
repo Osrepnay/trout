@@ -64,9 +64,11 @@ tests:
     - trout
     - hspec
     - QuickCheck
+
+benchmarks:
   trout-bench:
     main:                Bench.hs
-    source-dirs:         test/bench
+    source-dirs:         bench
     ghc-options:
     - -threaded
     - -rtsopts

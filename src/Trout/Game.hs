@@ -1,9 +1,9 @@
 module Trout.Game
-    ( Pieces(..)
-    , CanCastle(..)
-    , CanEnPassant(..)
-    , SideInfo(..)
-    , Game(..)
+    ( Pieces (..)
+    , CanCastle (..)
+    , CanEnPassant (..)
+    , SideInfo (..)
+    , Game (..)
     , startingGame
     , turnSide, turnOtherSide
     , allMoves
@@ -118,14 +118,6 @@ allMoves game = concat
     block = myBlock .|. piecesBlockers (sidePieces (turnOtherSide game))
     myBlock = piecesBlockers (sidePieces (turnSide game))
 
-    {-
-    [ pawnWhiteAttackTable ! sq
-    , knightTable ! sq
-    , bishopMovesMagic block sq
-    , rookMovesMagic block sq
-    , bishopMovesMagic block sq .|. rookMovesMagic block sq
-    , kingTable ! sq
-        -}
 -- use || instead of .|. with a /= 0 at the end for short circuit
 inCheck :: Game -> Bool
 inCheck game = pawnWhiteAttackTable ! kingSq .&. pawns (sidePieces (turnSide game)) /= 0
@@ -136,10 +128,12 @@ inCheck game = pawnWhiteAttackTable ! kingSq .&. pawns (sidePieces (turnSide gam
   where
     kingMask = kings (sidePieces (turnSide game))
     kingSq = countTrailingZeros kingMask
-    block = piecesBlockers (sidePieces (turnSide game))
-        .|. piecesBlockers (sidePieces (turnOtherSide game)) -- nice
-
-{- makeMove :: Move -> Game -> Maybe Game
-makeMove move game = Nothing
+    block = gameBlockers game
+{-
+makeMove :: Move -> Game -> Maybe Game
+makeMove move game = case movePiece move of
+    Pawn -> 
   where
-    doMove game = game {  } -}
+    -- basic moving n stuff
+    doMove game = game {  }
+-}
