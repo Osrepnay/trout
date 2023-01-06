@@ -11,7 +11,7 @@ data SpecialMove
     | PawnDouble -- double moe forware
     | Castle Bool -- kingside?
     | EnPassant Int -- en passant pawn squaree
-    | Promotion Int -- promote piece
+    | Promotion Piece -- promote piece
     deriving (Eq, Show)
 
 data Move = Move

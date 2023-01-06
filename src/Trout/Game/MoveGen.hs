@@ -40,6 +40,9 @@ pawnWhiteAttackTable = tableGen [(-1, 1), (1, 1)]
 pawnBlackAttackTable :: Vector Bitboard
 pawnBlackAttackTable = tableGen [(-1, -1), (1, -1)]
 
+promotions :: [Piece]
+promotions = [Knight, Bishop, Rook, Queen]
+
 pawnMoves :: Maybe Int -> Color -> Bitboard -> Bitboard -> Int -> [Move]
 pawnMoves enPSq White block myBlock sq = concat
     [ [Move Pawn p sq (sq + 8) | frontOpen,    p <- promotes]
@@ -52,7 +55,7 @@ pawnMoves enPSq White block myBlock sq = concat
     enPassant = filter
         ((rank5 .&. bit sq /= 0 &&) . (== 1) . abs . (sq -))
         (maybeToList enPSq)
-    promotes = Normal : [Promotion p | rank8 .&. bit sq /= 0, p <- [1..4]]
+    promotes = Normal : [Promotion p | rank8 .&. bit sq /= 0, p <- promotions]
     frontOpen = unblocked block (sq + 8)
     doubleFrontOpen = frontOpen && (rank2 .&. bit sq /= 0) && unblocked block (sq + 16)
     captureLeft  = blocked (block .&. complement myBlock) (sq + 7) &&
@@ -70,7 +73,7 @@ pawnMoves enPSq Black block myBlock sq = concat
     enPassant = filter
         ((rank4 .&. bit sq /= 0 &&) . (== 1) . abs . (sq -))
         (maybeToList enPSq)
-    promotes = Normal : [Promotion p | rank1 .&. bit sq /= 0, p <- [1..4]]
+    promotes = Normal : [Promotion p | rank1 .&. bit sq /= 0, p <- promotions]
     frontOpen = unblocked block (sq - 8)
     doubleFrontOpen = frontOpen && (rank7 .&. bit sq /= 0) && unblocked block (sq - 16)
     captureLeft  = blocked (block .&. complement myBlock) (sq - 9) &&
