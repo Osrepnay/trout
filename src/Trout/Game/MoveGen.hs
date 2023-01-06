@@ -55,7 +55,10 @@ pawnMoves enPSq White block myBlock sq = concat
     enPassant = filter
         ((rank5 .&. bit sq /= 0 &&) . (== 1) . abs . (sq -))
         (maybeToList enPSq)
-    promotes = Normal : [Promotion p | rank8 .&. bit sq /= 0, p <- promotions]
+    promotes = case specialMaybeEmpty of
+        [] -> [Normal]
+        ps -> ps
+    specialMaybeEmpty = [Promotion p | rank7 .&. bit sq /= 0, p <- promotions]
     frontOpen = unblocked block (sq + 8)
     doubleFrontOpen = frontOpen && (rank2 .&. bit sq /= 0) && unblocked block (sq + 16)
     captureLeft  = blocked (block .&. complement myBlock) (sq + 7) &&
@@ -73,7 +76,10 @@ pawnMoves enPSq Black block myBlock sq = concat
     enPassant = filter
         ((rank4 .&. bit sq /= 0 &&) . (== 1) . abs . (sq -))
         (maybeToList enPSq)
-    promotes = Normal : [Promotion p | rank1 .&. bit sq /= 0, p <- promotions]
+    promotes = case specialMaybeEmpty of
+        [] -> [Normal]
+        ps -> ps
+    specialMaybeEmpty = [Promotion p | rank2 .&. bit sq /= 0, p <- promotions]
     frontOpen = unblocked block (sq - 8)
     doubleFrontOpen = frontOpen && (rank7 .&. bit sq /= 0) && unblocked block (sq - 16)
     captureLeft  = blocked (block .&. complement myBlock) (sq - 9) &&

@@ -32,7 +32,7 @@ xyToSq :: Int -> Int -> Int
 xyToSq x y = y * 8 + x
 
 inBoard :: Int -> Bool
-inBoard sq = 0 < sq && sq < 64
+inBoard sq = 0 <= sq && sq < 64
 
 blocked :: Bitboard -> Int -> Bool
 blocked block sq = inBoard sq && testBit block sq

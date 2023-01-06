@@ -40,11 +40,23 @@ pawnEnPassantSpec = context "when pawn can en passant" $
                 [Move Pawn (EnPassant (sq + 1)) sq (sq + 8 + 1)]
         ]
 
+pawnPromoteSpec :: Spec
+pawnPromoteSpec = context "when pawn is on the row before promotion" $
+    traverse_ (prop "returns promotions")
+        [ forAll (chooseInt (8, 15)) $
+            \sq -> pawnMoves Nothing Black 0 0 sq
+                `shouldBe` [Move Pawn (Promotion p) sq (sq - 8) | p <- [Knight, Bishop, Rook, Queen]]
+        , forAll (chooseInt (48, 55)) $
+            \sq -> pawnMoves Nothing White 0 0 sq
+                `shouldBe` [Move Pawn (Promotion p) sq (sq + 8) | p <- [Knight, Bishop, Rook, Queen]]
+        ]
+
 pawnSpec :: Spec
 pawnSpec = describe "pawnMoves" $ do
     pawnBlockNoMoveSpec
     pawnDoubleMoveSpec
     pawnEnPassantSpec
+    pawnPromoteSpec
 
 -- no knight quickcheck because its so simple it would almost just be another movegen
 -- individual tests work but dont wanna rn
