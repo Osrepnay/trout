@@ -9,4 +9,4 @@ main = hspec $ do
     rookMagicsSpec
     pawnSpec
     kingSpec
-    startMovesSpec
+    moveCounterSpec
