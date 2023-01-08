@@ -233,44 +233,48 @@ makeMove game (Move piece special from to) = do
     nothingIfCheck g = if inCheck g then Nothing else Just g
     specials g = case special of
         PawnDouble -> Just $ g { gameEnPassant = Just to }
-        EnPassant enPSq -> Just $ clearEnPassant $ (modTurnOtherSide
-            $ modPieces
-            $ modPiece Pawn (`clearBit` enPSq)) g
-        Promotion promote -> Just $ clearEnPassant $ (modTurnSide
-            $ modPieces
-            $ modPiece promote (`setBit` to)
-            . modPiece Pawn (`clearBit` to)) g
-        Castle isKingside ->
-            ((<$> castleChecks isKingside g)
+        EnPassant enPSq -> Just
+            $ clearEnPassant
+            $ (modTurnOtherSide
+                $ modPieces
+                $ modPiece Pawn (`clearBit` enPSq)) g
+        Promotion promote -> Just
+            $ clearEnPassant
+            $ (modTurnSide
+                $ modPieces
+                $ modPiece promote (`setBit` to)
+                . modPiece Pawn (`clearBit` to)) g
+        CastleKing ->
+            ((<$> castleChecksKing g)
                 . (clearEnPassant .))
             $ modTurnSide
             $ modPieces
-            $ if isKingside
-            then
-                modPiece
-                    Rook
-                    ((`setBit` byTurn 5 61) . (`clearBit` byTurn 7 63))
-                . \ps -> ps { kings = byTurn 64 4611686018427387904 }
-            else
-                modPiece
-                    Rook
-                    ((`setBit` byTurn 3 59) . (`clearBit` byTurn 0 56))
-                . \ps -> ps { kings = byTurn 4 288230376151711744}
+            $ modPiece
+                Rook
+                ((`setBit` byTurn 5 61) . (`clearBit` byTurn 7 63))
+            . \ps -> ps { kings = byTurn 64 4611686018427387904 }
+        CastleQueen ->
+            ((<$> castleChecksQueen g)
+                . (clearEnPassant .))
+            $ modTurnSide
+            $ modPieces
+            $ modPiece
+                Rook
+                ((`setBit` byTurn 3 59) . (`clearBit` byTurn 0 56))
+            . \ps -> ps { kings = byTurn 4 288230376151711744}
         Normal -> Just $ clearEnPassant g
     byTurn w b = case gameTurn game of
         White -> w
         Black -> b
     clearEnPassant g = g { gameEnPassant = Nothing }
     -- assumes king is moved, rook is not
-    castleChecks True  = castleChecksKing
-    castleChecks False = castleChecksQueen
     castleChecksKing g
         | squareAttacked 5 kingless = Nothing
         | otherwise                 = Just g
       where
-        kingless = (modTurnSide $ modPieces $ modPiece King (`clearBit` 6)) g
+        kingless = modTurnSide (modPieces (modPiece King (`clearBit` 6))) g
     castleChecksQueen g
         | squareAttacked 3 kingless = Nothing
         | otherwise                 = Just g
       where
-        kingless = (modTurnSide $ modPieces $ modPiece King (`clearBit` 2)) g
+        kingless = modTurnSide (modPieces (modPiece King (`clearBit` 2))) g

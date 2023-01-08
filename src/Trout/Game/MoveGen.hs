@@ -120,8 +120,8 @@ kingTable = tableGen
 
 kingMoves :: Bool -> Bool -> Bitboard -> Bitboard -> Int -> [Move]
 kingMoves kAllowed qAllowed block myBlock sq = concat
-    [ [Move King (Castle True) sq (sq + 2) | castleK]
-    , [Move King (Castle False) sq (sq - 2) | castleQ]
+    [ [Move King CastleKing sq (sq + 2) | castleK]
+    , [Move King CastleQueen sq (sq - 2) | castleQ]
     , Move King Normal sq <$> toSqs (kingTable ! sq .&. complement myBlock)
     ]
   where

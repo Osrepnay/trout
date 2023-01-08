@@ -9,7 +9,8 @@ import Trout.PieceInfo
 data SpecialMove
     = Normal
     | PawnDouble -- double moe forware
-    | Castle Bool -- kingside?
+    | CastleKing
+    | CastleQueen
     | EnPassant Int -- en passant pawn squaree
     | Promotion Piece -- promote piece
     deriving (Eq, Show)
