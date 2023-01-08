@@ -27,7 +27,7 @@ data Pieces = Pieces
     , queens    :: Bitboard
     , kings     :: Bitboard
     , piecesAll :: Bitboard
-    } deriving Show
+    } deriving (Eq, Show)
 
 modPiece :: Piece -> (Bitboard -> Bitboard) -> Pieces -> Pieces
 modPiece p f pieces = modAll $ case p of
@@ -43,12 +43,12 @@ modPiece p f pieces = modAll $ case p of
 data CanCastle = CanCastle
     { canCastleKing  :: Bool
     , canCastleQueen :: Bool
-    } deriving Show
+    } deriving (Eq, Show)
 
 data Side = Side
     { sidePieces    :: Pieces
     , sideCanCastle :: CanCastle
-    } deriving Show
+    } deriving (Eq, Show)
 
 modPieces :: (Pieces -> Pieces) -> Side -> Side
 modPieces f side = side { sidePieces = f (sidePieces side) }
@@ -61,7 +61,7 @@ data Game = Game
     , gameBlack     :: Side
     , gameEnPassant :: Maybe Int
     , gameTurn      :: Color
-    } deriving Show
+    } deriving (Eq, Show)
 
 gameAsBoard :: Game -> String
 gameAsBoard game = unlines [[posChar x y | x <- [0..7]] | y <- [7, 6..0]]
@@ -162,87 +162,43 @@ allMoves game = concat
     block = myBlock .|. piecesAll (sidePieces (turnOtherSide game))
     myBlock = piecesAll (sidePieces (turnSide game))
 
--- use || instead of .|. with a /= 0 at the end for short circuit
-inCheck :: Game -> Bool
-inCheck game
-    | kingSq == 64 = True -- king gone!
-    | otherwise = pawnAttackTable ! kingSq .&. pawns thisOtherPieces /= 0
-        || knightTable ! kingSq .&. knights thisOtherPieces /= 0
-        || bishoped .&. bishops thisOtherPieces /= 0
-        || rooked .&. rooks thisOtherPieces /= 0
-        || bishoped .&. queens thisOtherPieces /= 0
-        || rooked .&. queens thisOtherPieces /= 0
+squareAttacked :: Int -> Game -> Bool
+squareAttacked sq game = pawnAttackTable ! sq .&. pawns thisOtherPieces /= 0
+    || knightTable ! sq .&. knights thisOtherPieces /= 0
+    || bishoped .&. bishops thisOtherPieces /= 0
+    || rooked .&. rooks thisOtherPieces /= 0
+    || bishoped .&. queens thisOtherPieces /= 0
+    || rooked .&. queens thisOtherPieces /= 0
   where
-    bishoped = bishopMovesMagic block kingSq
-    rooked = rookMovesMagic block kingSq
+    bishoped = bishopMovesMagic block sq
+    rooked = rookMovesMagic block sq
     block = gameBlockers game
     pawnAttackTable = case gameTurn game of
         White -> pawnWhiteAttackTable
         Black -> pawnBlackAttackTable
-    kingMask = kings (turnPieces game)
-    kingSq = countTrailingZeros kingMask
     thisOtherPieces = turnOtherPieces game
 
-makeMove :: Game -> Move -> Maybe Game
-makeMove game (Move piece special from to) = fmap flipTurn
-    $ nothingIfCheck
-    $ clearEnPassant
-    -- handle special cases
-    $ (\g -> case piece of
-        Pawn -> case special of
-            PawnDouble -> g { gameEnPassant = Just to }
-            EnPassant enPSq -> (modTurnOtherSide
-                $ modPieces
-                $ modPiece Pawn (`clearBit` enPSq)) g
-            Promotion promote -> (modTurnSide
-                $ modPieces (modPiece promote (`setBit` to)
-                    . modPiece Pawn (`clearBit` to))) g
-            Normal -> g
-            _ -> error "invalid special move for pawn"
-        Rook -> g &
-            if from == 0
-            then clearCastle False
-            else if from == 7
-            then clearCastle True
-            else if from == 56
-            then clearCastle False
-            else if from == 63
-            then clearCastle True
-            else id
-        King -> clearCastles $ case special of
-            Castle isKingside -> (modTurnSide
-                $ modPieces
-                $
-                    if isKingside
-                    then modPiece
-                        Rook
-                        ((`setBit` byTurn 5 61) . (`clearBit` byTurn 7 63))
-                    . \ps -> ps { kings = byTurn 64 4611686018427387904 }
-                    else modPiece
-                        Rook
-                        ((`setBit` byTurn 3 59) . (`clearBit` byTurn 0 56))
-                    . \ps -> ps { kings = byTurn 4 288230376151711744}) g
-            Normal -> g
-            _ -> error "invalid special move for king"
-        _ -> g)
-    $ captureAll to
-    $ doMove piece from to game
+-- use || instead of .|. with a /= 0 at the end for short circuit
+inCheck :: Game -> Bool
+inCheck game
+    | kingSq == 64 = True -- king gone!
+    | otherwise    = squareAttacked kingSq game
   where
-    byTurn w b = case gameTurn game of
-        White -> w
-        Black -> b
-    clearCastle isKingside = modTurnSide
-        $ modCanCastle
-        $ \(CanCastle k q) ->
-            if isKingside
-            then CanCastle False q
-            else CanCastle k False
-    clearCastles = modTurnSide
-        $ \s -> s { sideCanCastle = CanCastle False False }
-    clearEnPassant g = case special of
-        PawnDouble -> g -- just set en passant, don't clear
-        _ -> g { gameEnPassant = Nothing }
-    nothingIfCheck g = if inCheck g then Nothing else Just g
+    kingSq = countTrailingZeros kingMask
+    kingMask = kings (turnPieces game)
+
+makeMove :: Game -> Move -> Maybe Game
+makeMove game (Move piece special from to) = do
+    let moveAndCaptured = captureAll to (doMove piece from to game)
+    afterSpecials <- specials moveAndCaptured
+    checkChecked <- nothingIfCheck afterSpecials
+    let castleCleared = clearCastles checkChecked
+    pure (flipTurn castleCleared)
+  where
+    -- basic moving
+    doMove p fsq tsq = modTurnSide
+        $ modPieces
+        $ modPiece p ((`setBit` tsq) . (`clearBit` fsq))
     captureAll sq = modTurnOtherSide
         $ modPieces
         $ modPiece Pawn clearTarget
@@ -253,7 +209,68 @@ makeMove game (Move piece special from to) = fmap flipTurn
         . modPiece King clearTarget
       where
         clearTarget = (`clearBit` sq)
-    -- basic moving
-    doMove p fsq tsq = modTurnSide
-        $ modPieces
-        $ modPiece p ((`setBit` tsq) . (`clearBit` fsq))
+    clearCastles g = case piece of
+        Rook -> g
+            & if from == 0
+            then clearCastleSide False
+            else if from == 7
+            then clearCastleSide True
+            else if from == 56
+            then clearCastleSide False
+            else if from == 63
+            then clearCastleSide True
+            else id
+        King -> modTurnSide
+            (\s -> s { sideCanCastle = CanCastle False False })
+            g
+        _ -> g
+    clearCastleSide isKingside = modTurnSide
+        $ modCanCastle
+        $ \(CanCastle k q) ->
+            if isKingside
+            then CanCastle False q
+            else CanCastle k False
+    nothingIfCheck g = if inCheck g then Nothing else Just g
+    specials g = case special of
+        PawnDouble -> Just $ g { gameEnPassant = Just to }
+        EnPassant enPSq -> Just $ clearEnPassant $ (modTurnOtherSide
+            $ modPieces
+            $ modPiece Pawn (`clearBit` enPSq)) g
+        Promotion promote -> Just $ clearEnPassant $ (modTurnSide
+            $ modPieces
+            $ modPiece promote (`setBit` to)
+            . modPiece Pawn (`clearBit` to)) g
+        Castle isKingside ->
+            ((<$> castleChecks isKingside g)
+                . (clearEnPassant .))
+            $ modTurnSide
+            $ modPieces
+            $ if isKingside
+            then
+                modPiece
+                    Rook
+                    ((`setBit` byTurn 5 61) . (`clearBit` byTurn 7 63))
+                . \ps -> ps { kings = byTurn 64 4611686018427387904 }
+            else
+                modPiece
+                    Rook
+                    ((`setBit` byTurn 3 59) . (`clearBit` byTurn 0 56))
+                . \ps -> ps { kings = byTurn 4 288230376151711744}
+        Normal -> Just $ clearEnPassant g
+    byTurn w b = case gameTurn game of
+        White -> w
+        Black -> b
+    clearEnPassant g = g { gameEnPassant = Nothing }
+    -- assumes king is moved, rook is not
+    castleChecks True  = castleChecksKing
+    castleChecks False = castleChecksQueen
+    castleChecksKing g
+        | squareAttacked 5 kingless = Nothing
+        | otherwise                 = Just g
+      where
+        kingless = (modTurnSide $ modPieces $ modPiece King (`clearBit` 6)) g
+    castleChecksQueen g
+        | squareAttacked 3 kingless = Nothing
+        | otherwise                 = Just g
+      where
+        kingless = (modTurnSide $ modPieces $ modPiece King (`clearBit` 2)) g

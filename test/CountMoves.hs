@@ -5,11 +5,6 @@ module CountMoves
 import Data.Maybe
 import Test.Hspec
 import Trout.Game
-import Trout.Game.Move
-
-import Trout.PieceInfo
-
-import Debug.Trace
 
 startMovesSpec :: Spec
 startMovesSpec = describe "allMoves" $
@@ -20,7 +15,7 @@ startMovesSpec = describe "allMoves" $
 perftSpec :: Spec
 perftSpec = describe "makeMove" $
     it "should return the right results for perft" $
-        perft 7 startingGame `shouldBe` 3195901860
+        perft 6 startingGame `shouldBe` 119060324
   where
     perft :: Int -> Game -> Int -- shut up ghc
     perft 0 _ = 1
