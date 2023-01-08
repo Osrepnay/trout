@@ -5,7 +5,7 @@ module Trout.Game
     , Game (..)
     , gameAsBoard
     , startingGame
-    , turnSide, turnOtherSide
+    , turnSide, turnOppSide
     , allMoves
     , inCheck
     , makeMove
@@ -91,10 +91,16 @@ modTurnSide f game = case gameTurn game of
     White -> game { gameWhite = f (gameWhite game) }
     Black -> game { gameBlack = f (gameBlack game) }
 
-modTurnOtherSide :: (Side -> Side) -> Game -> Game
-modTurnOtherSide f game = case gameTurn game of
+modTurnOppSide :: (Side -> Side) -> Game -> Game
+modTurnOppSide f game = case gameTurn game of
     Black -> game { gameWhite = f (gameWhite game) }
     White -> game { gameBlack = f (gameBlack game) }
+
+modTurnPieces :: (Pieces -> Pieces) -> Game -> Game
+modTurnPieces f = modTurnSide (modPieces f)
+
+modTurnOppPieces :: (Pieces -> Pieces) -> Game -> Game
+modTurnOppPieces f = modTurnOppSide (modPieces f)
 
 -- https://tearth.dev/bitboard-viewer/
 startingGame :: Game
@@ -130,19 +136,19 @@ turnSide :: Game -> Side
 turnSide (Game w _ _ White) = w
 turnSide (Game _ b _ Black) = b
 
-turnOtherSide :: Game -> Side
-turnOtherSide (Game w _ _ Black) = w
-turnOtherSide (Game _ b _ White) = b
+turnOppSide :: Game -> Side
+turnOppSide (Game w _ _ Black) = w
+turnOppSide (Game _ b _ White) = b
 
 turnPieces :: Game -> Pieces
 turnPieces = sidePieces . turnSide
 
-turnOtherPieces :: Game -> Pieces
-turnOtherPieces = sidePieces . turnOtherSide
+turnOppPieces :: Game -> Pieces
+turnOppPieces = sidePieces . turnOppSide
 
 gameBlockers :: Game -> Bitboard
-gameBlockers game = piecesAll (sidePieces (turnSide game))
-    .|. piecesAll (sidePieces (turnOtherSide game))
+gameBlockers game = piecesAll (turnPieces game)
+    .|. piecesAll (turnOppPieces game)
 
 allMoves :: Game -> [Move]
 allMoves game = concat
@@ -159,16 +165,16 @@ allMoves game = concat
     -- gets and concats the move for a set of squares (for a piece)
     moveSqs mover piece = concatMap (mover block myBlock) (toSqs (piece (turnPieces game)))
     -- TODO update incrementally
-    block = myBlock .|. piecesAll (sidePieces (turnOtherSide game))
-    myBlock = piecesAll (sidePieces (turnSide game))
+    block = myBlock .|. piecesAll (turnOppPieces game)
+    myBlock = piecesAll (turnPieces game)
 
 squareAttacked :: Int -> Game -> Bool
-squareAttacked sq game = pawnAttackTable ! sq .&. pawns thisOtherPieces /= 0
-    || knightTable ! sq .&. knights thisOtherPieces /= 0
-    || bishoped .&. bishops thisOtherPieces /= 0
-    || rooked .&. rooks thisOtherPieces /= 0
-    || bishoped .&. queens thisOtherPieces /= 0
-    || rooked .&. queens thisOtherPieces /= 0
+squareAttacked sq game = pawnAttackTable ! sq .&. pawns thisOppPieces /= 0
+    || knightTable ! sq .&. knights thisOppPieces /= 0
+    || bishoped .&. bishops thisOppPieces /= 0
+    || rooked .&. rooks thisOppPieces /= 0
+    || bishoped .&. queens thisOppPieces /= 0
+    || rooked .&. queens thisOppPieces /= 0
   where
     bishoped = bishopMovesMagic block sq
     rooked = rookMovesMagic block sq
@@ -176,7 +182,7 @@ squareAttacked sq game = pawnAttackTable ! sq .&. pawns thisOtherPieces /= 0
     pawnAttackTable = case gameTurn game of
         White -> pawnWhiteAttackTable
         Black -> pawnBlackAttackTable
-    thisOtherPieces = turnOtherPieces game
+    thisOppPieces = turnOppPieces game
 
 -- use || instead of .|. with a /= 0 at the end for short circuit
 inCheck :: Game -> Bool
@@ -196,11 +202,9 @@ makeMove game (Move piece special from to) = do
     pure (flipTurn castleCleared)
   where
     -- basic moving
-    doMove p fsq tsq = modTurnSide
-        $ modPieces
-        $ modPiece p ((`setBit` tsq) . (`clearBit` fsq))
-    captureAll sq = modTurnOtherSide
-        $ modPieces
+    doMove p fsq tsq = modTurnPieces
+        (modPiece p ((`setBit` tsq) . (`clearBit` fsq)))
+    captureAll sq = modTurnOppPieces
         $ modPiece Pawn clearTarget
         . modPiece Knight clearTarget
         . modPiece Bishop clearTarget
@@ -232,23 +236,21 @@ makeMove game (Move piece special from to) = do
             else CanCastle k False
     nothingIfCheck g = if inCheck g then Nothing else Just g
     specials g = case special of
-        PawnDouble -> Just $ g { gameEnPassant = Just to }
+        PawnDouble -> Just (g { gameEnPassant = Just to })
         EnPassant enPSq -> Just
             $ clearEnPassant
-            $ (modTurnOtherSide
+            $ (modTurnOppSide
                 $ modPieces
                 $ modPiece Pawn (`clearBit` enPSq)) g
         Promotion promote -> Just
             $ clearEnPassant
-            $ (modTurnSide
-                $ modPieces
-                $ modPiece promote (`setBit` to)
-                . modPiece Pawn (`clearBit` to)) g
+            $ modTurnPieces
+                (modPiece promote (`setBit` to)
+                    . modPiece Pawn (`clearBit` to)) g
         CastleKing ->
             ((<$> castleChecksKing g)
                 . (clearEnPassant .))
-            $ modTurnSide
-            $ modPieces
+            $ modTurnPieces
             $ modPiece
                 Rook
                 ((`setBit` byTurn 5 61) . (`clearBit` byTurn 7 63))
@@ -256,13 +258,12 @@ makeMove game (Move piece special from to) = do
         CastleQueen ->
             ((<$> castleChecksQueen g)
                 . (clearEnPassant .))
-            $ modTurnSide
-            $ modPieces
+            $ modTurnPieces
             $ modPiece
                 Rook
                 ((`setBit` byTurn 3 59) . (`clearBit` byTurn 0 56))
             . \ps -> ps { kings = byTurn 4 288230376151711744}
-        Normal -> Just $ clearEnPassant g
+        Normal -> Just (clearEnPassant g)
     byTurn w b = case gameTurn game of
         White -> w
         Black -> b

@@ -60,11 +60,13 @@ pawnMoves enPSq White block myBlock sq = concat
         ps -> ps
     specialMaybeEmpty = [Promotion p | rank7 .&. bit sq /= 0, p <- promotions]
     frontOpen = unblocked block (sq + 8)
-    doubleFrontOpen = frontOpen && (rank2 .&. bit sq /= 0) && unblocked block (sq + 16)
-    captureLeft  = blocked (block .&. complement myBlock) (sq + 7) &&
-        fileA .&. bit sq == 0
-    captureRight = blocked (block .&. complement myBlock) (sq + 9) &&
-        fileH .&. bit sq == 0
+    doubleFrontOpen = frontOpen
+        && (rank2 .&. bit sq /= 0)
+        && unblocked block (sq + 16)
+    captureLeft  = blocked (block .&. complement myBlock) (sq + 7)
+        && fileA .&. bit sq == 0
+    captureRight = blocked (block .&. complement myBlock) (sq + 9)
+        && fileH .&. bit sq == 0
 pawnMoves enPSq Black block myBlock sq = concat
     [ [Move Pawn p sq (sq - 8) | frontOpen,    p <- promotes]
     , [Move Pawn p sq (sq - 9) | captureLeft,  p <- promotes]
@@ -81,11 +83,13 @@ pawnMoves enPSq Black block myBlock sq = concat
         ps -> ps
     specialMaybeEmpty = [Promotion p | rank2 .&. bit sq /= 0, p <- promotions]
     frontOpen = unblocked block (sq - 8)
-    doubleFrontOpen = frontOpen && (rank7 .&. bit sq /= 0) && unblocked block (sq - 16)
-    captureLeft  = blocked (block .&. complement myBlock) (sq - 9) &&
-        fileA .&. bit sq == 0
-    captureRight = blocked (block .&. complement myBlock) (sq - 7) &&
-        fileH .&. bit sq == 0
+    doubleFrontOpen = frontOpen
+        && (rank7 .&. bit sq /= 0)
+        && unblocked block (sq - 16)
+    captureLeft  = blocked (block .&. complement myBlock) (sq - 9)
+        && fileA .&. bit sq == 0
+    captureRight = blocked (block .&. complement myBlock) (sq - 7)
+        && fileH .&. bit sq == 0
 
 knightTable :: Vector Bitboard
 knightTable = tableGen
@@ -109,7 +113,9 @@ rookMoves block myBlock sq = Move Rook Normal sq
 
 queenMoves :: Bitboard -> Bitboard -> Int -> [Move]
 queenMoves block myBlock sq = Move Queen Normal sq
-    <$> toSqs ((bishopMovesMagic block sq .|. rookMovesMagic block sq) .&. complement myBlock)
+    <$> toSqs
+        ((bishopMovesMagic block sq .|. rookMovesMagic block sq)
+            .&. complement myBlock)
 
 kingTable :: Vector Bitboard
 kingTable = tableGen

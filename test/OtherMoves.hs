@@ -64,9 +64,9 @@ pawnSpec = describe "pawnMoves" $ do
 kingCastleSpec :: Spec
 kingCastleSpec = context "when castling is available" $ do
     it "returns castling move for kingside" $
-        kingMoves True True 0 0 4 `shouldContain` [Move King (Castle True) 4 6]
+        kingMoves True True 0 0 4 `shouldContain` [Move King CastleKing 4 6]
     it "returns castling move for queenside" $
-        kingMoves True True 0 0 60 `shouldContain` [Move King (Castle False) 60 58]
+        kingMoves True True 0 0 60 `shouldContain` [Move King CastleQueen 60 58]
     it "doesn't return castling when blocked" $
         kingMoves True False (bit 6) 0 4 `shouldSatisfy` ((== 5) . length)
 
