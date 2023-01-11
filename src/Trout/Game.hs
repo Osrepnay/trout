@@ -20,13 +20,13 @@ import Trout.Game.MoveGen.Sliding.Magic
 import Trout.PieceInfo
 
 data Pieces = Pieces
-    { pawns     :: Bitboard
-    , knights   :: Bitboard
-    , bishops   :: Bitboard
-    , rooks     :: Bitboard
-    , queens    :: Bitboard
-    , kings     :: Bitboard
-    , piecesAll :: Bitboard
+    { pawns     :: !Bitboard
+    , knights   :: !Bitboard
+    , bishops   :: !Bitboard
+    , rooks     :: !Bitboard
+    , queens    :: !Bitboard
+    , kings     :: !Bitboard
+    , piecesAll :: !Bitboard
     } deriving (Eq, Show)
 
 modPiece :: Piece -> (Bitboard -> Bitboard) -> Pieces -> Pieces
@@ -39,26 +39,28 @@ modPiece p f pieces = modAll $ case p of
     King   -> pieces { kings   = f (kings   pieces) }
   where
     modAll ps = ps { piecesAll = f (piecesAll ps) }
+{-# INLINE modPiece #-}
 
 data CanCastle = CanCastle
-    { canCastleKing  :: Bool
-    , canCastleQueen :: Bool
+    { canCastleKing  :: !Bool
+    , canCastleQueen :: !Bool
     } deriving (Eq, Show)
 
 data Side = Side
-    { sidePieces    :: Pieces
+    { sidePieces    :: {-# UNPACK #-} !Pieces
     , sideCanCastle :: CanCastle
     } deriving (Eq, Show)
 
 modPieces :: (Pieces -> Pieces) -> Side -> Side
 modPieces f side = side { sidePieces = f (sidePieces side) }
+{-# INLINE modPieces #-}
 
 modCanCastle :: (CanCastle -> CanCastle) -> Side -> Side
 modCanCastle f side = side { sideCanCastle = f (sideCanCastle side) }
 
 data Game = Game
-    { gameWhite     :: Side
-    , gameBlack     :: Side
+    { gameWhite     :: {-# UNPACK #-} !Side
+    , gameBlack     :: {-# UNPACK #-} !Side
     , gameEnPassant :: Maybe Int
     , gameTurn      :: Color
     } deriving (Eq, Show)
@@ -90,17 +92,21 @@ modTurnSide :: (Side -> Side) -> Game -> Game
 modTurnSide f game = case gameTurn game of
     White -> game { gameWhite = f (gameWhite game) }
     Black -> game { gameBlack = f (gameBlack game) }
+{-# INLINE modTurnSide #-}
 
-modTurnOppSide :: (Side -> Side) -> Game -> Game
-modTurnOppSide f game = case gameTurn game of
+modOppSide :: (Side -> Side) -> Game -> Game
+modOppSide f game = case gameTurn game of
     Black -> game { gameWhite = f (gameWhite game) }
     White -> game { gameBlack = f (gameBlack game) }
+{-# INLINE modOppSide #-}
 
 modTurnPieces :: (Pieces -> Pieces) -> Game -> Game
 modTurnPieces f = modTurnSide (modPieces f)
+{-# INLINE modTurnPieces #-}
 
-modTurnOppPieces :: (Pieces -> Pieces) -> Game -> Game
-modTurnOppPieces f = modTurnOppSide (modPieces f)
+modOppPieces :: (Pieces -> Pieces) -> Game -> Game
+modOppPieces f = modOppSide (modPieces f)
+{-# INLINE modOppPieces #-}
 
 -- https://tearth.dev/bitboard-viewer/
 startingGame :: Game
@@ -204,7 +210,7 @@ makeMove game (Move piece special from to) = do
     -- basic moving
     doMove p fsq tsq = modTurnPieces
         (modPiece p ((`setBit` tsq) . (`clearBit` fsq)))
-    captureAll sq = modTurnOppPieces
+    captureAll sq = modOppPieces
         $ modPiece Pawn clearTarget
         . modPiece Knight clearTarget
         . modPiece Bishop clearTarget
@@ -239,7 +245,7 @@ makeMove game (Move piece special from to) = do
         PawnDouble -> Just (g { gameEnPassant = Just to })
         EnPassant enPSq -> Just
             $ clearEnPassant
-            $ (modTurnOppSide
+            $ (modOppSide
                 $ modPieces
                 $ modPiece Pawn (`clearBit` enPSq)) g
         Promotion promote -> Just

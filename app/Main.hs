@@ -20,7 +20,7 @@ main = do
     mapM_
         (\(m, g) -> putStrLn (showMove m ++ " " ++ show (perft (depth - 1) g)))
         fenGameWithMoves -}
-    let (Just afterMoves) = foldl
+    {- let (Just afterMoves) = foldl
             (\b a -> b >>= flip makeMove a)
             (Just startingGame)
             [ Move Knight Normal (parseCoord "g1") (parseCoord "h3")
@@ -35,7 +35,9 @@ main = do
             (allMoves afterMoves)
     mapM_
         (\(m, g) -> putStrLn (showMove m ++ ": " ++ show (perft 1 g)))
-        withMoves
+        withMoves -}
+    -- print $ perft 5 startingGame
+    print $ allMoves startingGame
 
 showMove :: Move -> String
 showMove (Move _ special from to) = case special of

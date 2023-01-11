@@ -1,11 +1,12 @@
-import Control.DeepSeq
 import Criterion.Main
+import Data.Maybe
 import Trout.Game
-import Trout.Game.MoveGen
-
-instance NFData Move where
-  -- too excessive? idk
-  rnf (Move p s f t) = p `seq` s `seq` f `seq` t `seq` ()
 
 main :: IO ()
-main = defaultMain [bench "starting position move generation" $ nf allMoves startingGame]
+main = defaultMain [bench "perft(5)" $ whnf (perft 5) startingGame]
+
+perft :: Int -> Game -> Int -- shut up ghc
+perft 0 _ = 1
+perft depth game = sum
+    $ perft (depth - 1)
+    <$> mapMaybe (makeMove game) (allMoves game)
