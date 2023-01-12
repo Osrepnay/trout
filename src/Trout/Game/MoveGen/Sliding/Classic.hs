@@ -5,8 +5,8 @@ module Trout.Game.MoveGen.Sliding.Classic
     , rookMovesClassic
     ) where
 
-import           Data.Vector    (Vector, (!))
-import qualified Data.Vector    as V
+import           Data.Vector.Unboxed (Vector, (!))
+import qualified Data.Vector.Unboxed as V
 import           Trout.Bitboard
 
 xyInBoard :: (Int, Int) -> Bool

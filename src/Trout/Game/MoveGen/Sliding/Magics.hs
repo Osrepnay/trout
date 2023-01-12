@@ -6,8 +6,8 @@ module Trout.Game.MoveGen.Sliding.Magics
     , genKey
     ) where
 
-import           Data.Vector    (Vector)
-import qualified Data.Vector    as V
+import           Data.Vector.Unboxed (Vector)
+import qualified Data.Vector.Unboxed as V
 import           Data.Word
 import           Trout.Bitboard
 
