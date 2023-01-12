@@ -5,15 +5,15 @@ module Trout.Game.MoveGen.Sliding.Magic
 
 import           Data.Foldable
 import qualified Data.Vector                        as V
-import           Data.Vector.Unboxed                (Vector, (!), (//))
-import qualified Data.Vector.Unboxed                as UV
+import           Data.Vector.Primitive              (Vector, (!), (//))
+import qualified Data.Vector.Primitive              as PV
 import           Data.Word
 import           Trout.Bitboard
 import           Trout.Game.MoveGen.Sliding.Classic
 import           Trout.Game.MoveGen.Sliding.Magics
 
 bishopMasks :: Vector Bitboard
-bishopMasks = UV.generate
+bishopMasks = PV.generate
     64
     ((complement (rank1 .|. rank8 .|. fileA .|. fileH) .&.)
         . foldl' (.|.) 0
@@ -21,7 +21,7 @@ bishopMasks = UV.generate
         . flip (!))
 
 rookMasks :: Vector Bitboard
-rookMasks = UV.generate
+rookMasks = PV.generate
     64
     (foldl' (.|.) 0
         . zipWith (.&.)
@@ -44,14 +44,14 @@ mapToMask mask idx = ((fromIntegral idx .&. 1) !<<. maskLowest)
 
 -- maps all possible blockers to the mask
 allMapped :: Word64 -> Int -> Bitboard -> Vector Bitboard
-allMapped magic bits mask = UV.replicate (bit bits) 0
+allMapped magic bits mask = PV.replicate (bit bits) 0
     // ((\b -> (genKey b magic bits, b)) . mapToMask mask <$> [0..bit bits])
 
 bishopMagicTable :: V.Vector (Vector Bitboard)
 bishopMagicTable = V.generate
     64
     $ \sq -> flip bishopMovesClassic sq
-        `UV.map` allMapped
+        `PV.map` allMapped
             (bishopMagics ! sq)
             (bishopBits ! sq)
             (bishopMasks ! sq)
@@ -60,7 +60,7 @@ rookMagicTable :: V.Vector (Vector Bitboard)
 rookMagicTable = V.generate
     64
     $ \sq -> flip rookMovesClassic sq
-        `UV.map` allMapped
+        `PV.map` allMapped
             (rookMagics ! sq)
             (rookBits ! sq)
             (rookMasks ! sq)
