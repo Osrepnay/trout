@@ -4,9 +4,7 @@ module Trout.Game.MoveGen.Sliding.Magic
     ) where
 
 import           Data.Foldable
-import           Data.IntMap.Strict                 (IntMap)
-import qualified Data.IntMap.Strict                 as I
-import           Data.Vector                        (Vector, (!))
+import           Data.Vector                        (Vector, (!), (//))
 import qualified Data.Vector                        as V
 import           Data.Word
 import           Trout.Bitboard
@@ -42,16 +40,16 @@ mapToMask mask idx = ((fromIntegral idx .&. 1) !<<. maskLowest)
   where maskLowest = countTrailingZeros mask
 
 -- maps all possible blockers to the mask
-allMapped :: Word64 -> Int -> Bitboard -> IntMap Bitboard
-allMapped magic bits mask = I.fromList $
-    (\b -> (genKey b magic bits, b)) . mapToMask mask <$> [0..bit bits]
+allMapped :: Word64 -> Int -> Bitboard -> Vector Bitboard
+allMapped magic bits mask = V.replicate (bit bits) 0
+    // ((\b -> (genKey b magic bits, b)) . mapToMask mask <$> [0..bit bits])
 
-bishopMagicTable :: Vector (IntMap Bitboard)
+bishopMagicTable :: Vector (Vector Bitboard)
 bishopMagicTable = V.zipWith (<$>)
     (flip bishopMovesClassic <$> V.fromList [0..63])
     (V.zipWith3 allMapped bishopMagics bishopBits bishopMasks)
 
-rookMagicTable :: Vector (IntMap Bitboard)
+rookMagicTable :: Vector (Vector Bitboard)
 rookMagicTable = V.zipWith (<$>)
     (flip rookMovesClassic <$> V.fromList [0..63])
     (V.zipWith3 allMapped rookMagics rookBits rookMasks)
@@ -59,11 +57,11 @@ rookMagicTable = V.zipWith (<$>)
 bishopMovesMagic :: Bitboard -> Int -> Bitboard
 bishopMovesMagic block sq = bishopMagicTable
     ! sq
-    I.! genKey masked (bishopMagics ! sq) (bishopBits ! sq)
+    ! genKey masked (bishopMagics ! sq) (bishopBits ! sq)
   where masked = block .&. (bishopMasks ! sq)
 
 rookMovesMagic :: Bitboard -> Int -> Bitboard
 rookMovesMagic block sq = rookMagicTable
     ! sq
-    I.! genKey masked (rookMagics ! sq) (rookBits ! sq)
+    ! genKey masked (rookMagics ! sq) (rookBits ! sq)
   where masked = block .&. (rookMasks ! sq)
