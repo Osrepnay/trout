@@ -44,9 +44,9 @@ showMove (Move _ special from to) = case special of
     Promotion promote -> case promote of
         Knight -> fromToShowed ++ "N"
         Bishop -> fromToShowed ++ "B"
-        Rook -> fromToShowed ++ "R"
-        Queen -> fromToShowed ++ "Q"
-        _ -> error "can't promote there! stupid!!!!!"
+        Rook   -> fromToShowed ++ "R"
+        Queen  -> fromToShowed ++ "Q"
+        _      -> error "can't promote there! stupid!!!!!"
     _ -> fromToShowed
   where
     fromToShowed = unparseCoord from ++ unparseCoord to
@@ -97,7 +97,7 @@ parseFen fen = Game
     color = case fenSections !! 1 of
         "w" -> White
         "b" -> Black
-        _ -> error "unknown color"
+        _   -> error "unknown color"
     whiteCastles = CanCastle
         ('K' `elem` fenSections !! 2)
         ('Q' `elem` fenSections !! 2)
