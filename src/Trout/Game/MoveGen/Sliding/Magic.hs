@@ -4,16 +4,15 @@ module Trout.Game.MoveGen.Sliding.Magic
     ) where
 
 import           Data.Foldable
-import qualified Data.Vector                        as V
 import           Data.Vector.Primitive              (Vector, (!), (//))
-import qualified Data.Vector.Primitive              as PV
+import qualified Data.Vector.Primitive              as V
 import           Data.Word
 import           Trout.Bitboard
 import           Trout.Game.MoveGen.Sliding.Classic
 import           Trout.Game.MoveGen.Sliding.Magics
 
 bishopMasks :: Vector Bitboard
-bishopMasks = PV.generate
+bishopMasks = V.generate
     64
     ((complement (rank1 .|. rank8 .|. fileA .|. fileH) .&.)
         . foldl' (.|.) 0
@@ -21,7 +20,7 @@ bishopMasks = PV.generate
         . flip (!))
 
 rookMasks :: Vector Bitboard
-rookMasks = PV.generate
+rookMasks = V.generate
     64
     (foldl' (.|.) 0
         . zipWith (.&.)
@@ -43,36 +42,34 @@ mapToMask mask idx = ((fromIntegral idx .&. 1) !<<. maskLowest)
   where maskLowest = countTrailingZeros mask
 
 -- maps all possible blockers to the mask
-allMapped :: Word64 -> Int -> Bitboard -> Vector Bitboard
-allMapped magic bits mask = PV.replicate (bit bits) 0
+allMapped :: Word64 -> Int -> Int -> Bitboard -> Vector Bitboard
+allMapped magic bits len mask = V.replicate len 0
     // ((\b -> (genKey b magic bits, b)) . mapToMask mask <$> [0..bit bits])
 
-bishopMagicTable :: V.Vector (Vector Bitboard)
-bishopMagicTable = V.generate
-    64
-    $ \sq -> flip bishopMovesClassic sq
-        `PV.map` allMapped
+bishopMagicTable :: Vector Bitboard
+bishopMagicTable = V.concat
+    $ (\sq -> flip bishopMovesClassic sq
+        `V.map` allMapped
             (bishopMagics ! sq)
             (bishopBits ! sq)
-            (bishopMasks ! sq)
+            1024
+            (bishopMasks ! sq)) <$> [0..63]
 
-rookMagicTable :: V.Vector (Vector Bitboard)
-rookMagicTable = V.generate
-    64
-    $ \sq -> flip rookMovesClassic sq
-        `PV.map` allMapped
+rookMagicTable :: Vector Bitboard
+rookMagicTable = V.concat
+    $ (\sq -> flip rookMovesClassic sq
+        `V.map` allMapped
             (rookMagics ! sq)
             (rookBits ! sq)
-            (rookMasks ! sq)
+            4096
+            (rookMasks ! sq)) <$> [0..63]
 
 bishopMovesMagic :: Bitboard -> Int -> Bitboard
 bishopMovesMagic block sq = bishopMagicTable
-    V.! sq
-    ! genKey masked (bishopMagics ! sq) (bishopBits ! sq)
+    ! (sq * 1024 + genKey masked (bishopMagics ! sq) (bishopBits ! sq))
   where masked = block .&. (bishopMasks ! sq)
 
 rookMovesMagic :: Bitboard -> Int -> Bitboard
 rookMovesMagic block sq = rookMagicTable
-    V.! sq
-    ! genKey masked (rookMagics ! sq) (rookBits ! sq)
+    ! (sq * 4096 + genKey masked (rookMagics ! sq) (rookBits ! sq))
   where masked = block .&. (rookMasks ! sq)
