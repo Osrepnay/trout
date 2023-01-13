@@ -254,34 +254,34 @@ makeMove game (Move piece special from to) = do
                 (modPiece promote (`setBit` to)
                     . modPiece Pawn (`clearBit` to)) g
         CastleKing ->
-            ((<$> castleChecksKing g)
+            ((<$> throughCheckKing g)
                 . (clearEnPassant .))
             $ modTurnPieces
             $ modPiece
                 Rook
                 ((`setBit` byTurn 5 61) . (`clearBit` byTurn 7 63))
-            . \ps -> ps { kings = byTurn 64 4611686018427387904 }
         CastleQueen ->
-            ((<$> castleChecksQueen g)
+            ((<$> throughCheckQueen g)
                 . (clearEnPassant .))
             $ modTurnPieces
             $ modPiece
                 Rook
                 ((`setBit` byTurn 3 59) . (`clearBit` byTurn 0 56))
-            . \ps -> ps { kings = byTurn 4 288230376151711744}
         Normal -> Just (clearEnPassant g)
     byTurn w b = case gameTurn game of
         White -> w
         Black -> b
     clearEnPassant g = g { gameEnPassant = Nothing }
     -- assumes king is moved, rook is not
-    castleChecksKing g
+    throughCheckKing g
         | squareAttacked 5 kingless = Nothing
+        | squareAttacked 4 kingless = Nothing
         | otherwise                 = Just g
       where
         kingless = modTurnSide (modPieces (modPiece King (`clearBit` 6))) g
-    castleChecksQueen g
+    throughCheckQueen g
         | squareAttacked 3 kingless = Nothing
+        | squareAttacked 4 kingless = Nothing
         | otherwise                 = Just g
       where
         kingless = modTurnSide (modPieces (modPiece King (`clearBit` 2))) g
