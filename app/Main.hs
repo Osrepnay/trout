@@ -2,13 +2,10 @@ module Main (main) where
 
 import Data.Char
 import Data.Maybe
-import System.Environment
 import Trout.Bitboard
 import Trout.Game
 import Trout.Game.Move
 import Trout.PieceInfo
-
-import Debug.Trace
 
 main :: IO ()
 main = do
