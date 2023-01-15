@@ -48,7 +48,7 @@ data CanCastle = CanCastle
 
 data Side = Side
     { sidePieces    :: {-# UNPACK #-} !Pieces
-    , sideCanCastle :: CanCastle
+    , sideCanCastle :: !CanCastle
     } deriving (Eq, Show)
 
 modPieces :: (Pieces -> Pieces) -> Side -> Side
@@ -61,8 +61,8 @@ modCanCastle f side = side { sideCanCastle = f (sideCanCastle side) }
 data Game = Game
     { gameWhite     :: {-# UNPACK #-} !Side
     , gameBlack     :: {-# UNPACK #-} !Side
-    , gameEnPassant :: Maybe Int
-    , gameTurn      :: Color
+    , gameEnPassant :: !(Maybe Int)
+    , gameTurn      :: !Color
     } deriving (Eq, Show)
 
 gameAsBoard :: Game -> String
@@ -214,15 +214,15 @@ makeMove game (Move piece special from to) = do
         (modPiece p ((`setBit` tsq) . (`clearBit` fsq)))
     captureAll sq = modOppPieces
         $ \(Pieces p n b r q k a) -> Pieces
-            (clearTarget p)
-            (clearTarget n)
-            (clearTarget b)
-            (clearTarget r)
-            (clearTarget q)
-            (clearTarget k)
-            (clearTarget a)
+            (p .&. clearMask)
+            (n .&. clearMask)
+            (b .&. clearMask)
+            (r .&. clearMask)
+            (q .&. clearMask)
+            (k .&. clearMask)
+            (a .&. clearMask)
       where
-        clearTarget = (`clearBit` sq)
+        clearMask = complement (bit sq)
     clearCastles g = case piece of
         Rook -> g
             & if from == 0
