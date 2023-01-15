@@ -5,26 +5,27 @@ module CountMoves
 import Data.Char
 import Data.Foldable
 import Data.Maybe
-import System.IO
 import Test.Hspec
 import Trout.Bitboard
 import Trout.Game
 import Trout.PieceInfo
 
 startMovesSpec :: Spec
-startMovesSpec = describe "allMoves" $
-    context "at starting position" $
-        it "should return the right amount of moves" $
-            allMoves startingGame `shouldSatisfy` ((== 8 + 8 + 2 + 2) . length)
+startMovesSpec = describe "allMoves"
+    $ context "at starting position"
+    $ it "should return the right amount of moves"
+    $ allMoves startingGame `shouldSatisfy` ((== 8 + 8 + 2 + 2) . length)
 
 perftSpec :: Spec
-perftSpec = describe "makeMove" $
-    xit "should return the right results for perft" $
-        perft 6 startingGame `shouldBe` 119060324
+perftSpec = describe "makeMove"
+    $ xit "should return the right results for perft"
+    $ perft 6 startingGame `shouldBe` 119060324
 
 perft :: Int -> Game -> Int -- shut up ghc
 perft 0 _ = 1
-perft depth game = sum $ perft (depth - 1) <$> mapMaybe (makeMove game) (allMoves game)
+perft depth game = sum
+    $ perft (depth - 1)
+    <$> mapMaybe (makeMove game) (allMoves game)
 
 parseFen :: String -> Game
 parseFen fen = Game
@@ -90,7 +91,7 @@ readDepthEpd filename = do
         game = parseFen (head parts)
         depths = depth <$> tail parts
         depth ('D' : dc : ' ' : p) = (read [dc], read p)
-        depth x = error $ "not a depth " ++ show (tail parts)
+        depth _ = error "not a depth"
         parts = trimSpaces <$> splitOn ';' line
 
 parseCoord :: String -> Int
