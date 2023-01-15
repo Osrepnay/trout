@@ -213,12 +213,14 @@ makeMove game (Move piece special from to) = do
     doMove p fsq tsq = modTurnPieces
         (modPiece p ((`setBit` tsq) . (`clearBit` fsq)))
     captureAll sq = modOppPieces
-        $ modPiece Pawn clearTarget
-        . modPiece Knight clearTarget
-        . modPiece Bishop clearTarget
-        . modPiece Rook clearTarget
-        . modPiece Queen clearTarget
-        . modPiece King clearTarget
+        $ \(Pieces p n b r q k a) -> Pieces
+            (clearTarget p)
+            (clearTarget n)
+            (clearTarget b)
+            (clearTarget r)
+            (clearTarget q)
+            (clearTarget k)
+            (clearTarget a)
       where
         clearTarget = (`clearBit` sq)
     clearCastles g = case piece of
