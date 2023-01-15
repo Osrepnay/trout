@@ -169,7 +169,9 @@ allMoves game = concat
     kingside = canCastleKing $ sideCanCastle $ turnSide game
     queenside = canCastleQueen $ sideCanCastle $ turnSide game
     -- gets and concats the move for a set of squares (for a piece)
-    moveSqs mover piece = concatMap (mover block myBlock) (toSqs (piece (turnPieces game)))
+    moveSqs mover piece = concatMap
+        (mover block myBlock)
+        (toSqs (piece (turnPieces game)))
     -- TODO update incrementally
     block = myBlock .|. piecesAll (turnOppPieces game)
     myBlock = piecesAll (turnPieces game)
