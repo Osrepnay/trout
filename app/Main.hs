@@ -2,24 +2,22 @@ module Main (main) where
 
 import Data.Char
 import Data.Maybe
-import Trout.Bitboard
 import Trout.Game
 import Trout.Game.Move
 import Trout.PieceInfo
 
-wrongGame = Game {gameWhite = Side {sidePieces = Pieces {pawns = 0, knights = 0, bishops = 0, rooks = 0, queens = 0, kings = 562949953421312, piecesAll = 562949953421312}, sideCanCastle = CanCastle {canCastleKing = False, canCastleQueen = False}}, gameBlack = Side {sidePieces = Pieces {pawns = 0, knights = 0, bishops = 0, rooks = 72057594037927936, queens = 0, kings = 1152921504606846976, piecesAll = 1224979098644774912}, sideCanCastle = CanCastle {canCastleKing = False, canCastleQueen = True}}, gameEnPassant = Nothing, gameTurn = White}
 main :: IO ()
 main = do
     let (Just afterMoves) = foldl
             (\b a -> b >>= flip makeMove a)
-            (Just wrongGame)
+            (Just startingGame)
             [
             ]
     let withMoves = mapMaybe
             (\m -> (\g -> (m, g)) <$> makeMove afterMoves m)
             (allMoves afterMoves)
     mapM_
-        (\(m, g) -> putStrLn (showMove m ++ ": " ++ show (perft 1 g)))
+        (\(m, g) -> putStrLn (showMove m ++ ": " ++ show (perft 4 g)))
         withMoves
 
 showMove :: Move -> String

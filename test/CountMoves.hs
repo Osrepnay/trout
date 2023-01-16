@@ -92,7 +92,7 @@ readDepthEpd filename = do
         game = parseFen (head parts)
         depths = depth <$> tail parts
         depth ('D' : dc : ' ' : p) = (read [dc], read p)
-        depth _ = error "not a depth"
+        depth _                    = error "not a depth"
         parts = trimSpaces <$> splitOn ';' line
 
 parseCoord :: String -> Int

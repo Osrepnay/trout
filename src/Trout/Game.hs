@@ -11,7 +11,6 @@ module Trout.Game
     , makeMove
     ) where
 
-import Data.Function
 import Data.Vector.Primitive            ((!))
 import Trout.Bitboard
 import Trout.Game.Move
