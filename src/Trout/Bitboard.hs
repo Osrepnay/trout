@@ -22,6 +22,7 @@ type Bitboard = Word64
 
 fromSqs :: [Int] -> Bitboard
 fromSqs = foldl' setBit 0
+{-# INLINE fromSqs #-}
 
 toSqs :: Bitboard -> [Int]
 toSqs 0 = []
@@ -30,32 +31,44 @@ toSqs b = trailing : toSqs (clearBit b trailing)
 
 xyToSq :: Int -> Int -> Int
 xyToSq x y = y * 8 + x
+{-# INLINE xyToSq #-}
 
 inBoard :: Int -> Bool
 inBoard sq = 0 <= sq && sq < 64
+{-# INLINE inBoard #-}
 
 blocked :: Bitboard -> Int -> Bool
 blocked block sq = inBoard sq && testBit block sq
+{-# INLINE blocked #-}
 
 unblocked :: Bitboard -> Int -> Bool
 unblocked block sq = inBoard sq && not (testBit block sq)
+{-# INLINE unblocked #-}
 
 #if !MIN_VERSION_base(4, 17, 0)
 -- same code as in new base
 (!>>.) :: (Bits a) => a -> Int -> a
 (!>>.) = unsafeShiftR
 infixl 8 !>>.
+{-# INLINE (!>>.) #-}
 
 (!<<.) :: (Bits a) => a -> Int -> a
 (!<<.) = unsafeShiftL
 infixl 8 !<<.
+{-# INLINE (!<<.) #-}
 #endif
 
 showBitboard :: Bitboard -> String
-showBitboard bb = init $ concat [[
-    if testBit bb (r * 8 + c)
-       then '#'
-       else '*' | c <- [0..7]] ++ "\n" | r <- [7, 6..0]]
+showBitboard bb = init $ concat
+    [
+        [
+            if testBit bb (r * 8 + c)
+            then '#'
+            else '*'
+        | c <- [0..7]
+        ] ++ "\n"
+    | r <- [7, 6..0]
+    ]
 
 rank1 :: Bitboard
 rank2 :: Bitboard

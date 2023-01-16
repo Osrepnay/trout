@@ -10,6 +10,7 @@ import Trout.Bitboard
 import Trout.Game
 import Trout.PieceInfo
 
+
 startMovesSpec :: Spec
 startMovesSpec = describe "allMoves"
     $ context "at starting position"
@@ -132,4 +133,4 @@ moveCounterSpec :: Spec
 moveCounterSpec = do
     startMovesSpec
     perftSpec
-    epdSpec
+    parallel epdSpec

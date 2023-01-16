@@ -10,8 +10,8 @@ module Trout.Game.MoveGen
     ) where
 
 import           Data.Maybe
-import           Data.Vector                      (Vector, (!))
-import qualified Data.Vector                      as V
+import           Data.Vector.Primitive            (Vector, (!))
+import qualified Data.Vector.Primitive            as V
 import           Trout.Bitboard
 import           Trout.Game.Move
 import           Trout.Game.MoveGen.Sliding.Magic
@@ -34,6 +34,7 @@ tableGen ds = V.fromList
 
 -- only used for check detection rn
 -- might use in actual pawnmoves, need perft speed test first
+-- dont use for now it's slowwer
 pawnWhiteAttackTable :: Vector Bitboard
 pawnWhiteAttackTable = tableGen [(-1, 1), (1, 1)]
 
