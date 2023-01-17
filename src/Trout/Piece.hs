@@ -1,4 +1,4 @@
-module Trout.PieceInfo
+module Trout.Piece
     ( Color (..)
     , Piece (..)
     ) where

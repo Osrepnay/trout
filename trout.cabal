@@ -32,7 +32,7 @@ library
       Trout.Game.MoveGen.Sliding.Classic
       Trout.Game.MoveGen.Sliding.Magic
       Trout.Game.MoveGen.Sliding.Magics
-      Trout.PieceInfo
+      Trout.Piece
       Trout.Search
       Trout.Search.Worthiness
   other-modules:

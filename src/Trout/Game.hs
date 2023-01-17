@@ -19,7 +19,7 @@ import Trout.Bitboard
 import Trout.Game.Move
 import Trout.Game.MoveGen
 import Trout.Game.MoveGen.Sliding.Magic
-import Trout.PieceInfo
+import Trout.Piece
 
 data Pieces = Pieces
     { pawns     :: !Bitboard

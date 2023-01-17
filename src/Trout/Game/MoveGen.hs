@@ -15,7 +15,7 @@ import qualified Data.Vector.Primitive            as V
 import           Trout.Bitboard
 import           Trout.Game.Move
 import           Trout.Game.MoveGen.Sliding.Magic
-import           Trout.PieceInfo
+import           Trout.Piece
 
 tableGen :: [(Int, Int)] -> Vector Bitboard
 tableGen ds = V.fromList

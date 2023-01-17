@@ -7,7 +7,7 @@ import Data.Maybe
 import Trout.Bitboard
 import Trout.Game
 import Trout.Game.Move
-import Trout.PieceInfo
+import Trout.Piece
 import Trout.Search.Worthiness
 
 -- TODO transposition tables, pv, etc.
