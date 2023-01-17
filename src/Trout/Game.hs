@@ -3,6 +3,7 @@ module Trout.Game
     , CanCastle (..)
     , Side (..)
     , Game (..)
+    , fromFen
     , gameAsBoard
     , startingGame
     , turnSide, turnOppSide
@@ -11,6 +12,8 @@ module Trout.Game
     , makeMove
     ) where
 
+import Data.Char
+import Data.List.Split
 import Data.Vector.Primitive            ((!))
 import Trout.Bitboard
 import Trout.Game.Move
@@ -140,6 +143,61 @@ startingGame = Game
         (CanCastle True True))
     Nothing
     White
+
+fromFen :: String -> Game
+fromFen fen = Game
+    { gameWhite = Side
+        { sidePieces = Pieces
+            { pawns = bbBy (== 'P')
+            , knights = bbBy (== 'N')
+            , bishops = bbBy (== 'B')
+            , rooks = bbBy (== 'R')
+            , queens = bbBy (== 'Q')
+            , kings = bbBy (== 'K')
+            , piecesAll = bbBy isUpper
+            }
+        , sideCanCastle = whiteCastles
+        }
+    , gameBlack = Side
+        { sidePieces = Pieces
+            { pawns = bbBy (== 'p')
+            , knights = bbBy (== 'n')
+            , bishops = bbBy (== 'b')
+            , rooks = bbBy (== 'r')
+            , queens = bbBy (== 'q')
+            , kings = bbBy (== 'k')
+            , piecesAll = bbBy isLower
+            }
+        , sideCanCastle = blackCastles
+        }
+    , gameEnPassant = enPassant
+    , gameTurn = color
+    }
+  where
+    bbBy f = fromSqs $ fst <$> filter (f . snd) flatBoard
+    fenSections = words fen
+    flatBoard = zip [0..]
+        $ concat
+        $ reverse
+        $ (>>= (\c -> if isDigit c then replicate (read [c]) ' ' else [c]))
+        <$> splitOn "/" (head fenSections)
+    color = case fenSections !! 1 of
+        "w" -> White
+        "b" -> Black
+        _   -> error "unknown color"
+    whiteCastles = CanCastle
+        ('K' `elem` fenSections !! 2)
+        ('Q' `elem` fenSections !! 2)
+    blackCastles = CanCastle
+        ('k' `elem` fenSections !! 2)
+        ('q' `elem` fenSections !! 2)
+    enPassant
+        | fenSections !! 3 == "-" = Nothing
+        | otherwise               = Just (parseCoord (fenSections !! 3))
+    parseCoord coordStr = file + row * 8
+      where
+        file = ord (head coordStr) - ord 'a'
+        row = ord (coordStr !! 1) - ord '0' - 1
 
 flipTurn :: Game -> Game
 flipTurn (Game w b enP White) = Game w b enP Black

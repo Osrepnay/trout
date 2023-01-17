@@ -2,14 +2,11 @@ module CountMoves
     ( moveCounterSpec
     ) where
 
-import Data.Char
 import Data.Foldable
+import Data.List.Split
 import Data.Maybe
 import Test.Hspec
-import Trout.Bitboard
 import Trout.Game
-import Trout.PieceInfo
-
 
 startMovesSpec :: Spec
 startMovesSpec = describe "allMoves"
@@ -28,57 +25,6 @@ perft depth game = sum
     $ perft (depth - 1)
     <$> mapMaybe (makeMove game) (allMoves game)
 
-parseFen :: String -> Game
-parseFen fen = Game
-    { gameWhite = Side
-        { sidePieces = Pieces
-            { pawns = bbBy (== 'P')
-            , knights = bbBy (== 'N')
-            , bishops = bbBy (== 'B')
-            , rooks = bbBy (== 'R')
-            , queens = bbBy (== 'Q')
-            , kings = bbBy (== 'K')
-            , piecesAll = bbBy isUpper
-            }
-        , sideCanCastle = whiteCastles
-        }
-    , gameBlack = Side
-        { sidePieces = Pieces
-            { pawns = bbBy (== 'p')
-            , knights = bbBy (== 'n')
-            , bishops = bbBy (== 'b')
-            , rooks = bbBy (== 'r')
-            , queens = bbBy (== 'q')
-            , kings = bbBy (== 'k')
-            , piecesAll = bbBy isLower
-            }
-        , sideCanCastle = blackCastles
-        }
-    , gameEnPassant = enPassant
-    , gameTurn = color
-    }
-  where
-    bbBy f = fromSqs $ fst <$> filter (f . snd) flatBoard
-    fenSections = words fen
-    flatBoard = zip [0..]
-        $ concat
-        $ reverse
-        $ (>>= (\c -> if isDigit c then replicate (read [c]) ' ' else [c]))
-        <$> splitOn '/' (head fenSections)
-    color = case fenSections !! 1 of
-        "w" -> White
-        "b" -> Black
-        _   -> error "unknown color"
-    whiteCastles = CanCastle
-        ('K' `elem` fenSections !! 2)
-        ('Q' `elem` fenSections !! 2)
-    blackCastles = CanCastle
-        ('k' `elem` fenSections !! 2)
-        ('q' `elem` fenSections !! 2)
-    enPassant
-        | fenSections !! 3 == "-" = Nothing
-        | otherwise               = Just (parseCoord (fenSections !! 3))
-
 readDepthEpd :: String -> IO [(Game, [(Int, Int)])]
 readDepthEpd filename = do
     file <- readFile filename
@@ -89,26 +35,11 @@ readDepthEpd filename = do
     trimSpaces = reverse . dropWhile (== ' ') . reverse . dropWhile (== ' ')
     parseLine line = (game, depths)
       where
-        game = parseFen (head parts)
+        game = fromFen (head parts)
         depths = depth <$> tail parts
         depth ('D' : dc : ' ' : p) = (read [dc], read p)
         depth _                    = error "not a depth"
-        parts = trimSpaces <$> splitOn ';' line
-
-parseCoord :: String -> Int
-parseCoord coordStr = file + row * 8
-  where
-    file = ord (head coordStr) - ord 'a'
-    row = ord (coordStr !! 1) - ord '0' - 1
-
-splitOn :: Char -> String -> [String]
-splitOn _ [] = [""]
-splitOn on splitee = go "" splitee
-  where
-    go thisSection [] = [reverse thisSection]
-    go thisSection (c : s)
-        | c == on   = reverse thisSection : go [] s
-        | otherwise = go (c : thisSection) s
+        parts = trimSpaces <$> splitOn ";" line
 
 epdSpec :: Spec
 epdSpec = describe "movegen"
