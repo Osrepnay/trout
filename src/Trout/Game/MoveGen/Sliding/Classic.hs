@@ -8,6 +8,15 @@ module Trout.Game.MoveGen.Sliding.Classic
 import           Data.Vector.Primitive (Vector, (!))
 import qualified Data.Vector.Primitive as V
 import           Trout.Bitboard
+    ( Bitboard
+    , complement
+    , countLeadingZeros
+    , countTrailingZeros
+    , fromSqs
+    , xyToSq
+    , (.&.)
+    , (.|.)
+    )
 
 xyInBoard :: (Int, Int) -> Bool
 xyInBoard (x, y) = 0 <= x && 0 <= y && x < 8 && y < 8

@@ -3,7 +3,7 @@ module Trout.Game.Move
     , Move(..)
     ) where
 
-import Trout.Piece
+import Trout.Piece (Piece)
 
 -- moves that dont fit normal piece things
 data SpecialMove

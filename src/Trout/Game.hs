@@ -12,12 +12,38 @@ module Trout.Game
     , makeMove
     ) where
 
-import Data.Char
-import Data.List.Split
+import Data.Char                        (isDigit, isLower, isUpper, ord)
+import Data.List.Split                  (splitOn)
 import Data.Vector.Primitive            ((!))
 import Trout.Bitboard
-import Trout.Game.Move
+    ( Bitboard
+    , bit
+    , blocked
+    , clearBit
+    , complement
+    , countTrailingZeros
+    , fromSqs
+    , setBit
+    , toSqs
+    , xyToSq
+    , zeroBits
+    , (.&.)
+    , (.|.)
+    )
 import Trout.Game.MoveGen
+    ( Move (..)
+    , SpecialMove (..)
+    , bishopMoves
+    , kingMoves
+    , kingTable
+    , knightMoves
+    , knightTable
+    , pawnBlackAttackTable
+    , pawnMoves
+    , pawnWhiteAttackTable
+    , queenMoves
+    , rookMoves
+    )
 import Trout.Game.MoveGen.Sliding.Magic
 import Trout.Piece
 

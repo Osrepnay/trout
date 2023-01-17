@@ -9,13 +9,33 @@ module Trout.Game.MoveGen
     , Move (..)
     ) where
 
-import           Data.Maybe
+import           Data.Maybe                       (maybeToList)
 import           Data.Vector.Primitive            (Vector, (!))
 import qualified Data.Vector.Primitive            as V
 import           Trout.Bitboard
-import           Trout.Game.Move
+    ( Bitboard
+    , bit
+    , blocked
+    , complement
+    , fileA
+    , fileH
+    , fromSqs
+    , rank2
+    , rank4
+    , rank5
+    , rank7
+    , toSqs
+    , unblocked
+    , xyToSq
+    , (.&.)
+    , (.|.)
+    )
+import           Trout.Game.Move                  (Move (..), SpecialMove (..))
 import           Trout.Game.MoveGen.Sliding.Magic
-import           Trout.Piece
+    ( bishopMovesMagic
+    , rookMovesMagic
+    )
+import           Trout.Piece                      (Color (..), Piece (..))
 
 tableGen :: [(Int, Int)] -> Vector Bitboard
 tableGen ds = V.fromList

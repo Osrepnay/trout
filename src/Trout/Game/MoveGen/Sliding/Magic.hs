@@ -3,13 +3,38 @@ module Trout.Game.MoveGen.Sliding.Magic
     , rookMovesMagic
     ) where
 
-import           Data.Foldable
+import           Data.Foldable                      (foldl')
 import           Data.Vector.Primitive              (Vector, (!), (//))
 import qualified Data.Vector.Primitive              as V
-import           Data.Word
+import           Data.Word                          (Word64)
 import           Trout.Bitboard
+    ( Bitboard
+    , bit
+    , clearBit
+    , complement
+    , countTrailingZeros
+    , fileA
+    , fileH
+    , rank1
+    , rank8
+    , (!<<.)
+    , (!>>.)
+    , (.&.)
+    , (.|.)
+    )
 import           Trout.Game.MoveGen.Sliding.Classic
+    ( bishopMovesClassic
+    , bishopRays
+    , rookMovesClassic
+    , rookRays
+    )
 import           Trout.Game.MoveGen.Sliding.Magics
+    ( bishopBits
+    , bishopMagics
+    , genKey
+    , rookBits
+    , rookMagics
+    )
 
 bishopMasks :: Vector Bitboard
 bishopMasks = V.generate

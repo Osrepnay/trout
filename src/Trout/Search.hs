@@ -1,14 +1,30 @@
 module Trout.Search (SearchState (..), bestMove, searchMini, searchMaxi) where
 
-import Control.Monad.Trans.State.Strict
-import Data.Function
-import Data.Foldable
-import Data.Maybe
-import Trout.Bitboard
+import Control.Monad.Trans.State.Strict (State, evalState)
+import Data.Foldable                    (maximumBy, minimumBy)
+import Data.Function                    (on)
+import Data.Maybe                       (mapMaybe)
+import Trout.Bitboard                   (popCount)
 import Trout.Game
-import Trout.Game.Move
-import Trout.Piece
+    ( Game (..)
+    , Pieces (..)
+    , Side (..)
+    , allMoves
+    , inCheck
+    , makeMove
+    )
+import Trout.Game.Move                  (Move (..), SpecialMove (..))
+import Trout.Piece                      (Color (..), Piece (..))
 import Trout.Search.Worthiness
+    ( bishopWorth
+    , blackWonWorth
+    , drawWorth
+    , knightWorth
+    , pawnWorth
+    , queenWorth
+    , rookWorth
+    , whiteWonWorth
+    )
 
 -- TODO transposition tables, pv, etc.
 data SearchState = SearchState deriving (Eq, Show)
@@ -23,7 +39,7 @@ bestMove White depth game = go (beta, Move Pawn Normal 0 0) (allMoves game)
     go best [] = best
     go best (m : ms) =
         case moved of
-            Just g -> go (maximumBy (compare `on` fst) [best, (score g, m)]) ms
+            Just g  -> go (maximumBy (compare `on` fst) [best, (score g, m)]) ms
             Nothing -> go best ms
       where
         score g = evalState
@@ -37,7 +53,7 @@ bestMove Black depth game = go (alpha, Move Pawn Normal 0 0) (allMoves game)
     go best [] = best
     go best (m : ms) =
         case moved of
-            Just g -> go (minimumBy (compare `on` fst) [best, (score g, m)]) ms
+            Just g  -> go (minimumBy (compare `on` fst) [best, (score g, m)]) ms
             Nothing -> go best ms
       where
         score g = evalState

@@ -8,8 +8,8 @@ module Trout.Game.MoveGen.Sliding.Magics
 
 import           Data.Vector.Primitive (Vector)
 import qualified Data.Vector.Primitive as V
-import           Data.Word
-import           Trout.Bitboard
+import           Data.Word             (Word64)
+import           Trout.Bitboard        (Bitboard, (!>>.))
 
 bishopMagics :: Vector Word64
 bishopMagics = V.fromList
