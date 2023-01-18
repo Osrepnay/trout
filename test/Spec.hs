@@ -1,4 +1,4 @@
-import CountMoves
+import EpdPositions
 import MagicMoves
 import OtherMoves
 import Test.Hspec
@@ -9,4 +9,4 @@ main = hspec $ do
     rookMagicsSpec
     pawnSpec
     kingSpec
-    moveCounterSpec
+    epdSpec

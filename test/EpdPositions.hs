@@ -1,5 +1,5 @@
-module CountMoves
-    ( moveCounterSpec
+module EpdPositions
+    ( epdSpec
     ) where
 
 import Data.Foldable
@@ -8,18 +8,7 @@ import Data.Maybe
 import Test.Hspec
 import Trout.Game
 
-startMovesSpec :: Spec
-startMovesSpec = describe "allMoves"
-    $ context "at starting position"
-    $ it "should return the right amount of moves"
-    $ allMoves startingGame `shouldSatisfy` ((== 8 + 8 + 2 + 2) . length)
-
-perftSpec :: Spec
-perftSpec = describe "makeMove"
-    $ xit "should return the right results for perft"
-    $ perft 6 startingGame `shouldBe` 119060324
-
-perft :: Int -> Game -> Int -- shut up ghc
+perft :: Int -> Game -> Int
 perft 0 _ = 1
 perft depth game = sum
     $ perft (depth - 1)
@@ -42,7 +31,8 @@ readDepthEpd filename = do
         parts = trimSpaces <$> splitOn ";" line
 
 epdSpec :: Spec
-epdSpec = describe "movegen"
+epdSpec = parallel
+    $ describe "movegen"
     $ context "for epd positions"
     $ do
         let epdFilename = "test/epd/hartmann.epd"
@@ -59,9 +49,3 @@ epdSpec = describe "movegen"
     perftDepths g ds = flip perft g <$> depths `shouldBe` correct
       where
         (depths, correct) = unzip ds
-
-moveCounterSpec :: Spec
-moveCounterSpec = do
-    startMovesSpec
-    perftSpec
-    parallel epdSpec
