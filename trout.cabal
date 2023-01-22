@@ -35,6 +35,7 @@ library
       Trout.Piece
       Trout.Search
       Trout.Search.Worthiness
+      Trout.Uci
   other-modules:
       Paths_trout
   hs-source-dirs:
@@ -45,6 +46,7 @@ library
   build-depends:
       base >=4.7 && <5
     , containers
+    , parsec
     , split
     , transformers
     , vector
@@ -62,6 +64,7 @@ executable trout-exe
   build-depends:
       base >=4.7 && <5
     , containers
+    , parsec
     , split
     , transformers
     , trout
@@ -86,6 +89,7 @@ test-suite trout-test
     , base >=4.7 && <5
     , containers
     , hspec
+    , parsec
     , split
     , transformers
     , trout
@@ -107,6 +111,7 @@ benchmark trout-bench
     , containers
     , criterion
     , deepseq
+    , parsec
     , split
     , transformers
     , trout
