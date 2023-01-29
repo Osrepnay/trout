@@ -1,7 +1,7 @@
 module Main (main) where
 
 import Trout.Game
-import Trout.PieceInfo
+import Trout.Piece
 import Trout.Search
 
 main :: IO ()

@@ -1,4 +1,4 @@
-module Trout.Uci
+module Trout.Uci.Parse
     ( CommPositionInit (..)
     , CommGoArg (..)
     , UciCommand (..)
@@ -9,12 +9,14 @@ import Data.Functor       (($>), (<&>))
 import Text.Parsec
     ( alphaNum
     , anyChar
+    , digit
     , many
+    , many1
     , manyTill
     , spaces
     , string
     , try
-    , (<|>), many1, digit
+    , (<|>), eof, space
     )
 import Text.Parsec.String (Parser)
 
@@ -53,15 +55,18 @@ data UciCommand
     | CommQuit
     deriving (Eq, Show)
 
+wordBreak :: Parser ()
+wordBreak = (many1 space $> ()) <|> eof
+
 -- simple commands without arguments
 parseArgless :: Parser UciCommand
-parseArgless = try (string "uci") $> CommUci -- TODO when switch to nightly or get newer parsec switch to string'
-    <|> try (string "Dont") $> CommDont
-    <|> try (string "isready") $> CommIsready
-    <|> try (string "ucinewgame") $> CommUcinewgame
-    <|> try (string "stop") $> CommStop
-    <|> try (string "ponderhit") $> CommPonderhit
-    <|> try (string "quit") $> CommQuit
+parseArgless = try (string "uci" *> wordBreak) $> CommUci -- TODO when switch to nightly or get newer parsec switch to string'
+    <|> try (string "Dont" *> wordBreak) $> CommDont
+    <|> try (string "isready" *> wordBreak) $> CommIsready
+    <|> try (string "ucinewgame" *> wordBreak) $> CommUcinewgame
+    <|> try (string "stop" *> wordBreak) $> CommStop
+    <|> try (string "ponderhit" *> wordBreak) $> CommPonderhit
+    <|> try (string "quit" *> wordBreak) $> CommQuit
 
 parseDebug :: Parser UciCommand
 parseDebug = try (string "debug")
@@ -83,23 +88,25 @@ parseRegister = CommRegister <$> (try (string "register") *> many anyChar)
 
 parsePosition :: Parser UciCommand
 parsePosition = try (string "position")
+    *> spaces
     $> CommPosition
     <*> (string "startpos" $> PositionStartpos
         <|> PositionFen <$> (string "fen" *> parseFen))
     <*> (spaces
         *> string "moves"
-        *> many parseMove)
+        *> many parseMove
+        <|> pure [])
   where
     parseFen = manyTill anyChar (try (string "moves"))
-    parseMove = spaces *> many alphaNum
+    parseMove = try (spaces *> many1 alphaNum)
 
 parseGo :: Parser UciCommand
-parseGo = try (string "go") *> many (spaces *> parseArg) <&> CommGo
+parseGo = try (string "go") *> many (try (spaces *> parseArg)) <&> CommGo
   where
     parseIntArg :: String -> (Int -> CommGoArg) -> Parser CommGoArg
     parseIntArg n c = try (string n) *> spaces *> (c . read <$> many1 digit)
     parseArg = (try (string "searchmoves")
-            *> many (spaces *> many alphaNum)
+            *> many (try (spaces *> many alphaNum))
             <&> GoSearchMoves)
         <|> try (string "ponder") $> GoPonder
         <|> parseIntArg "wtime" GoWtime
