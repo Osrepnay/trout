@@ -35,6 +35,7 @@ library
       Trout.Piece
       Trout.Search
       Trout.Search.Worthiness
+      Trout.Uci
       Trout.Uci.Parse
   other-modules:
       Paths_trout

@@ -3,20 +3,25 @@ module Trout.Uci.Parse
     , CommGoArg (..)
     , UciCommand (..)
     , parseUciCommand
+    , readUciLine
     ) where
 
+import Data.Bifunctor     (Bifunctor (first))
 import Data.Functor       (($>), (<&>))
 import Text.Parsec
     ( alphaNum
     , anyChar
     , digit
+    , eof
     , many
     , many1
     , manyTill
+    , parse
+    , space
     , spaces
     , string
     , try
-    , (<|>), eof, space
+    , (<|>)
     )
 import Text.Parsec.String (Parser)
 
@@ -127,3 +132,7 @@ parseUciCommand = parseArgless
     <|> parseRegister
     <|> parsePosition
     <|> parseGo
+
+-- dont require parsec import
+readUciLine :: String -> Either String UciCommand
+readUciLine = first show . parse parseUciCommand ""
