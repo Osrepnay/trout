@@ -2,8 +2,15 @@ module Trout.Uci (doUci) where
 
 import Control.Concurrent (ThreadId, killThread)
 import System.IO          (hPutStrLn, stderr)
-import Trout.Game         (Game (..), startingGame)
-import Trout.Uci.Parse    (UciCommand (..), readUciLine)
+import Trout.Game         (Game (..), startingGame, allMoves, makeMove)
+import Trout.Uci.Parse
+    ( CommPositionInit (..)
+    , UciCommand (..)
+    , UciMove (..)
+    , readUciLine
+    )
+import Trout.Game.Move (Move(..), SpecialMove (Promotion))
+import Data.Maybe (fromMaybe)
 
 data Time = Time
     { timeLeft :: Int
@@ -38,7 +45,15 @@ doUci uciState = do
             doUci uciState
         Right (CommRegister _) -> doUci uciState
         Right CommUcinewgame -> doUci (uciState { uciGame = startingGame })
-        Right (CommPosition _ _) -> doUci uciState -- TODO
+        Right (CommPosition posInit moves) -> case posInit of
+            PositionStartpos ->
+                case playMoves startingGame moves of
+                    Left err -> do
+                        hPutStrLn stderr err
+                        doUci uciState
+                    Right game -> do
+                        doUci (uciState { uciGame = game })
+            PositionFen _    -> doUci uciState -- TODO
         Right (CommGo _) -> doUci uciState -- TODO
         Right CommStop -> case uciSearchThread uciState of
             Just searchId -> do
@@ -50,3 +65,17 @@ doUci uciState = do
             hPutStrLn stderr err
             doUci uciState
         _ -> doUci uciState
+  where
+    playMoves g [] = Right g
+    playMoves g ((UciMove from to promote) : ms) = case gMoves of
+        (move : _) ->
+            case makeMove g move of
+                Just ng -> playMoves ng ms
+                Nothing -> Left "illegal move"
+        [] -> Left "ILLEGAL move"
+      where
+        moveMatches (Move _ (Promotion p) f t) = Just p == promote
+            && f == from
+            && t == to
+        moveMatches (Move _ _ f t) = f == from && t == to
+        gMoves = filter moveMatches (allMoves g)
