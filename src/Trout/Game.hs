@@ -20,7 +20,7 @@ import Data.Char                        (isDigit, ord)
 import Data.Function                    ((&))
 import Data.List.Split                  (splitOn)
 import Data.Vector.Primitive            ((!))
-import Lens.Micro                       (Lens', (%~), (.~), (?~), (^.))
+import Lens.Micro                       (Lens', (%~), (.~), (?~), (^.), set)
 import Lens.Micro.TH                    (makeLenses)
 import Trout.Bitboard
     ( Bitboard
@@ -94,16 +94,14 @@ data Game = Game
 makeLenses ''Game
 
 gameTurnSide :: Lens' Game Side
-gameTurnSide sfs g@(Game _ _ _ White) = (\s -> g { _gameWhite  = s })
-    <$> sfs (_gameWhite g)
-gameTurnSide sfs g@(Game _ _ _ Black) = (\s -> g { _gameBlack  = s })
-    <$> sfs (_gameBlack g)
+gameTurnSide sfs g@(Game w _ _ White) = flip (set gameWhite) g <$> sfs w
+gameTurnSide sfs g@(Game _ b _ Black) = flip (set gameBlack) g <$> sfs b
+{-# INLINE gameTurnSide #-}
 
 gameOppSide :: Lens' Game Side
-gameOppSide sfs g@(Game _ _ _ White) = (\s -> g { _gameBlack  = s })
-    <$> sfs (_gameBlack g)
-gameOppSide sfs g@(Game _ _ _ Black) = (\s -> g { _gameWhite  = s })
-    <$> sfs (_gameWhite g)
+gameOppSide sfs g@(Game w _ _ Black) = flip (set gameWhite) g <$> sfs w
+gameOppSide sfs g@(Game _ b _ White) = flip (set gameBlack) g <$> sfs b
+{-# INLINE gameOppSide #-}
 
 piecesAll :: Pieces -> Bitboard
 piecesAll (Pieces p n b r q k) = p .|. n .|. b .|. r .|. q .|. k
