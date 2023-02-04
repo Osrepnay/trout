@@ -26,6 +26,7 @@ source-repository head
 library
   exposed-modules:
       Trout.Bitboard
+      Trout.Fen.Parse
       Trout.Game
       Trout.Game.Move
       Trout.Game.MoveGen
