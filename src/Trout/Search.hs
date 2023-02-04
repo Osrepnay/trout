@@ -4,14 +4,21 @@ import Control.Monad.Trans.State.Strict (State, evalState)
 import Data.Foldable                    (maximumBy, minimumBy)
 import Data.Function                    (on)
 import Data.Maybe                       (mapMaybe)
+import Lens.Micro                       ((^.))
 import Trout.Bitboard                   (popCount)
 import Trout.Game
     ( Game (..)
-    , Pieces (..)
-    , Side (..)
     , allMoves
+    , bishops
+    , gameBlack
+    , gameWhite
     , inCheck
+    , knights
     , makeMove
+    , pawns
+    , queens
+    , rooks
+    , sidePieces
     )
 import Trout.Game.Move                  (Move (..), SpecialMove (..))
 import Trout.Piece                      (Color (..), Piece (..))
@@ -102,10 +109,15 @@ eval game = pawnWorth * pawnDiff
     + rookWorth * rookDiff
     + queenWorth * queenDiff
   where
-    whitePieces = sidePieces (gameWhite game)
-    blackPieces = sidePieces (gameBlack game)
-    pawnDiff = popCount (pawns whitePieces) - popCount (pawns blackPieces)
-    knightDiff = popCount (knights whitePieces) - popCount (knights blackPieces)
-    bishopDiff = popCount (bishops whitePieces) - popCount (bishops blackPieces)
-    rookDiff = popCount (rooks whitePieces) - popCount (rooks blackPieces)
-    queenDiff = popCount (queens whitePieces) - popCount (queens blackPieces)
+    whitePieces = game ^. gameWhite . sidePieces
+    blackPieces = game ^. gameBlack . sidePieces
+    pawnDiff = popCount (whitePieces ^. pawns)
+        - popCount (blackPieces ^. pawns)
+    knightDiff = popCount (whitePieces ^. knights)
+        - popCount (blackPieces ^. knights)
+    bishopDiff = popCount (whitePieces ^. bishops)
+        - popCount (blackPieces ^. bishops)
+    rookDiff = popCount (whitePieces ^. rooks)
+        - popCount (blackPieces ^. rooks)
+    queenDiff = popCount (whitePieces ^. queens)
+        - popCount (blackPieces ^. queens)

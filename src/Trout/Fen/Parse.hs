@@ -1,15 +1,15 @@
 module Trout.Fen.Parse where
 
+import Control.Applicative    ((<|>))
 import Data.Bifunctor         (first)
 import Data.Char              (digitToInt, isDigit)
-import Data.Functor           ((<&>), ($>))
+import Data.Functor           (($>), (<&>))
 import Text.Parsec            (char, oneOf)
 import Text.Parsec.Combinator (many1)
 import Text.Parsec.String     (Parser)
 import Trout.Bitboard         (fromSqs)
 import Trout.Game             (Pieces (Pieces))
-import Trout.Piece (Color(White, Black))
-import Control.Applicative ((<|>))
+import Trout.Piece            (Color (Black, White))
 
 parsePieces :: Parser Pieces
 parsePieces = fenRows

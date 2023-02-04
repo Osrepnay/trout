@@ -1,20 +1,27 @@
+{-# LANGUAGE TemplateHaskell #-}
 module Trout.Game
     ( Pieces (..)
+    , pawns, knights, bishops, rooks, queens, kings
     , CanCastle (..)
+    , canCastleKing, canCastleQueen
     , Side (..)
+    , sideCanCastle, sidePieces
     , Game (..)
+    , gameWhite, gameBlack, gameEnPassant, gameTurn, gameTurnSide, gameOppSide
     , fromFen
     , gameAsBoard
     , startingGame
-    , turnSide, turnOppSide
     , allMoves
     , inCheck
     , makeMove
     ) where
 
 import Data.Char                        (isDigit, ord)
+import Data.Function                    ((&))
 import Data.List.Split                  (splitOn)
 import Data.Vector.Primitive            ((!))
+import Lens.Micro                       (Lens', (%~), (.~), (?~), (^.))
+import Lens.Micro.TH                    (makeLenses)
 import Trout.Bitboard
     ( Bitboard
     , bit
@@ -48,101 +55,58 @@ import Trout.Game.MoveGen.Sliding.Magic
 import Trout.Piece
 
 data Pieces = Pieces
-    { pawns     :: !Bitboard
-    , knights   :: !Bitboard
-    , bishops   :: !Bitboard
-    , rooks     :: !Bitboard
-    , queens    :: !Bitboard
-    , kings     :: !Bitboard
+    { _pawns   :: !Bitboard
+    , _knights :: !Bitboard
+    , _bishops :: !Bitboard
+    , _rooks   :: !Bitboard
+    , _queens  :: !Bitboard
+    , _kings   :: !Bitboard
     } deriving (Eq, Show)
+makeLenses ''Pieces
+
+-- ghc gets mad when i use the normal lens typedef
+byPiece :: Functor f => Piece -> (Bitboard -> f Bitboard) -> Pieces -> f Pieces
+byPiece Pawn   = pawns
+byPiece Knight = knights
+byPiece Bishop = bishops
+byPiece Rook   = rooks
+byPiece Queen  = queens
+byPiece King   = kings
+
+data CanCastle = CanCastle
+    { _canCastleKing  :: !Bool
+    , _canCastleQueen :: !Bool
+    } deriving (Eq, Show)
+makeLenses ''CanCastle
+
+data Side = Side
+    { _sidePieces    :: {-# UNPACK #-} !Pieces
+    , _sideCanCastle :: !CanCastle
+    } deriving (Eq, Show)
+makeLenses ''Side
+
+data Game = Game
+    { _gameWhite     :: {-# UNPACK #-} !Side
+    , _gameBlack     :: {-# UNPACK #-} !Side
+    , _gameEnPassant :: !(Maybe Int)
+    , _gameTurn      :: !Color
+    } deriving (Eq, Show)
+makeLenses ''Game
+
+gameTurnSide :: Lens' Game Side
+gameTurnSide sfs g@(Game _ _ _ White) = (\s -> g { _gameWhite  = s })
+    <$> sfs (_gameWhite g)
+gameTurnSide sfs g@(Game _ _ _ Black) = (\s -> g { _gameBlack  = s })
+    <$> sfs (_gameBlack g)
+
+gameOppSide :: Lens' Game Side
+gameOppSide sfs g@(Game _ _ _ White) = (\s -> g { _gameBlack  = s })
+    <$> sfs (_gameBlack g)
+gameOppSide sfs g@(Game _ _ _ Black) = (\s -> g { _gameWhite  = s })
+    <$> sfs (_gameWhite g)
 
 piecesAll :: Pieces -> Bitboard
 piecesAll (Pieces p n b r q k) = p .|. n .|. b .|. r .|. q .|. k
-
-modPiece :: Piece -> (Bitboard -> Bitboard) -> Pieces -> Pieces
-modPiece p f pieces = case p of
-    Pawn   -> pieces { pawns   = f (pawns   pieces) }
-    Knight -> pieces { knights = f (knights pieces) }
-    Bishop -> pieces { bishops = f (bishops pieces) }
-    Rook   -> pieces { rooks   = f (rooks   pieces) }
-    Queen  -> pieces { queens  = f (queens  pieces) }
-    King   -> pieces { kings   = f (kings   pieces) }
-{-# INLINE modPiece #-}
-
-data CanCastle = CanCastle
-    { canCastleKing  :: !Bool
-    , canCastleQueen :: !Bool
-    } deriving (Eq, Show)
-
-data Side = Side
-    { sidePieces    :: {-# UNPACK #-} !Pieces
-    , sideCanCastle :: !CanCastle
-    } deriving (Eq, Show)
-
-modPieces :: (Pieces -> Pieces) -> Side -> Side
-modPieces f side = side { sidePieces = f (sidePieces side) }
-{-# INLINE modPieces #-}
-
-modCanCastle :: (CanCastle -> CanCastle) -> Side -> Side
-modCanCastle f side = side { sideCanCastle = f (sideCanCastle side) }
-
-data Game = Game
-    { gameWhite     :: {-# UNPACK #-} !Side
-    , gameBlack     :: {-# UNPACK #-} !Side
-    , gameEnPassant :: !(Maybe Int)
-    , gameTurn      :: !Color
-    } deriving (Eq, Show)
-
-gameAsBoard :: Game -> String
-gameAsBoard game = unlines [[posChar x y | x <- [0..7]] | y <- [7, 6..0]]
-  where
-    posChar x y = fst $ head $ filter (\(_, b) -> blocked b sq)
-        [ ('P', pawns whitePieces)
-        , ('N', knights whitePieces)
-        , ('B', bishops whitePieces)
-        , ('R', rooks whitePieces)
-        , ('Q', queens whitePieces)
-        , ('K', kings whitePieces)
-        , ('p', pawns blackPieces)
-        , ('n', knights blackPieces)
-        , ('b', bishops blackPieces)
-        , ('r', rooks blackPieces)
-        , ('q', queens blackPieces)
-        , ('k', kings blackPieces)
-        , ('.', complement zeroBits)
-        ]
-      where
-        whitePieces = sidePieces $ gameWhite game
-        blackPieces = sidePieces $ gameBlack game
-        sq = xyToSq x y
-
-modWhiteSide :: (Side -> Side) -> Game -> Game
-modWhiteSide f game = game { gameWhite = f (gameWhite game) }
-{-# INLINE modWhiteSide #-}
-
-modBlackSide :: (Side -> Side) -> Game -> Game
-modBlackSide f game = game { gameBlack = f (gameBlack game) }
-{-# INLINE modBlackSide #-}
-
-modTurnSide :: (Side -> Side) -> Game -> Game
-modTurnSide f game = case gameTurn game of
-    White -> game { gameWhite = f (gameWhite game) }
-    Black -> game { gameBlack = f (gameBlack game) }
-{-# INLINE modTurnSide #-}
-
-modOppSide :: (Side -> Side) -> Game -> Game
-modOppSide f game = case gameTurn game of
-    Black -> game { gameWhite = f (gameWhite game) }
-    White -> game { gameBlack = f (gameBlack game) }
-{-# INLINE modOppSide #-}
-
-modTurnPieces :: (Pieces -> Pieces) -> Game -> Game
-modTurnPieces f = modTurnSide (modPieces f)
-{-# INLINE modTurnPieces #-}
-
-modOppPieces :: (Pieces -> Pieces) -> Game -> Game
-modOppPieces f = modOppSide (modPieces f)
-{-# INLINE modOppPieces #-}
 
 -- https://tearth.dev/bitboard-viewer/
 startingGame :: Game
@@ -168,32 +132,55 @@ startingGame = Game
     Nothing
     White
 
+gameAsBoard :: Game -> String
+gameAsBoard game = unlines [[posChar x y | x <- [0..7]] | y <- [7, 6..0]]
+  where
+    posChar x y = fst $ head $ filter (\(_, b) -> blocked b sq)
+        [ ('P', whitePieces ^. pawns)
+        , ('N', whitePieces ^. knights)
+        , ('B', whitePieces ^. bishops)
+        , ('R', whitePieces ^. rooks)
+        , ('Q', whitePieces ^. queens)
+        , ('K', whitePieces ^. kings)
+        , ('p', blackPieces ^. pawns)
+        , ('n', blackPieces ^. knights)
+        , ('b', blackPieces ^. bishops)
+        , ('r', blackPieces ^. rooks)
+        , ('q', blackPieces ^. queens)
+        , ('k', blackPieces ^. kings)
+        , ('.', complement zeroBits)
+        ]
+      where
+        whitePieces = game ^. gameWhite . sidePieces
+        blackPieces = game ^. gameBlack . sidePieces
+        sq = xyToSq x y
+
 fromFen :: String -> Game
 fromFen fen = Game
-    { gameWhite = Side
-        { sidePieces = Pieces
-            { pawns = bbBy (== 'P')
-            , knights = bbBy (== 'N')
-            , bishops = bbBy (== 'B')
-            , rooks = bbBy (== 'R')
-            , queens = bbBy (== 'Q')
-            , kings = bbBy (== 'K')
+    { _gameWhite = Side
+        { _sidePieces = Pieces
+            { _pawns = bbBy (== 'P')
+            , _knights = bbBy (== 'N')
+            , _bishops = bbBy (== 'B')
+            , _rooks = bbBy (== 'R')
+            , _queens = bbBy (== 'Q')
+            , _kings = bbBy (== 'K')
             }
-        , sideCanCastle = whiteCastles
+        , _sideCanCastle = whiteCastles
         }
-    , gameBlack = Side
-        { sidePieces = Pieces
-            { pawns = bbBy (== 'p')
-            , knights = bbBy (== 'n')
-            , bishops = bbBy (== 'b')
-            , rooks = bbBy (== 'r')
-            , queens = bbBy (== 'q')
-            , kings = bbBy (== 'k')
+    , _gameBlack = Side
+        { _sidePieces = Pieces
+            { _pawns = bbBy (== 'p')
+            , _knights = bbBy (== 'n')
+            , _bishops = bbBy (== 'b')
+            , _rooks = bbBy (== 'r')
+            , _queens = bbBy (== 'q')
+            , _kings = bbBy (== 'k')
             }
-        , sideCanCastle = blackCastles
+        , _sideCanCastle = blackCastles
         }
-    , gameEnPassant = enPassant
-    , gameTurn = color
+    , _gameEnPassant = enPassant
+    , _gameTurn = color
     }
   where
     bbBy f = fromSqs $ fst <$> filter (f . snd) flatBoard
@@ -225,27 +212,13 @@ flipTurn :: Game -> Game
 flipTurn (Game w b enP White) = Game w b enP Black
 flipTurn (Game w b enP Black) = Game w b enP White
 
-turnSide :: Game -> Side
-turnSide (Game w _ _ White) = w
-turnSide (Game _ b _ Black) = b
-
-turnOppSide :: Game -> Side
-turnOppSide (Game w _ _ Black) = w
-turnOppSide (Game _ b _ White) = b
-
-turnPieces :: Game -> Pieces
-turnPieces = sidePieces . turnSide
-
-turnOppPieces :: Game -> Pieces
-turnOppPieces = sidePieces . turnOppSide
-
 gameBlockers :: Game -> Bitboard
-gameBlockers game = piecesAll (turnPieces game)
-    .|. piecesAll (turnOppPieces game)
+gameBlockers game = piecesAll (game ^. gameTurnSide . sidePieces)
+    .|. piecesAll (game ^. gameOppSide . sidePieces)
 
 allMoves :: Game -> [Move]
 allMoves game = concat
-    [ moveSqs (pawnMoves (gameEnPassant game) (gameTurn game)) pawns
+    [ moveSqs (pawnMoves (game ^. gameEnPassant) (game ^. gameTurn)) pawns
     , moveSqs knightMoves knights
     , moveSqs bishopMoves bishops
     , moveSqs rookMoves rooks
@@ -253,41 +226,40 @@ allMoves game = concat
     , moveSqs (kingMoves kingside queenside) kings
     ]
   where
-    kingside = canCastleKing $ sideCanCastle $ turnSide game
-    queenside = canCastleQueen $ sideCanCastle $ turnSide game
+    kingside = game ^. gameTurnSide . sideCanCastle . canCastleKing
+    queenside = game ^. gameTurnSide . sideCanCastle . canCastleQueen
     -- gets and concats the move for a set of squares (for a piece)
     moveSqs mover piece = concatMap
         (mover block myBlock)
-        (toSqs (piece (turnPieces game)))
+        (toSqs (game ^. gameTurnSide . sidePieces . piece))
     -- TODO update incrementally
-    block = myBlock .|. piecesAll (turnOppPieces game)
-    myBlock = piecesAll (turnPieces game)
+    block = myBlock .|. piecesAll (game ^. gameOppSide . sidePieces)
+    myBlock = piecesAll (game ^. gameTurnSide . sidePieces)
 
 squareAttacked :: Int -> Game -> Bool
-squareAttacked sq game = pawnAttackTable ! sq .&. pawns thisOppPieces /= 0
-    || knightTable ! sq .&. knights thisOppPieces /= 0
-    || bishoped .&. bishops thisOppPieces /= 0
-    || rooked .&. rooks thisOppPieces /= 0
-    || bishoped .&. queens thisOppPieces /= 0
-    || rooked .&. queens thisOppPieces /= 0
-    || kingTable ! sq .&. kings thisOppPieces /= 0
+squareAttacked sq game = pawnAttackTable ! sq .&. thisOppPieces ^. pawns /= 0
+    || knightTable ! sq .&. thisOppPieces ^. knights /= 0
+    || bishoped .&. thisOppPieces ^. bishops /= 0
+    || rooked .&. thisOppPieces ^. rooks /= 0
+    || bishoped .&. thisOppPieces ^. queens /= 0
+    || rooked .&. thisOppPieces ^. queens /= 0
+    || kingTable ! sq .&. thisOppPieces ^. kings /= 0
   where
     bishoped = bishopMovesMagic block sq
     rooked = rookMovesMagic block sq
     block = gameBlockers game
-    pawnAttackTable = case gameTurn game of
+    pawnAttackTable = case game ^. gameTurn of
         White -> pawnWhiteAttackTable
         Black -> pawnBlackAttackTable
-    thisOppPieces = turnOppPieces game
+    thisOppPieces = game ^. gameOppSide . sidePieces
 
--- use || instead of .|. with a /= 0 at the end for short circuit
 inCheck :: Game -> Bool
 inCheck game
     | kingSq == 64 = True -- king gone!
     | otherwise    = squareAttacked kingSq game
   where
     kingSq = countTrailingZeros kingMask
-    kingMask = kings (turnPieces game)
+    kingMask = game ^. gameTurnSide . sidePieces . kings
 
 makeMove :: Game -> Move -> Maybe Game
 makeMove game (Move piece special from to) = do
@@ -298,10 +270,13 @@ makeMove game (Move piece special from to) = do
     pure (flipTurn castleCleared)
   where
     -- basic moving
-    doMove p fsq tsq = modTurnPieces
-        (modPiece p ((`setBit` tsq) . (`clearBit` fsq)))
-    captureAll sq = modOppPieces
-        $ \(Pieces p n b r q k) -> Pieces
+    doMove p fsq tsq = gameTurnSide
+        . sidePieces
+        . byPiece p
+        %~ (`setBit` tsq) . (`clearBit` fsq)
+    captureAll sq = gameOppSide
+        . sidePieces
+        %~ \(Pieces p n b r q k) -> Pieces
             (p .&. clearMask)
             (n .&. clearMask)
             (b .&. clearMask)
@@ -310,64 +285,71 @@ makeMove game (Move piece special from to) = do
             (k .&. clearMask)
       where
         clearMask = complement (bit sq)
-    clearCastles g = modWhiteSide
-            (modCanCastle
-            (\(CanCastle k q) -> CanCastle
+    clearCastles =
+        (gameWhite
+            . sideCanCastle
+            %~ \(CanCastle k q) -> CanCastle
                 (k && from /= 7 && to /= 7)
-                (q && from /= 0 && to /= 0)))
-        $ modBlackSide
-            (modCanCastle
-            (\(CanCastle k q) -> CanCastle
+                (q && from /= 0 && to /= 0))
+        . (gameBlack
+            . sideCanCastle
+            %~ \(CanCastle k q) -> CanCastle
                 (k && from /= 63 && to /= 63)
-                (q && from /= 56 && to /= 56)))
-        $ case piece of
-            King -> modTurnSide
-                (\s -> s { sideCanCastle = CanCastle False False })
-                g
-            _ -> g
+                (q && from /= 56 && to /= 56))
+        . case piece of
+            King -> gameTurnSide . sideCanCastle .~ CanCastle False False
+            _    -> id
     nothingIfCheck g = if inCheck g then Nothing else Just g
-    specials g = case special of
-        PawnDouble -> Just (g { gameEnPassant = Just to })
+    specials = case special of
+        PawnDouble -> Just . (gameEnPassant ?~ to)
         EnPassant enPSq -> Just
-            $ clearEnPassant
-            $ (modOppSide
-                $ modPieces
-                $ modPiece Pawn (`clearBit` enPSq)) g
+            . clearEnPassant
+            . (gameOppSide
+                . sidePieces
+                . pawns
+                %~ (`clearBit` enPSq))
         Promotion promote -> Just
-            $ clearEnPassant
-            $ modTurnPieces
-                (modPiece promote (`setBit` to)
-                    . modPiece Pawn (`clearBit` to)) g
+            . clearEnPassant
+            . (gameTurnSide
+                . sidePieces
+                . byPiece promote
+                %~ (`setBit` to))
+            . (gameTurnSide
+                . sidePieces
+                . pawns
+                %~ (`clearBit` to))
         CastleKing ->
-            ((<$> throughCheckKing g)
-                . (clearEnPassant .))
-            $ modTurnPieces
-            $ modPiece
-                Rook
-                ((`setBit` (kingOrigin + 1)) . (`clearBit` (kingOrigin + 3)))
+            fmap (clearEnPassant
+                . (gameTurnSide
+                    . sidePieces
+                    . rooks
+                    %~ (`setBit` (kingOrigin + 1))
+                    . (`clearBit` (kingOrigin + 3))))
+            . throughCheckKing
         CastleQueen ->
-            ((<$> throughCheckQueen g)
-                . (clearEnPassant .))
-            $ modTurnPieces
-            $ modPiece
-                Rook
-                ((`setBit` (kingOrigin - 1)) . (`clearBit` (kingOrigin - 4)))
-        Normal -> Just (clearEnPassant g)
-    clearEnPassant g = g { gameEnPassant = Nothing }
+            fmap (clearEnPassant
+                . (gameTurnSide
+                    . sidePieces
+                    . rooks
+                    %~ (`setBit` (kingOrigin - 1))
+                    . (`clearBit` (kingOrigin - 4))))
+            . throughCheckQueen
+        Normal -> Just . clearEnPassant
+    clearEnPassant = gameEnPassant .~ Nothing
     -- assumes king is moved, rook is not
     throughCheckKing g
         | squareAttacked (kingOrigin + 1) kingless = Nothing
         | squareAttacked kingOrigin kingless = Nothing
         | otherwise                 = Just g
       where
-        kingless = modTurnSide (modPieces (modPiece King (`clearBit` 6))) g
+        kingless = g & gameTurnSide . sidePieces . kings %~ (`clearBit` 6)
     throughCheckQueen g
         | squareAttacked (kingOrigin - 1) kingless = Nothing
         | squareAttacked kingOrigin kingless = Nothing
         | otherwise = Just g
       where
-        kingless = modTurnSide (modPieces (modPiece King (`clearBit` 2))) g
+        kingless = g & gameTurnSide . sidePieces . kings %~ (`clearBit` 2)
     -- for castling things
-    kingOrigin = case gameTurn game of
+    kingOrigin = case game ^. gameTurn of
         White -> 4
         Black -> 60

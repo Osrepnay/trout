@@ -2,14 +2,14 @@ module Trout.Uci (doUci) where
 
 import Control.Concurrent (ThreadId, killThread)
 import System.IO          (hPutStrLn, stderr)
-import Trout.Game         (Game (..), startingGame, allMoves, makeMove)
+import Trout.Game         (Game (..), allMoves, makeMove, startingGame)
+import Trout.Game.Move    (Move (..), SpecialMove (Promotion))
 import Trout.Uci.Parse
     ( CommPositionInit (..)
     , UciCommand (..)
     , UciMove (..)
     , readUciLine
     )
-import Trout.Game.Move (Move(..), SpecialMove (Promotion))
 
 data Time = Time
     { timeLeft :: Int
