@@ -12,7 +12,7 @@ module Trout.Game
     , makeMove
     ) where
 
-import Data.Char                        (isDigit, isLower, isUpper, ord)
+import Data.Char                        (isDigit, ord)
 import Data.List.Split                  (splitOn)
 import Data.Vector.Primitive            ((!))
 import Trout.Bitboard
@@ -54,19 +54,19 @@ data Pieces = Pieces
     , rooks     :: !Bitboard
     , queens    :: !Bitboard
     , kings     :: !Bitboard
-    , piecesAll :: !Bitboard
     } deriving (Eq, Show)
 
+piecesAll :: Pieces -> Bitboard
+piecesAll (Pieces p n b r q k) = p .|. n .|. b .|. r .|. q .|. k
+
 modPiece :: Piece -> (Bitboard -> Bitboard) -> Pieces -> Pieces
-modPiece p f pieces = modAll $ case p of
+modPiece p f pieces = case p of
     Pawn   -> pieces { pawns   = f (pawns   pieces) }
     Knight -> pieces { knights = f (knights pieces) }
     Bishop -> pieces { bishops = f (bishops pieces) }
     Rook   -> pieces { rooks   = f (rooks   pieces) }
     Queen  -> pieces { queens  = f (queens  pieces) }
     King   -> pieces { kings   = f (kings   pieces) }
-  where
-    modAll ps = ps { piecesAll = f (piecesAll ps) }
 {-# INLINE modPiece #-}
 
 data CanCastle = CanCastle
@@ -154,8 +154,7 @@ startingGame = Game
             36
             129
             8
-            16
-            65535)
+            16)
         (CanCastle True True))
     (Side
         (Pieces
@@ -164,8 +163,7 @@ startingGame = Game
             2594073385365405696
             9295429630892703744
             576460752303423488
-            1152921504606846976
-            18446462598732840960)
+            1152921504606846976)
         (CanCastle True True))
     Nothing
     White
@@ -180,7 +178,6 @@ fromFen fen = Game
             , rooks = bbBy (== 'R')
             , queens = bbBy (== 'Q')
             , kings = bbBy (== 'K')
-            , piecesAll = bbBy isUpper
             }
         , sideCanCastle = whiteCastles
         }
@@ -192,7 +189,6 @@ fromFen fen = Game
             , rooks = bbBy (== 'r')
             , queens = bbBy (== 'q')
             , kings = bbBy (== 'k')
-            , piecesAll = bbBy isLower
             }
         , sideCanCastle = blackCastles
         }
@@ -305,14 +301,13 @@ makeMove game (Move piece special from to) = do
     doMove p fsq tsq = modTurnPieces
         (modPiece p ((`setBit` tsq) . (`clearBit` fsq)))
     captureAll sq = modOppPieces
-        $ \(Pieces p n b r q k a) -> Pieces
+        $ \(Pieces p n b r q k) -> Pieces
             (p .&. clearMask)
             (n .&. clearMask)
             (b .&. clearMask)
             (r .&. clearMask)
             (q .&. clearMask)
             (k .&. clearMask)
-            (a .&. clearMask)
       where
         clearMask = complement (bit sq)
     clearCastles g = modWhiteSide

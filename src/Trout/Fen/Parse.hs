@@ -1,21 +1,20 @@
 module Trout.Fen.Parse where
 
 import Data.Bifunctor         (first)
-import Data.Bits              ((.|.))
 import Data.Char              (digitToInt, isDigit)
 import Data.Functor           ((<&>), ($>))
 import Text.Parsec            (char, oneOf)
 import Text.Parsec.Combinator (many1)
 import Text.Parsec.String     (Parser)
 import Trout.Bitboard         (fromSqs)
-import Trout.Game             (Pieces (Pieces), CanCastle)
+import Trout.Game             (Pieces (Pieces))
 import Trout.Piece (Color(White, Black))
 import Control.Applicative ((<|>))
 
 parsePieces :: Parser Pieces
 parsePieces = fenRows
     <&> \pcs ->
-        piecesWithoutAll
+        Pieces
             (genBitboard 'p' pcs)
             (genBitboard 'n' pcs)
             (genBitboard 'b' pcs)
@@ -47,9 +46,6 @@ parsePieces = fenRows
         | sq <- [0..63]
         , Just c == lookup sq pcs
         ]
-    piecesWithoutAll p n b r q k = Pieces
-        p n b r q k
-        (p .|. n .|. b .|. r .|. q .|. k)
 
 parseSide :: Parser Color
 parseSide = char 'w' $> White

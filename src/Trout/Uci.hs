@@ -10,7 +10,6 @@ import Trout.Uci.Parse
     , readUciLine
     )
 import Trout.Game.Move (Move(..), SpecialMove (Promotion))
-import Data.Maybe (fromMaybe)
 
 data Time = Time
     { timeLeft :: Int
