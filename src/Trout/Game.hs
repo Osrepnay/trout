@@ -81,27 +81,27 @@ makeLenses ''CanCastle
 
 type Sides a = (a, a)
 
-sideWhite :: Functor f => (a -> f a) -> Sides a -> f (Sides a)
+sideWhite :: Lens' (Sides a) a
 sideWhite afb (a, b) = (, b) <$> afb a
 {-# INLINE sideWhite #-}
 
-sideBlack :: Functor f => (a -> f a) -> Sides a -> f (Sides a)
+sideBlack :: Lens' (Sides a) a
 sideBlack afb (a, b) = (a, ) <$> afb b
 {-# INLINE sideBlack #-}
 
 sideByColor :: Functor f => Color -> (a -> f a) -> Sides a -> f (Sides a)
-sideByColor White afb (a, b) = (, b) <$> afb a
-sideByColor Black afb (a, b) = (a, ) <$> afb b
+sideByColor White = sideWhite
+sideByColor Black = sideBlack
 {-# INLINE sideByColor #-}
 
 sideByntColor :: Functor f => Color -> (a -> f a) -> Sides a -> f (Sides a)
-sideByntColor Black afb (a, b) = (, b) <$> afb a
-sideByntColor White afb (a, b) = (a, ) <$> afb b
+sideByntColor Black = sideWhite
+sideByntColor White = sideBlack
 {-# INLINE sideByntColor #-}
 
 data Game = Game
-    { _gamePieces    :: {-# UNPACK #-} !(Sides Pieces)
-    , _gameCastling  :: {-# UNPACK #-} !(Sides CanCastle)
+    { _gamePieces    :: Sides Pieces
+    , _gameCastling  :: Sides CanCastle
     , _gameEnPassant :: !(Maybe Int)
     , _gameTurn      :: !Color
     } deriving (Eq, Show)
@@ -231,24 +231,25 @@ allMoves game = concat
     -- gets and concats the move for a set of squares (for a piece)
     moveSqs mover piece = concatMap
         (mover block myBlock)
-        (toSqs (game ^. gamePieces . turnSide . piece))
+        (toSqs (turnPieces ^. piece))
     -- TODO update incrementally
-    block = myBlock .|. piecesAll (game ^. gamePieces . oppSide)
-    myBlock = piecesAll (game ^. gamePieces . turnSide)
+    block = myBlock .|. piecesAll oppPieces
+    myBlock = piecesAll turnPieces
+    turnPieces = game ^. gamePieces . turnSide
+    oppPieces = game ^. gamePieces . oppSide
 
     turnSide :: Lens' (Sides a) a
-    oppSide :: Lens' (Sides a) a
     turnSide = sideByColor (game ^. gameTurn)
     oppSide = sideByntColor (game ^. gameTurn)
 
 squareAttacked :: Int -> Game -> Bool
-squareAttacked sq game = pawnAttackTable ! sq .&. thisOppPieces ^. pawns /= 0
-    || knightTable ! sq .&. thisOppPieces ^. knights /= 0
-    || bishoped .&. thisOppPieces ^. bishops /= 0
-    || rooked .&. thisOppPieces ^. rooks /= 0
-    || bishoped .&. thisOppPieces ^. queens /= 0
-    || rooked .&. thisOppPieces ^. queens /= 0
-    || kingTable ! sq .&. thisOppPieces ^. kings /= 0
+squareAttacked sq game = pawnAttackTable ! sq .&. oppPieces ^. pawns /= 0
+    || knightTable ! sq .&. oppPieces ^. knights /= 0
+    || bishoped .&. oppPieces ^. bishops /= 0
+    || rooked .&. oppPieces ^. rooks /= 0
+    || bishoped .&. oppPieces ^. queens /= 0
+    || rooked .&. oppPieces ^. queens /= 0
+    || kingTable ! sq .&. oppPieces ^. kings /= 0
   where
     bishoped = bishopMovesMagic block sq
     rooked = rookMovesMagic block sq
@@ -256,7 +257,7 @@ squareAttacked sq game = pawnAttackTable ! sq .&. thisOppPieces ^. pawns /= 0
     pawnAttackTable = case game ^. gameTurn of
         White -> pawnWhiteAttackTable
         Black -> pawnBlackAttackTable
-    thisOppPieces = game ^. gamePieces . sideByntColor (game ^. gameTurn)
+    oppPieces = game ^. gamePieces . sideByntColor (game ^. gameTurn)
 
 inCheck :: Game -> Bool
 inCheck game
