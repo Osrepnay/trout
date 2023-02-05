@@ -11,14 +11,14 @@ import Trout.Game
     , allMoves
     , bishops
     , gamePieces
-    , sideWhite
-    , sideBlack
     , inCheck
     , knights
     , makeMove
     , pawns
     , queens
     , rooks
+    , sideBlack
+    , sideWhite
     )
 import Trout.Game.Move                  (Move (..), SpecialMove (..))
 import Trout.Piece                      (Color (..), Piece (..))
