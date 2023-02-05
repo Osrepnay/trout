@@ -54,7 +54,7 @@ library
     , split
     , transformers
     , vector
-  default-language: Haskell2010
+  default-language: GHC2021
 
 executable trout-exe
   main-is: Main.hs
@@ -75,7 +75,7 @@ executable trout-exe
     , transformers
     , trout
     , vector
-  default-language: Haskell2010
+  default-language: GHC2021
 
 test-suite trout-test
   type: exitcode-stdio-1.0
@@ -102,7 +102,7 @@ test-suite trout-test
     , transformers
     , trout
     , vector
-  default-language: Haskell2010
+  default-language: GHC2021
 
 benchmark trout-bench
   type: exitcode-stdio-1.0
@@ -126,4 +126,4 @@ benchmark trout-bench
     , transformers
     , trout
     , vector
-  default-language: Haskell2010
+  default-language: GHC2021

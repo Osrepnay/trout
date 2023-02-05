@@ -40,6 +40,8 @@ ghc-options:
 - -Wpartial-fields
 - -Wredundant-constraints
 
+language: GHC2021
+
 default-extensions:
 - CPP # used twice in 1 file!
 

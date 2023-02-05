@@ -82,26 +82,26 @@ makeLenses ''CanCastle
 type Sides a = (a, a)
 
 sideWhite :: Functor f => (a -> f a) -> Sides a -> f (Sides a)
-sideWhite afb (a, b) = (\a' -> (a', b)) <$> afb a
+sideWhite afb (a, b) = (, b) <$> afb a
 {-# INLINE sideWhite #-}
 
 sideBlack :: Functor f => (a -> f a) -> Sides a -> f (Sides a)
-sideBlack afb (a, b) = (\b' -> (a, b')) <$> afb b
+sideBlack afb (a, b) = (a, ) <$> afb b
 {-# INLINE sideBlack #-}
 
 sideByColor :: Functor f => Color -> (a -> f a) -> Sides a -> f (Sides a)
-sideByColor White afb (a, b) = (\a' -> (a', b)) <$> afb a
-sideByColor Black afb (a, b) = (\b' -> (a, b')) <$> afb b
+sideByColor White afb (a, b) = (, b) <$> afb a
+sideByColor Black afb (a, b) = (a, ) <$> afb b
 {-# INLINE sideByColor #-}
 
 sideByntColor :: Functor f => Color -> (a -> f a) -> Sides a -> f (Sides a)
-sideByntColor Black afb (a, b) = (\a' -> (a', b)) <$> afb a
-sideByntColor White afb (a, b) = (\b' -> (a, b')) <$> afb b
+sideByntColor Black afb (a, b) = (, b) <$> afb a
+sideByntColor White afb (a, b) = (a, ) <$> afb b
 {-# INLINE sideByntColor #-}
 
 data Game = Game
     { _gamePieces    :: {-# UNPACK #-} !(Sides Pieces)
-    , _gameCastling  :: !(Sides CanCastle)
+    , _gameCastling  :: {-# UNPACK #-} !(Sides CanCastle)
     , _gameEnPassant :: !(Maybe Int)
     , _gameTurn      :: !Color
     } deriving (Eq, Show)
