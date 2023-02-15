@@ -7,7 +7,9 @@ module Trout.Game
     , Sides
     , sideWhite, sideBlack, sideByColor
     , Game (..)
-    , gamePieces, gameCastling, gameEnPassant, gameTurn
+    , gamePieces, gamePieces'
+    , gameCastling, gameCastling'
+    , gameEnPassant, gameTurn
     , fromFen
     , gameAsBoard
     , startingGame
@@ -20,7 +22,7 @@ import Data.Char                        (isDigit, ord)
 import Data.Function                    ((&))
 import Data.List.Split                  (splitOn)
 import Data.Vector.Primitive            ((!))
-import Lens.Micro                       (Lens', (%~), (.~), (?~), (^.))
+import Lens.Micro                       (Lens', (%~), (.~), (?~), (^.), Lens, (<&>))
 import Lens.Micro.TH                    (makeLenses)
 import Trout.Bitboard
     ( Bitboard
@@ -89,14 +91,14 @@ sideBlack :: Lens' (Sides a) a
 sideBlack afb (a, b) = (a, ) <$> afb b
 {-# INLINE sideBlack #-}
 
-sideByColor :: Functor f => Color -> (a -> f a) -> Sides a -> f (Sides a)
-sideByColor White = sideWhite
-sideByColor Black = sideBlack
+sideByColor :: Lens (Sides a, Color) (Sides a) a a
+sideByColor afb ((a, b), White) = (, b) <$> afb a
+sideByColor afb ((a, b), Black) = (a, ) <$> afb b
 {-# INLINE sideByColor #-}
 
-sideByntColor :: Functor f => Color -> (a -> f a) -> Sides a -> f (Sides a)
-sideByntColor Black = sideWhite
-sideByntColor White = sideBlack
+sideByntColor :: Lens (Sides a, Color) (Sides a) a a
+sideByntColor afb ((a, b), Black) = (, b) <$> afb a
+sideByntColor afb ((a, b), White) = (a, ) <$> afb b
 {-# INLINE sideByntColor #-}
 
 data Game = Game
@@ -106,6 +108,14 @@ data Game = Game
     , _gameTurn      :: !Color
     } deriving (Eq, Show)
 makeLenses ''Game
+
+gamePieces' :: Lens Game Game (Sides Pieces, Color) (Sides Pieces)
+gamePieces' afb game@(Game {_gamePieces = p, _gameTurn = t}) = afb (p, t)
+    <&> \b -> game {_gamePieces = b}
+
+gameCastling' :: Lens Game Game (Sides CanCastle, Color) (Sides CanCastle)
+gameCastling' afb game@(Game {_gameCastling = c, _gameTurn = t}) = afb (c, t)
+    <&> \b -> game {_gameCastling = b}
 
 piecesAll :: Pieces -> Bitboard
 piecesAll (Pieces p n b r q k) = p .|. n .|. b .|. r .|. q .|. k
@@ -213,8 +223,8 @@ flipTurn (Game w b enP Black) = Game w b enP White
 
 gameBlockers :: Game -> Bitboard
 gameBlockers game =
-    piecesAll (game ^. gamePieces . sideByColor (game ^. gameTurn))
-    .|. piecesAll (game ^. gamePieces . sideByntColor (game ^. gameTurn))
+    piecesAll (game ^. gamePieces' . sideByColor)
+    .|. piecesAll (game ^. gamePieces' . sideByntColor)
 
 allMoves :: Game -> [Move]
 allMoves game = concat
@@ -226,8 +236,8 @@ allMoves game = concat
     , moveSqs (kingMoves kingside queenside) kings
     ]
   where
-    kingside = game ^. gameCastling . turnSide . canCastleKing
-    queenside = game ^. gameCastling . turnSide . canCastleQueen
+    kingside = game ^. gameCastling' . sideByColor . canCastleKing
+    queenside = game ^. gameCastling' . sideByColor . canCastleQueen
     -- gets and concats the move for a set of squares (for a piece)
     moveSqs mover piece = concatMap
         (mover block myBlock)
@@ -235,12 +245,8 @@ allMoves game = concat
     -- TODO update incrementally
     block = myBlock .|. piecesAll oppPieces
     myBlock = piecesAll turnPieces
-    turnPieces = game ^. gamePieces . turnSide
-    oppPieces = game ^. gamePieces . oppSide
-
-    turnSide :: Lens' (Sides a) a
-    turnSide = sideByColor (game ^. gameTurn)
-    oppSide = sideByntColor (game ^. gameTurn)
+    turnPieces = game ^. gamePieces' . sideByColor
+    oppPieces = game ^. gamePieces' . sideByntColor
 
 squareAttacked :: Int -> Game -> Bool
 squareAttacked sq game = pawnAttackTable ! sq .&. oppPieces ^. pawns /= 0
@@ -257,7 +263,7 @@ squareAttacked sq game = pawnAttackTable ! sq .&. oppPieces ^. pawns /= 0
     pawnAttackTable = case game ^. gameTurn of
         White -> pawnWhiteAttackTable
         Black -> pawnBlackAttackTable
-    oppPieces = game ^. gamePieces . sideByntColor (game ^. gameTurn)
+    oppPieces = game ^. gamePieces' . sideByntColor
 
 inCheck :: Game -> Bool
 inCheck game
@@ -265,7 +271,7 @@ inCheck game
     | otherwise    = squareAttacked kingSq game
   where
     kingSq = countTrailingZeros kingMask
-    kingMask = game ^. gamePieces . sideByColor (game ^. gameTurn) . kings
+    kingMask = game ^. gamePieces' . sideByColor . kings
 
 makeMove :: Game -> Move -> Maybe Game
 makeMove game (Move piece special from to) = do
@@ -276,12 +282,12 @@ makeMove game (Move piece special from to) = do
     pure (flipTurn castleCleared)
   where
     -- basic moving
-    doMove p fsq tsq = gamePieces
-        . turnSide
+    doMove p fsq tsq = gamePieces'
+        . sideByColor
         . byPiece p
         %~ (`setBit` tsq) . (`clearBit` fsq)
-    captureAll sq = gamePieces
-        . oppSide
+    captureAll sq = gamePieces'
+        . sideByntColor
         %~ \(Pieces p n b r q k) -> Pieces
             (p .&. clearMask)
             (n .&. clearMask)
@@ -303,39 +309,39 @@ makeMove game (Move piece special from to) = do
                 (k && from /= 63 && to /= 63)
                 (q && from /= 56 && to /= 56))
         . case piece of
-            King -> gameCastling . turnSide .~ CanCastle False False
+            King -> gameCastling' . sideByColor .~ CanCastle False False
             _    -> id
     nothingIfCheck g = if inCheck g then Nothing else Just g
     specials = case special of
         PawnDouble -> Just . (gameEnPassant ?~ to)
         EnPassant enPSq -> Just
             . clearEnPassant
-            . (gamePieces
-                . oppSide
+            . (gamePieces'
+                . sideByntColor
                 . pawns
                 %~ (`clearBit` enPSq))
         Promotion promote -> Just
             . clearEnPassant
-            . (gamePieces
-                . turnSide
+            . (gamePieces'
+                . sideByColor
                 . byPiece promote
                 %~ (`setBit` to))
-            . (gamePieces
-                . turnSide
+            . (gamePieces'
+                . sideByColor
                 . pawns
                 %~ (`clearBit` to))
         CastleKing ->
             fmap (clearEnPassant
-                . (gamePieces
-                    . turnSide
+                . (gamePieces'
+                    . sideByColor
                     . rooks
                     %~ (`setBit` (kingOrigin + 1))
                     . (`clearBit` (kingOrigin + 3))))
             . throughCheckKing
         CastleQueen ->
             fmap (clearEnPassant
-                . (gamePieces
-                    . turnSide
+                . (gamePieces'
+                    . sideByColor
                     . rooks
                     %~ (`setBit` (kingOrigin - 1))
                     . (`clearBit` (kingOrigin - 4))))
@@ -348,19 +354,14 @@ makeMove game (Move piece special from to) = do
         | squareAttacked kingOrigin kingless = Nothing
         | otherwise                 = Just g
       where
-        kingless = g & gamePieces . turnSide . kings %~ (`clearBit` 6)
+        kingless = g & gamePieces' . sideByColor . kings %~ (`clearBit` 6)
     throughCheckQueen g
         | squareAttacked (kingOrigin - 1) kingless = Nothing
         | squareAttacked kingOrigin kingless = Nothing
         | otherwise = Just g
       where
-        kingless = g & gamePieces . turnSide . kings %~ (`clearBit` 2)
+        kingless = g & gamePieces' . sideByColor . kings %~ (`clearBit` 2)
     -- for castling things
     kingOrigin = case game ^. gameTurn of
         White -> 4
         Black -> 60
-
-    turnSide :: Lens' (Sides a) a
-    oppSide :: Lens' (Sides a) a
-    turnSide = sideByColor (game ^. gameTurn)
-    oppSide = sideByntColor (game ^. gameTurn)
