@@ -10,7 +10,6 @@ module Trout.Game
     , gamePieces, gamePieces'
     , gameCastling, gameCastling'
     , gameEnPassant, gameTurn
-    , fromFen
     , gameAsBoard
     , startingGame
     , allMoves
@@ -18,9 +17,7 @@ module Trout.Game
     , makeMove
     ) where
 
-import Data.Char                        (isDigit, ord)
 import Data.Function                    ((&))
-import Data.List.Split                  (splitOn)
 import Data.Vector.Primitive            ((!))
 import Lens.Micro                       (Lens', (%~), (.~), (?~), (^.), Lens, (<&>))
 import Lens.Micro.TH                    (makeLenses)
@@ -31,7 +28,6 @@ import Trout.Bitboard
     , clearBit
     , complement
     , countTrailingZeros
-    , fromSqs
     , setBit
     , toSqs
     , xyToSq
@@ -166,56 +162,6 @@ gameAsBoard game = unlines [[posChar x y | x <- [0..7]] | y <- [7, 6..0]]
         whitePieces = game ^. gamePieces . sideWhite
         blackPieces = game ^. gamePieces . sideBlack
         sq = xyToSq x y
-
-fromFen :: String -> Game
-fromFen fen = Game
-    { _gamePieces =
-        ( Pieces
-            { _pawns = bbBy (== 'P')
-            , _knights = bbBy (== 'N')
-            , _bishops = bbBy (== 'B')
-            , _rooks = bbBy (== 'R')
-            , _queens = bbBy (== 'Q')
-            , _kings = bbBy (== 'K')
-            }
-        , Pieces
-            { _pawns = bbBy (== 'p')
-            , _knights = bbBy (== 'n')
-            , _bishops = bbBy (== 'b')
-            , _rooks = bbBy (== 'r')
-            , _queens = bbBy (== 'q')
-            , _kings = bbBy (== 'k')
-            }
-        )
-    , _gameCastling = (whiteCastles, blackCastles)
-    , _gameEnPassant = enPassant
-    , _gameTurn = color
-    }
-  where
-    bbBy f = fromSqs $ fst <$> filter (f . snd) flatBoard
-    fenSections = words fen
-    flatBoard = zip [0..]
-        $ concat
-        $ reverse
-        $ (>>= (\c -> if isDigit c then replicate (read [c]) ' ' else [c]))
-        <$> splitOn "/" (head fenSections)
-    color = case fenSections !! 1 of
-        "w" -> White
-        "b" -> Black
-        _   -> error "unknown color"
-    whiteCastles = CanCastle
-        ('K' `elem` fenSections !! 2)
-        ('Q' `elem` fenSections !! 2)
-    blackCastles = CanCastle
-        ('k' `elem` fenSections !! 2)
-        ('q' `elem` fenSections !! 2)
-    enPassant
-        | fenSections !! 3 == "-" = Nothing
-        | otherwise               = Just (parseCoord (fenSections !! 3))
-    parseCoord coordStr = file + row * 8
-      where
-        file = ord (head coordStr) - ord 'a'
-        row = ord (coordStr !! 1) - ord '0' - 1
 
 flipTurn :: Game -> Game
 flipTurn (Game w b enP White) = Game w b enP Black

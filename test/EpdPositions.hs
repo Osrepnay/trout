@@ -2,10 +2,12 @@ module EpdPositions
     ( epdSpec
     ) where
 
+import Data.Either
 import Data.Foldable
 import Data.List.Split
 import Data.Maybe
 import Test.Hspec
+import Trout.Fen.Parse
 import Trout.Game
 
 perft :: Int -> Game -> Int
@@ -24,7 +26,7 @@ readDepthEpd filename = do
     trimSpaces = reverse . dropWhile (== ' ') . reverse . dropWhile (== ' ')
     parseLine line = (game, depths)
       where
-        game = fromFen (head parts)
+        (Right game) = fenToGame <$> readFen (head parts)
         depths = depth <$> tail parts
         depth ('D' : dc : ' ' : p) = (read [dc], read p)
         depth _                    = error "not a depth"

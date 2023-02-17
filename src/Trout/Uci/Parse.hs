@@ -29,10 +29,11 @@ import Text.Parsec
     )
 import Text.Parsec.String (Parser)
 import Trout.Piece        (Piece (..))
+import Trout.Fen.Parse (parseFen, Fen)
 
 data CommPositionInit
     = PositionStartpos
-    | PositionFen String
+    | PositionFen Fen
     deriving (Eq, Show)
 
 -- has less info than trout move
@@ -108,7 +109,7 @@ parsePosition = try (string "position")
     *> spaces
     $> CommPosition
     <*> (string "startpos" $> PositionStartpos
-        <|> PositionFen <$> (string "fen" *> parseFen))
+        <|> PositionFen <$> (string "fen" *> spaces *> parseFen))
     <*> (spaces
         *> string "moves"
         *> many parseUciMoves
@@ -136,7 +137,6 @@ parsePosition = try (string "position")
         <*> oneOf "abcdefgh"
         <*> oneOf "12345678"
         <*> optionMaybe (oneOf "nbrq")
-    parseFen = manyTill anyChar (try (string "moves"))
     parseUciMoves = spaces *> parseUciMove
 
 parseGo :: Parser UciCommand
