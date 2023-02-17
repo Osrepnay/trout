@@ -19,7 +19,15 @@ module Trout.Game
 
 import Data.Function                    ((&))
 import Data.Vector.Primitive            ((!))
-import Lens.Micro                       (Lens', (%~), (.~), (?~), (^.), Lens, (<&>))
+import Lens.Micro
+    ( Lens
+    , Lens'
+    , (%~)
+    , (.~)
+    , (<&>)
+    , (?~)
+    , (^.)
+    )
 import Lens.Micro.TH                    (makeLenses)
 import Trout.Bitboard
     ( Bitboard

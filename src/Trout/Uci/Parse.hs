@@ -28,8 +28,8 @@ import Text.Parsec
     , (<|>)
     )
 import Text.Parsec.String (Parser)
+import Trout.Fen.Parse    (Fen, parseFen)
 import Trout.Piece        (Piece (..))
-import Trout.Fen.Parse (parseFen, Fen)
 
 data CommPositionInit
     = PositionStartpos
