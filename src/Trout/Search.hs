@@ -1,4 +1,4 @@
-module Trout.Search (SearchState (..), bestMove, searchMini, searchMaxi) where
+module Trout.Search (SearchState (..), bestMove, eval, searchMini, searchMaxi) where
 
 import Control.Monad.Trans.State.Strict (State, evalState)
 import Data.Foldable                    (maximumBy, minimumBy)
@@ -38,8 +38,9 @@ data SearchState = SearchState deriving (Eq, Show)
 
 -- simple best move finder
 -- ok for now, gonna havve to replace to add statefulness between iterative deepening calls
-bestMove :: Color -> Int -> Game -> (Int, Move)
-bestMove White depth game = go (beta, Move Pawn Normal 0 0) (allMoves game)
+bestMove :: Int -> Game -> (Int, Move)
+bestMove depth game@(Game _ _ _ White) =
+    go (beta, Move Pawn Normal 0 0) (allMoves game)
   where
     alpha = maxBound
     beta = minBound
@@ -53,7 +54,8 @@ bestMove White depth game = go (beta, Move Pawn Normal 0 0) (allMoves game)
             (searchMini (depth - 1) alpha (fst best) g)
             SearchState
         moved = makeMove game m
-bestMove Black depth game = go (alpha, Move Pawn Normal 0 0) (allMoves game)
+bestMove depth game@(Game _ _ _ Black) =
+    go (alpha, Move Pawn Normal 0 0) (allMoves game)
   where
     alpha = maxBound
     beta = minBound

@@ -1,9 +1,11 @@
 module Trout.Game.Move
     ( SpecialMove(..)
     , Move(..)
+    , uciShowMove
     ) where
 
-import Trout.Piece (Piece)
+import Data.Char   (chr, ord)
+import Trout.Piece (Piece (..))
 
 -- moves that dont fit normal piece things
 data SpecialMove
@@ -21,3 +23,24 @@ data Move = Move
     , moveFrom    :: Int
     , moveTo      :: Int
     } deriving (Eq, Show)
+
+
+-- show uci format of move
+uciShowMove :: Move -> String
+uciShowMove (Move _ special from to) = uciShowSquare from
+    ++ uciShowSquare to
+    ++ case special of
+        Promotion pp ->
+            case pp of
+                Pawn   -> "p"
+                Knight -> "n"
+                Bishop -> "b"
+                Rook   -> "r"
+                Queen  -> "q"
+                King   -> "k"
+        _ -> ""
+  where
+    uciShowSquare sq =
+        [ chr (sq `rem` 8 + ord 'a')
+        , chr (sq `quot` 8 + ord '1')
+        ]
