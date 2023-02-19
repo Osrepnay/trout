@@ -52,12 +52,15 @@ data GoSettings = GoSettings
     , goMaxDepth :: Int
     } deriving (Show)
 
+niceDays :: Int
+niceDays = 69 * 24 * 60 * 60 * 1000
+
 defaultSettings :: GoSettings
 defaultSettings = GoSettings
     { goMovetime = Nothing
-    , goTimes    = (maxBound, maxBound)
+    , goTimes    = (niceDays, niceDays)
     , goIncs     = (0, 0)
-    , goMaxDepth = maxBound
+    , goMaxDepth = niceDays
     }
 
 launchGo :: MVar ThreadId -> Game -> GoSettings -> IO ()
@@ -171,4 +174,4 @@ doUci uciState = do
             GoNodes _       -> gs
             GoMate _        -> gs
             GoMovetime m    -> GoSettings (Just m) ts is depth
-            GoInfinite      -> GoSettings (Just maxBound) ts is depth
+            GoInfinite      -> GoSettings (Just niceDays) ts is depth
