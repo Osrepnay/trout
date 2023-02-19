@@ -3,20 +3,18 @@ module Trout.Uci (doUci, UciState (..)) where
 import Control.Concurrent
     ( MVar
     , ThreadId
-    , forkFinally
     , forkIO
     , killThread
-    , myThreadId
     , newEmptyMVar
     , putMVar
-    , takeMVar
-    , threadDelay
     , tryTakeMVar
     )
+import Control.Exception  (evaluate)
 import Data.Foldable      (foldl')
 import Data.Maybe         (fromMaybe)
 import Lens.Micro         ((&), (.~), (^.))
 import System.IO          (hPutStrLn, stderr)
+import System.Timeout     (timeout)
 import Trout.Fen.Parse    (fenToGame)
 import Trout.Game
     ( Game (..)
@@ -40,10 +38,10 @@ import Trout.Uci.Parse
     )
 
 data UciState = UciState
-    { uciGame         :: Game
-    , uciIsDebug      :: Bool
-    , uciSearchThread :: Maybe ThreadId
-    } deriving (Show)
+    { uciGame    :: Game
+    , uciIsDebug :: Bool
+    , uciSearch  :: Maybe (ThreadId, MVar Move)
+    }
 
 data GoSettings = GoSettings
     { goMovetime :: Maybe Int
@@ -63,29 +61,24 @@ defaultSettings = GoSettings
     , goMaxDepth = niceDays
     }
 
-launchGo :: MVar ThreadId -> Game -> GoSettings -> IO ()
-launchGo goIdVar game (GoSettings movetime times _incs maxDepth) = do
-    thisId <- myThreadId
-    latestMove <- newEmptyMVar
-    goThread <- forkFinally
-        (searches 0 latestMove)
-        (const (reportAndKill latestMove thisId))
-    putMVar goIdVar goThread
-    threadDelay (time * 1000)
-    killThread goThread
+reportMove :: MVar Move -> IO ()
+reportMove moveVar = do
+    moveMaybe <- tryTakeMVar moveVar
+    let move = maybe "0000" uciShowMove moveMaybe
+    putStrLn ("bestmove " ++ move)
+
+launchGo :: MVar Move -> Game -> GoSettings -> IO ()
+launchGo moveVar game (GoSettings movetime times _incs maxDepth) = do
+    _ <- timeout (time * 1000) (searches 0)
+    reportMove moveVar
   where
-    reportAndKill moveVar thread = do
-        moveMaybe <- tryTakeMVar moveVar
-        let move = maybe "0000" uciShowMove moveMaybe
-        putStrLn ("bestmove " ++ move)
-        killThread thread
-    searches depth moveVar
+    searches depth
         | depth <= maxDepth = do
-            let (score, move) = bestMove depth game
+            (score, move) <- evaluate (bestMove depth game)
             _ <- tryTakeMVar moveVar
             putMVar moveVar move
             putStrLn ("info depth " ++ show depth ++ " score cp " ++ show score)
-            searches (depth + 1) moveVar
+            searches (depth + 1)
         | otherwise = pure ()
     time = flip fromMaybe movetime
         $ case game ^. gameTurn of
@@ -128,18 +121,18 @@ doUci uciState = do
                         doUci (uciState { uciGame = game })
         Right (CommGo args) -> do
             goVar <- newEmptyMVar
-            _ <- forkIO
+            thread <- forkIO
                 $ launchGo
                     goVar
                     (uciGame uciState)
                     (foldl' (&) defaultSettings (doGoArg <$> args))
-            goId <- takeMVar goVar
             doUci
                 (uciState
-                    { uciSearchThread = Just goId })
-        Right CommStop -> case uciSearchThread uciState of
-            Just searchId -> do
+                    { uciSearch = Just (thread, goVar) })
+        Right CommStop -> case uciSearch uciState of
+            Just (searchId, moveVar) -> do
                 killThread searchId
+                reportMove moveVar
                 doUci uciState
             Nothing -> doUci uciState
         Right CommQuit -> pure ()
