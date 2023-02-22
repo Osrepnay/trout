@@ -5,7 +5,7 @@ module Trout.Game
     , CanCastle (..)
     , canCastleKing, canCastleQueen
     , Sides
-    , sideWhite, sideBlack, sideByColor
+    , sideWhite, sideBlack, sideByColor, sideByntColor, colorize
     , Game (..)
     , gamePieces, gamePieces'
     , gameCastling, gameCastling'
@@ -104,6 +104,10 @@ sideByntColor :: Lens (Sides a, Color) (Sides a) a a
 sideByntColor afb ((a, b), Black) = (, b) <$> afb a
 sideByntColor afb ((a, b), White) = (a, ) <$> afb b
 {-# INLINE sideByntColor #-}
+
+colorize :: Color -> ((a, Color) -> f a) -> a -> f a
+colorize c afb s = afb (s, c)
+{-# INLINE colorize #-}
 
 data Game = Game
     { _gamePieces    :: Sides Pieces

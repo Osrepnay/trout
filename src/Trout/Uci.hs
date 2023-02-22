@@ -20,14 +20,15 @@ import Trout.Game
     ( Game (..)
     , Sides
     , allMoves
+    , colorize
     , gameTurn
     , makeMove
     , sideBlack
+    , sideByColor
     , sideWhite
     , startingGame
     )
 import Trout.Game.Move    (Move (..), SpecialMove (Promotion), uciShowMove)
-import Trout.Piece        (Color (..))
 import Trout.Search       (bestMove)
 import Trout.Uci.Parse
     ( CommGoArg (..)
@@ -81,9 +82,7 @@ launchGo moveVar game (GoSettings movetime times _incs maxDepth) = do
             searches (depth + 1)
         | otherwise = pure ()
     time = flip fromMaybe movetime
-        $ case game ^. gameTurn of
-            White -> times ^. sideWhite `quot` 20
-            Black -> times ^. sideBlack `quot` 20
+        $ times ^. colorize (game ^. gameTurn) . sideByColor `quot` 20
 
 doUci :: UciState -> IO ()
 doUci uciState = do
