@@ -17,6 +17,7 @@ module Trout.Game
     , makeMove
     ) where
 
+import Data.Bool                        (bool)
 import Data.Function                    ((&))
 import Data.Vector.Primitive            ((!))
 import Lens.Micro
@@ -36,6 +37,10 @@ import Trout.Bitboard
     , clearBit
     , complement
     , countTrailingZeros
+    , fileA
+    , fileH
+    , rank1
+    , rank8
     , setBit
     , toSqs
     , xyToSq
@@ -111,7 +116,7 @@ colorize c afb s = afb (s, c)
 
 data Game = Game
     { _gamePieces    :: Sides Pieces
-    , _gameCastling  :: Sides CanCastle
+    , _gameCastling  :: !Bitboard
     , _gameEnPassant :: !(Maybe Int)
     , _gameTurn      :: !Color
     } deriving (Eq, Show)
@@ -121,9 +126,32 @@ gamePieces' :: Lens Game Game (Sides Pieces, Color) (Sides Pieces)
 gamePieces' afb game@(Game {_gamePieces = p, _gameTurn = t}) = afb (p, t)
     <&> \b -> game {_gamePieces = b}
 
-gameCastling' :: Lens Game Game (Sides CanCastle, Color) (Sides CanCastle)
+gameCastling' :: Lens Game Game (Bitboard, Color) Bitboard
 gameCastling' afb game@(Game {_gameCastling = c, _gameTurn = t}) = afb (c, t)
     <&> \b -> game {_gameCastling = b}
+
+-- masks home rows by color
+maskByColor
+    :: Functor f
+    => (Bitboard -> f Bitboard)
+    -> (Bitboard, Color)
+    -> f Bitboard
+maskByColor afb (bb, White) = (.|. (bb .&. complement rank1))
+    . (.&. rank1)
+    <$> afb (bb .&. rank1)
+maskByColor afb (bb, Black) = (.|. (bb .&. complement rank8))
+    . (.&. rank8)
+    <$> afb (bb .&. rank8)
+
+maskKingside :: Functor f => (Bitboard -> f Bitboard) -> Bitboard -> f Bitboard
+maskKingside afb bb = (.|. (bb .&. complement fileH))
+    . (.&. fileH)
+    <$> afb (bb .&. fileH)
+
+maskQueenside :: Functor f => (Bitboard -> f Bitboard) -> Bitboard -> f Bitboard
+maskQueenside afb bb = (.|. (bb .&. complement fileA))
+    . (.&. fileA)
+    <$> afb (bb .&. fileA)
 
 piecesAll :: Pieces -> Bitboard
 piecesAll (Pieces p n b r q k) = p .|. n .|. b .|. r .|. q .|. k
@@ -146,9 +174,7 @@ startingGame = Game
         576460752303423488
         1152921504606846976
     )
-    ( CanCastle True True
-    , CanCastle True True
-    )
+    9295429630892703873
     Nothing
     White
 
@@ -194,8 +220,8 @@ allMoves game = concat
     , moveSqs (kingMoves kingside queenside) kings
     ]
   where
-    kingside = game ^. gameCastling' . sideByColor . canCastleKing
-    queenside = game ^. gameCastling' . sideByColor . canCastleQueen
+    kingside = 0 /= game ^. gameCastling' . maskByColor . maskKingside
+    queenside = 0 /= game ^. gameCastling' . maskByColor . maskQueenside
     -- gets and concats the move for a set of squares (for a piece)
     moveSqs mover piece = concatMap
         (mover block myBlock)
@@ -255,20 +281,15 @@ makeMove game (Move piece special from to) = do
             (k .&. clearMask)
       where
         clearMask = complement (bit sq)
-    clearCastles =
-        (gameCastling
-            . sideWhite
-            %~ \(CanCastle k q) -> CanCastle
-                (k && from /= 7 && to /= 7)
-                (q && from /= 0 && to /= 0))
-        . (gameCastling
-            . sideBlack
-            %~ \(CanCastle k q) -> CanCastle
-                (k && from /= 63 && to /= 63)
-                (q && from /= 56 && to /= 56))
-        . case piece of
-            King -> gameCastling' . sideByColor .~ CanCastle False False
-            _    -> id
+    clearCastles = case piece of
+        King -> (gameCastling' . maskByColor .~ 0) . fromToClearCastles
+        _    -> fromToClearCastles
+    fromToClearCastles = gameCastling
+        %~ \cbb -> cbb
+            .&. (bool 1 0 (from == 0 || to == 0)
+                .|. bool 128 0 (from == 7 || to == 7)
+                .|. bool 72057594037927936 0 (from == 56 || to == 56)
+                .|. bool 9223372036854775808 0 (from == 63 || to == 63))
     nothingIfCheck g = if inCheck g then Nothing else Just g
     specials = case special of
         PawnDouble -> Just . (gameEnPassant ?~ to)
