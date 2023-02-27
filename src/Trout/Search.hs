@@ -38,6 +38,7 @@ data SearchState = SearchState deriving (Eq, Show)
 -- simple best move finder
 -- ok for now, gonna havve to replace to add statefulness between iterative deepening calls
 bestMove :: Int -> Game -> (Int, Move)
+bestMove 0 game = (eval game, head (allMoves game))
 bestMove depth game@(Game _ _ _ White) =
     go (alpha, Move Pawn Normal 0 0) (allMoves game)
   where
