@@ -13,7 +13,7 @@ import Control.Exception  (evaluate)
 import Data.Foldable      (foldl')
 import Data.Maybe         (fromMaybe)
 import Lens.Micro         ((&), (.~), (^.))
-import System.IO          (hPutStrLn, stderr)
+import System.IO          (hPutStrLn, stderr, hFlush, stdout)
 import System.Timeout     (timeout)
 import Trout.Fen.Parse    (fenToGame)
 import Trout.Game
@@ -67,6 +67,7 @@ reportMove moveVar = do
     moveMaybe <- tryTakeMVar moveVar
     let move = maybe "0000" uciShowMove moveMaybe
     putStrLn ("bestmove " ++ move)
+    hFlush stdout
 
 launchGo :: MVar Move -> Game -> GoSettings -> IO ()
 launchGo moveVar game (GoSettings movetime times _incs maxDepth) = do
@@ -79,6 +80,7 @@ launchGo moveVar game (GoSettings movetime times _incs maxDepth) = do
             _ <- tryTakeMVar moveVar
             putMVar moveVar move
             putStrLn ("info depth " ++ show depth ++ " score cp " ++ show score)
+            hFlush stdout
             searches (depth + 1)
         | otherwise = pure ()
     time = flip fromMaybe movetime
@@ -93,31 +95,34 @@ doUci uciState = do
             putStrLn "id name Trout"
             putStrLn "id author Osrepnay"
             putStrLn "uciok"
+            hFlush stdout
             doUci uciState
         Right (CommDebug debug) -> doUci (uciState { uciIsDebug = debug })
         Right CommDont -> do
             putStrLn "miss the annual ShredderChess Annual Barbeque"
+            hFlush stdout
             doUci uciState
         Right CommIsready -> do
             putStrLn "readyok"
+            hFlush stdout
             doUci uciState
         Right (CommSetoption _ _) -> do
             hPutStrLn stderr "option not supported"
+            hFlush stderr
             doUci uciState
         Right (CommRegister _) -> doUci uciState
         Right CommUcinewgame -> doUci (uciState { uciGame = startingGame })
         Right (CommPosition posInit moves) ->
-            let ng =
-                    case posInit of
-                        PositionStartpos -> startingGame
-                        PositionFen fen  -> fenToGame fen
-            in
-                case playMoves ng moves of
-                    Left err -> do
-                        hPutStrLn stderr err
-                        doUci uciState
-                    Right game -> do
-                        doUci (uciState { uciGame = game })
+            let ng = case posInit of
+                    PositionStartpos -> startingGame
+                    PositionFen fen  -> fenToGame fen
+            in case playMoves ng moves of
+                Left err -> do
+                    hPutStrLn stderr err
+                    hFlush stderr
+                    doUci uciState
+                Right game -> do
+                    doUci (uciState { uciGame = game })
         Right (CommGo args) -> do
             goVar <- newEmptyMVar
             thread <- forkIO

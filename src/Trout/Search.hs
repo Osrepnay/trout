@@ -1,7 +1,6 @@
 module Trout.Search (SearchState (..), bestMove, eval, searchMini, searchMaxi) where
 
 import Control.Monad.Trans.State.Strict (State, evalState)
-import Data.Foldable                    (maximumBy, minimumBy)
 import Data.Function                    (on)
 import Data.Maybe                       (mapMaybe)
 import Lens.Micro                       ((^.))
@@ -40,35 +39,39 @@ data SearchState = SearchState deriving (Eq, Show)
 -- ok for now, gonna havve to replace to add statefulness between iterative deepening calls
 bestMove :: Int -> Game -> (Int, Move)
 bestMove depth game@(Game _ _ _ White) =
-    go (beta, Move Pawn Normal 0 0) (allMoves game)
-  where
-    alpha = maxBound
-    beta = minBound
-    go best [] = best
-    go best (m : ms) =
-        case moved of
-            Just g  -> go (maximumBy (compare `on` fst) [best, (score g, m)]) ms
-            Nothing -> go best ms
-      where
-        score g = evalState
-            (searchMini (depth - 1) alpha (fst best) g)
-            SearchState
-        moved = makeMove game m
-bestMove depth game@(Game _ _ _ Black) =
     go (alpha, Move Pawn Normal 0 0) (allMoves game)
   where
-    alpha = maxBound
-    beta = minBound
+    alpha = minBound
+    beta = maxBound
+    maxByPreferFst cmp a b = case a `cmp` b of
+        LT -> b
+        EQ -> a
+        GT -> a
     go best [] = best
-    go best (m : ms) =
-        case moved of
-            Just g  -> go (minimumBy (compare `on` fst) [best, (score g, m)]) ms
-            Nothing -> go best ms
+    go best (m : ms) = case makeMove game m of
+        Just g  -> go (maxByPreferFst (compare `on` fst) best (score g, m)) ms
+        Nothing -> go best ms
       where
         score g = evalState
-            (searchMaxi (depth - 1) (fst best) beta g)
+            (searchMini (depth - 1) (fst best) beta g)
             SearchState
-        moved = makeMove game m
+bestMove depth game@(Game _ _ _ Black) =
+    go (beta, Move Pawn Normal 0 0) (allMoves game)
+  where
+    alpha = minBound
+    beta = maxBound
+    minByPreferFst cmp a b = case a `cmp` b of
+        LT -> a
+        EQ -> a
+        GT -> b
+    go best [] = best
+    go best (m : ms) = case makeMove game m of
+        Just g  -> go (minByPreferFst (compare `on` fst) best (score g, m)) ms
+        Nothing -> go best ms
+      where
+        score g = evalState
+            (searchMaxi (depth - 1) alpha (fst best) g)
+            SearchState
 
 searchMini :: Int -> Int -> Int -> Game -> State SearchState Int
 searchMini depth alpha beta game
@@ -77,14 +80,14 @@ searchMini depth alpha beta game
         $ if inCheck game
         then whiteWonWorth -- checkmate
         else drawWorth -- stalemate
-    | otherwise = newAlpha alpha moved
+    | otherwise = newBeta beta moved
   where
-    newAlpha a [] = pure a
-    newAlpha a (g : gs) = do
-        score <- searchMaxi (depth - 1) a beta g
-        if score <= beta
-        then pure beta
-        else newAlpha (min a score) gs
+    newBeta b [] = pure b
+    newBeta b (g : gs) = do
+        score <- searchMaxi (depth - 1) alpha b g
+        if score < alpha
+        then pure alpha
+        else newBeta (min b score) gs
     moved = mapMaybe (makeMove game) (allMoves game)
 
 searchMaxi :: Int -> Int -> Int -> Game -> State SearchState Int
@@ -94,14 +97,14 @@ searchMaxi depth alpha beta game
         $ if inCheck game
         then blackWonWorth -- checkmate
         else drawWorth -- stalemate
-    | otherwise = newBeta beta moved
+    | otherwise = newAlpha alpha moved
   where
-    newBeta b [] = pure b
-    newBeta b (g : gs) = do
-        score <- searchMini (depth - 1) alpha b g
-        if score >= alpha
-        then pure alpha
-        else newBeta (max b score) gs
+    newAlpha a [] = pure a
+    newAlpha a (g : gs) = do
+        score <- searchMini (depth - 1) a beta g
+        if score > beta
+        then pure beta
+        else newAlpha (max a score) gs
     moved = mapMaybe (makeMove game) (allMoves game)
 
 eval :: Game -> Int

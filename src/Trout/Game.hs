@@ -131,11 +131,7 @@ gameCastling' afb game@(Game {_gameCastling = c, _gameTurn = t}) = afb (c, t)
     <&> \b -> game {_gameCastling = b}
 
 -- masks home rows by color
-maskByColor
-    :: Functor f
-    => (Bitboard -> f Bitboard)
-    -> (Bitboard, Color)
-    -> f Bitboard
+maskByColor :: Lens (Bitboard, Color) Bitboard Bitboard Bitboard
 maskByColor afb (bb, White) = (.|. (bb .&. complement rank1))
     . (.&. rank1)
     <$> afb (bb .&. rank1)
@@ -143,12 +139,12 @@ maskByColor afb (bb, Black) = (.|. (bb .&. complement rank8))
     . (.&. rank8)
     <$> afb (bb .&. rank8)
 
-maskKingside :: Functor f => (Bitboard -> f Bitboard) -> Bitboard -> f Bitboard
+maskKingside :: Lens' Bitboard Bitboard
 maskKingside afb bb = (.|. (bb .&. complement fileH))
     . (.&. fileH)
     <$> afb (bb .&. fileH)
 
-maskQueenside :: Functor f => (Bitboard -> f Bitboard) -> Bitboard -> f Bitboard
+maskQueenside :: Lens' Bitboard Bitboard
 maskQueenside afb bb = (.|. (bb .&. complement fileA))
     . (.&. fileA)
     <$> afb (bb .&. fileA)
