@@ -2,8 +2,6 @@
 module Trout.Game
     ( Pieces (..)
     , pawns, knights, bishops, rooks, queens, kings
-    , CanCastle (..)
-    , canCastleKing, canCastleQueen
     , Sides
     , sideWhite, sideBlack, sideByColor, sideByntColor, colorize
     , Game (..)
@@ -83,12 +81,6 @@ byPiece Bishop = bishops
 byPiece Rook   = rooks
 byPiece Queen  = queens
 byPiece King   = kings
-
-data CanCastle = CanCastle
-    { _canCastleKing  :: !Bool
-    , _canCastleQueen :: !Bool
-    } deriving (Eq, Show)
-makeLenses ''CanCastle
 
 type Sides a = (a, a)
 
