@@ -221,13 +221,14 @@ allMoves game = concat
     oppPieces = game ^. gamePieces' . sideByntColor
 
 squareAttacked :: Int -> Game -> Bool
-squareAttacked sq game = pawnAttackTable ! sq .&. oppPieces ^. pawns /= 0
-    || knightTable ! sq .&. oppPieces ^. knights /= 0
-    || bishoped .&. oppPieces ^. bishops /= 0
-    || rooked .&. oppPieces ^. rooks /= 0
-    || bishoped .&. oppPieces ^. queens /= 0
-    || rooked .&. oppPieces ^. queens /= 0
-    || kingTable ! sq .&. oppPieces ^. kings /= 0
+squareAttacked sq game = pawnAttackTable ! sq .&. oppPieces ^. pawns
+    .|. knightTable ! sq .&. oppPieces ^. knights
+    .|. bishoped .&. oppPieces ^. bishops
+    .|. rooked .&. oppPieces ^. rooks
+    .|. bishoped .&. oppPieces ^. queens
+    .|. rooked .&. oppPieces ^. queens
+    .|. kingTable ! sq .&. oppPieces ^. kings
+    /= 0
   where
     bishoped = bishopMovesMagic block sq
     rooked = rookMovesMagic block sq
