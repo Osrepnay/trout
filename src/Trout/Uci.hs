@@ -13,7 +13,7 @@ import Control.Exception  (evaluate)
 import Data.Foldable      (foldl')
 import Data.Maybe         (fromMaybe)
 import Lens.Micro         ((&), (.~), (^.))
-import System.IO          (hPutStrLn, stderr, hFlush, stdout)
+import System.IO          (hFlush, hPutStrLn, stderr, stdout)
 import System.Timeout     (timeout)
 import Trout.Fen.Parse    (fenToGame)
 import Trout.Game
