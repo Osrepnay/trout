@@ -9,15 +9,14 @@ import Trout.Game
     ( Game (..)
     , allMoves
     , bishops
-    , gamePieces
+    , gameBlack
+    , gameWhite
     , inCheck
     , knights
     , makeMove
     , pawns
     , queens
     , rooks
-    , sideBlack
-    , sideWhite
     )
 import Trout.Game.Move                  (Move (..), SpecialMove (..))
 import Trout.Piece                      (Color (..), Piece (..))
@@ -39,7 +38,7 @@ data SearchState = SearchState deriving (Eq, Show)
 -- ok for now, gonna havve to replace to add statefulness between iterative deepening calls
 bestMove :: Int -> Game -> (Int, Move)
 bestMove 0 game = (eval game, head (allMoves game))
-bestMove depth game@(Game _ _ _ White) =
+bestMove depth game@(Game _ _ _ _ White) =
     go (alpha, Move Pawn Normal 0 0) (allMoves game)
   where
     alpha = minBound
@@ -56,7 +55,7 @@ bestMove depth game@(Game _ _ _ White) =
         score g = evalState
             (searchMini (depth - 1) (fst best) beta g)
             SearchState
-bestMove depth game@(Game _ _ _ Black) =
+bestMove depth game@(Game _ _ _ _ Black) =
     go (beta, Move Pawn Normal 0 0) (allMoves game)
   where
     alpha = minBound
@@ -115,8 +114,8 @@ eval game = pawnWorth * pawnDiff
     + rookWorth * rookDiff
     + queenWorth * queenDiff
   where
-    whitePieces = game ^. gamePieces . sideWhite
-    blackPieces = game ^. gamePieces . sideBlack
+    whitePieces = game ^. gameWhite
+    blackPieces = game ^. gameBlack
     pawnDiff = popCount (whitePieces ^. pawns)
         - popCount (blackPieces ^. pawns)
     knightDiff = popCount (whitePieces ^. knights)

@@ -105,7 +105,8 @@ readFen = first show . parse parseFen ""
 
 fenToGame :: Fen -> Game
 fenToGame fen = Game
-    (fenPieces fen)
+    w b
     (fenCastling fen)
     (fenEnPassant fen)
     (fenTurn fen)
+  where (w, b) = fenPieces fen
