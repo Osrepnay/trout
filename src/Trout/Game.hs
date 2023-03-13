@@ -119,10 +119,12 @@ makeLenses ''Game
 gamePieces :: Lens Game Game (Sides Pieces, Color) (Sides Pieces)
 gamePieces afb game@(Game {_gameWhite = w, _gameBlack = b, _gameTurn = t}) =
     afb ((w, b), t) <&> \(w', b') -> game {_gameWhite = w', _gameBlack = b'}
+{-# INLINE gamePieces #-}
 
 gameCastling' :: Lens Game Game (Bitboard, Color) Bitboard
 gameCastling' afb game@(Game {_gameCastling = c, _gameTurn = t}) = afb (c, t)
     <&> \b -> game {_gameCastling = b}
+{-# INLINE gameCastling' #-}
 
 -- masks home rows by color
 maskByColor :: Lens (Bitboard, Color) Bitboard Bitboard Bitboard
@@ -132,19 +134,23 @@ maskByColor afb (bb, White) = (.|. (bb .&. complement rank1))
 maskByColor afb (bb, Black) = (.|. (bb .&. complement rank8))
     . (.&. rank8)
     <$> afb (bb .&. rank8)
+{-# INLINE maskByColor #-}
 
 maskKingside :: Lens' Bitboard Bitboard
 maskKingside afb bb = (.|. (bb .&. complement fileH))
     . (.&. fileH)
     <$> afb (bb .&. fileH)
+{-# INLINE maskKingside #-}
 
 maskQueenside :: Lens' Bitboard Bitboard
 maskQueenside afb bb = (.|. (bb .&. complement fileA))
     . (.&. fileA)
     <$> afb (bb .&. fileA)
+{-# INLINE maskQueenside #-}
 
 piecesAll :: Pieces -> Bitboard
 piecesAll (Pieces p n b r q k) = p .|. n .|. b .|. r .|. q .|. k
+{-# INLINE piecesAll #-}
 
 -- https://tearth.dev/bitboard-viewer/
 startingGame :: Game
@@ -193,11 +199,13 @@ gameAsBoard game = unlines [[posChar x y | x <- [0..7]] | y <- [7, 6..0]]
 flipTurn :: Game -> Game
 flipTurn (Game w b c enP White) = Game w b c enP Black
 flipTurn (Game w b c enP Black) = Game w b c enP White
+{-# INLINE flipTurn #-}
 
 gameBlockers :: Game -> Bitboard
 gameBlockers game =
     piecesAll (game ^. gamePieces . sideByColor)
     .|. piecesAll (game ^. gamePieces . sideByntColor)
+{-# INLINE gameBlockers #-}
 
 allMoves :: Game -> [Move]
 allMoves game = concat
