@@ -28,6 +28,7 @@ toSqs :: Bitboard -> [Int]
 toSqs 0 = []
 toSqs b = trailing : toSqs (clearBit b trailing)
   where trailing = countTrailingZeros b
+{-# INLINE toSqs #-}
 
 xyToSq :: Int -> Int -> Int
 xyToSq x y = y * 8 + x

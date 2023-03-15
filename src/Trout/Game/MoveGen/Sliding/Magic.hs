@@ -1,6 +1,7 @@
 module Trout.Game.MoveGen.Sliding.Magic
     ( bishopMovesMagic
     , rookMovesMagic
+    , bishopMagicTable, rookMagicTable
     ) where
 
 import           Data.Foldable                      (foldl')
@@ -93,8 +94,10 @@ bishopMovesMagic :: Bitboard -> Int -> Bitboard
 bishopMovesMagic block sq = bishopMagicTable
     ! (sq * 1024 + genKey masked (bishopMagics ! sq) (bishopBits ! sq))
   where masked = block .&. (bishopMasks ! sq)
+{-# INLINE bishopMovesMagic #-}
 
 rookMovesMagic :: Bitboard -> Int -> Bitboard
 rookMovesMagic block sq = rookMagicTable
     ! (sq * 4096 + genKey masked (rookMagics ! sq) (rookBits ! sq))
   where masked = block .&. (rookMasks ! sq)
+{-# INLINE rookMovesMagic #-}

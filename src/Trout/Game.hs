@@ -197,8 +197,8 @@ gameAsBoard game = unlines [[posChar x y | x <- [0..7]] | y <- [7, 6..0]]
         sq = xyToSq x y
 
 flipTurn :: Game -> Game
-flipTurn (Game w b c enP White) = Game w b c enP Black
-flipTurn (Game w b c enP Black) = Game w b c enP White
+flipTurn (Game !w !b c enP White) = Game w b c enP Black
+flipTurn (Game !w !b c enP Black) = Game w b c enP White
 {-# INLINE flipTurn #-}
 
 gameBlockers :: Game -> Bitboard
@@ -257,18 +257,18 @@ inCheck game
 
 makeMove :: Game -> Move -> Maybe Game
 makeMove game (Move piece special from to) = do
-    let moveAndCaptured = captureAll to (doMove piece from to game)
+    let moveAndCaptured = captureAll (doMove game)
     afterSpecials <- specials moveAndCaptured
     checkChecked <- nothingIfCheck afterSpecials
     let castleCleared = clearCastles checkChecked
     pure (flipTurn castleCleared)
   where
     -- basic moving
-    doMove p fsq tsq = gamePieces
+    doMove = gamePieces
         . sideByColor
-        . byPiece p
-        %~ (`setBit` tsq) . (`clearBit` fsq)
-    captureAll sq = gamePieces
+        . byPiece piece
+        %~ (`setBit` to) . (`clearBit` from)
+    captureAll = gamePieces
         . sideByntColor
         %~ \(Pieces p n b r q k) -> Pieces
             (p .&. clearMask)
@@ -278,7 +278,7 @@ makeMove game (Move piece special from to) = do
             (q .&. clearMask)
             (k .&. clearMask)
       where
-        clearMask = complement (bit sq)
+        clearMask = complement (bit to)
     clearCastles = case piece of
         King -> (gameCastling' . maskByColor .~ 0) . fromToClearCastles
         _    -> fromToClearCastles
@@ -329,7 +329,7 @@ makeMove game (Move piece special from to) = do
     throughCheckKing g
         | squareAttacked (kingOrigin + 1) kingless = Nothing
         | squareAttacked kingOrigin kingless = Nothing
-        | otherwise                 = Just g
+        | otherwise = Just g
       where
         kingless = g & gamePieces . sideByColor . kings %~ (`clearBit` 6)
     throughCheckQueen g
