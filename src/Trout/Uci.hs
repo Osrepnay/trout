@@ -147,10 +147,9 @@ doUci uciState = do
   where
     playMoves g [] = Right g
     playMoves g ((UciMove from to promote) : ms) = case gMoves of
-        (move : _) ->
-            case makeMove g move of
-                Just ng -> playMoves ng ms
-                Nothing -> Left "illegal move"
+        (move : _) -> case makeMove g move of
+            Just ng -> playMoves ng ms
+            Nothing -> Left "illegal move"
         [] -> Left "ILLEGAL move"
       where
         moveMatches (Move _ (Promotion p) f t) = Just p == promote
@@ -158,17 +157,16 @@ doUci uciState = do
             && t == to
         moveMatches (Move _ _ f t) = f == from && t == to
         gMoves = filter moveMatches (allMoves g)
-    doGoArg arg gs@(GoSettings mt ts is depth) =
-        case arg of
-            GoSearchMoves _ -> gs
-            GoPonder        -> gs
-            GoWtime t       -> GoSettings mt (ts & sideWhite .~ t) is depth
-            GoWinc i        -> GoSettings mt ts (is & sideWhite .~ i) depth
-            GoBtime t       -> GoSettings mt (ts & sideBlack .~ t) is depth
-            GoBinc i        -> GoSettings mt ts (is & sideBlack .~ i) depth
-            GoMovestogo _   -> gs
-            GoDepth d       -> GoSettings mt ts is d
-            GoNodes _       -> gs
-            GoMate _        -> gs
-            GoMovetime m    -> GoSettings (Just m) ts is depth
-            GoInfinite      -> GoSettings (Just niceDays) ts is depth
+    doGoArg arg gs@(GoSettings mt ts is depth) = case arg of
+        GoSearchMoves _ -> gs
+        GoPonder        -> gs
+        GoWtime t       -> GoSettings mt (ts & sideWhite .~ t) is depth
+        GoWinc i        -> GoSettings mt ts (is & sideWhite .~ i) depth
+        GoBtime t       -> GoSettings mt (ts & sideBlack .~ t) is depth
+        GoBinc i        -> GoSettings mt ts (is & sideBlack .~ i) depth
+        GoMovestogo _   -> gs
+        GoDepth d       -> GoSettings mt ts is d
+        GoNodes _       -> gs
+        GoMate _        -> gs
+        GoMovetime m    -> GoSettings (Just m) ts is depth
+        GoInfinite      -> GoSettings (Just niceDays) ts is depth

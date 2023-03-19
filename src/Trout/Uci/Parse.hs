@@ -123,13 +123,12 @@ parsePosition = try (string "position")
         fromSq = (ord fromRow - ord '1') * 8 + ord fromCol - ord 'a'
         toSq = (ord toRow - ord '1') * 8 + ord toCol - ord 'a'
         maybePromotePiece = maybePromote
-            >>= \p ->
-                case p of
-                    'n' -> Just Knight
-                    'b' -> Just Bishop
-                    'r' -> Just Rook
-                    'q' -> Just Queen
-                    _   -> Nothing
+            >>= \p -> case p of
+                'n' -> Just Knight
+                'b' -> Just Bishop
+                'r' -> Just Rook
+                'q' -> Just Queen
+                _   -> Nothing
     parseUciMove :: Parser UciMove
     parseUciMove = makeUciMove
         <$> oneOf "abcdefgh"

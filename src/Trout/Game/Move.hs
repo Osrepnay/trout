@@ -24,20 +24,18 @@ data Move = Move
     , moveTo      :: Int
     } deriving (Eq, Show)
 
-
 -- show uci format of move
 uciShowMove :: Move -> String
 uciShowMove (Move _ special from to) = uciShowSquare from
     ++ uciShowSquare to
     ++ case special of
-        Promotion pp ->
-            case pp of
-                Pawn   -> "p"
-                Knight -> "n"
-                Bishop -> "b"
-                Rook   -> "r"
-                Queen  -> "q"
-                King   -> "k"
+        Promotion pp -> case pp of
+            Pawn   -> "p"
+            Knight -> "n"
+            Bishop -> "b"
+            Rook   -> "r"
+            Queen  -> "q"
+            King   -> "k"
         _ -> ""
   where
     uciShowSquare sq =

@@ -153,7 +153,7 @@ kingMoves kAllowed qAllowed block myBlock sq = concat
     ]
   where
     castleK = kAllowed && unblocked block (sq + 1) && unblocked block (sq + 2)
-    castleQ = qAllowed &&
-        unblocked block (sq - 1) &&
-        unblocked block (sq - 2) &&
-        unblocked block (sq - 3)
+    castleQ = qAllowed
+        && unblocked block (sq - 1)
+        && unblocked block (sq - 2)
+        && unblocked block (sq - 3)

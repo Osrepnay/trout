@@ -36,6 +36,7 @@ import           Trout.Game.MoveGen.Sliding.Magics
     , rookBits
     , rookMagics
     )
+import Data.Functor ((<&>))
 
 bishopMasks :: Vector Bitboard
 bishopMasks = V.generate
@@ -74,21 +75,23 @@ allMapped magic bits len mask = V.replicate len 0
 
 bishopMagicTable :: Vector Bitboard
 bishopMagicTable = V.concat
-    $ (\sq -> flip bishopMovesClassic sq
+    $ [0..63]
+    <&> \sq -> flip bishopMovesClassic sq
         `V.map` allMapped
             (bishopMagics ! sq)
             (bishopBits ! sq)
             1024
-            (bishopMasks ! sq)) <$> [0..63]
+            (bishopMasks ! sq)
 
 rookMagicTable :: Vector Bitboard
 rookMagicTable = V.concat
-    $ (\sq -> flip rookMovesClassic sq
+    $ [0..63]
+    <&> \sq -> flip rookMovesClassic sq
         `V.map` allMapped
             (rookMagics ! sq)
             (rookBits ! sq)
             4096
-            (rookMasks ! sq)) <$> [0..63]
+            (rookMasks ! sq)
 
 bishopMovesMagic :: Bitboard -> Int -> Bitboard
 bishopMovesMagic block sq = bishopMagicTable

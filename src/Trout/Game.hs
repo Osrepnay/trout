@@ -61,8 +61,8 @@ import Trout.Game.MoveGen
     , queenMoves
     , rookMoves
     )
-import Trout.Game.MoveGen.Sliding.Magic
-import Trout.Piece
+import Trout.Game.MoveGen.Sliding.Magic (bishopMovesMagic, rookMovesMagic)
+import Trout.Piece                      (Color (..), Piece (..))
 
 data Pieces = Pieces
     { _pawns   :: !Bitboard
@@ -260,8 +260,7 @@ makeMove game (Move piece special from to) = do
     let moveAndCaptured = captureAll (doMove game)
     afterSpecials <- specials moveAndCaptured
     checkChecked <- nothingIfCheck afterSpecials
-    let castleCleared = clearCastles checkChecked
-    pure (flipTurn castleCleared)
+    pure (flipTurn (clearCastles checkChecked))
   where
     -- basic moving
     doMove = gamePieces
@@ -279,15 +278,20 @@ makeMove game (Move piece special from to) = do
             (k .&. clearMask)
       where
         clearMask = complement (bit to)
-    clearCastles = case piece of
-        King -> (gameCastling' . maskByColor .~ 0) . fromToClearCastles
-        _    -> fromToClearCastles
-    fromToClearCastles = gameCastling
-        %~ \cbb -> cbb
-            .&. (bool 1 0 (from == 0 || to == 0)
-                .|. bool 128 0 (from == 7 || to == 7)
-                .|. bool 72057594037927936 0 (from == 56 || to == 56)
-                .|. bool 9223372036854775808 0 (from == 63 || to == 63))
+    clearCastles = gameCastling
+        %~ (complement
+            (case piece of
+                King -> case game ^. gameTurn of
+                    White -> rank1
+                        .|. bool 0 (fileA .&. rank8) (from == 56 || to == 56)
+                        .|. bool 0 (fileH .&. rank8) (from == 63 || to == 63)
+                    Black -> rank8
+                        .|. bool 0 (fileA .&. rank1) (from == 0 || to == 0)
+                        .|. bool 0 (fileH .&. rank1) (from == 7 || to == 7)
+                _ -> bool 0 (fileA .&. rank1) (from == 0 || to == 0)
+                    .|. bool 0 (fileH .&. rank1) (from == 7 || to == 7)
+                    .|. bool 0 (fileA .&. rank8) (from == 56 || to == 56)
+                    .|. bool 0 (fileH .&. rank8) (from == 63 || to == 63)) .&.)
     nothingIfCheck g = if inCheck g then Nothing else Just g
     specials = case special of
         PawnDouble -> Just . (gameEnPassant ?~ to)

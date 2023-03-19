@@ -5,7 +5,7 @@ import Trout.Game
 main :: IO ()
 main = defaultMain [bench "perft(5)" $ whnf (perft 5) startingGame]
 
-perft :: Int -> Game -> Int -- shut up ghc
+perft :: Int -> Game -> Int
 perft 0 _ = 1
 perft depth game = sum
     $ perft (depth - 1)
