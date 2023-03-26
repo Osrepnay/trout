@@ -20,6 +20,7 @@ import Trout.Game
     )
 import Trout.Game.Move                  (Move (..), SpecialMove (..))
 import Trout.Piece                      (Color (..), Piece (..))
+import Trout.PieceSquareTables          (pstEvalBitboard)
 import Trout.Search.Worthiness
     ( bishopWorth
     , blackWonWorth
@@ -113,16 +114,38 @@ eval game = pawnWorth * pawnDiff
     + bishopWorth * bishopDiff
     + rookWorth * rookDiff
     + queenWorth * queenDiff
+    + pstEvalValue
   where
     whitePieces = game ^. gameWhite
     blackPieces = game ^. gameBlack
-    pawnDiff = popCount (whitePieces ^. pawns)
-        - popCount (blackPieces ^. pawns)
-    knightDiff = popCount (whitePieces ^. knights)
-        - popCount (blackPieces ^. knights)
-    bishopDiff = popCount (whitePieces ^. bishops)
-        - popCount (blackPieces ^. bishops)
-    rookDiff = popCount (whitePieces ^. rooks)
-        - popCount (blackPieces ^. rooks)
-    queenDiff = popCount (whitePieces ^. queens)
-        - popCount (blackPieces ^. queens)
+    whitePawns = popCount (whitePieces ^. pawns)
+    blackPawns = popCount (blackPieces ^. pawns)
+    pawnDiff = whitePawns - blackPawns
+    whiteKnights = popCount (whitePieces ^. knights)
+    blackKnights = popCount (blackPieces ^. knights)
+    knightDiff = whiteKnights - blackKnights
+    whiteBishops = popCount (whitePieces ^. bishops)
+    blackBishops = popCount (blackPieces ^. bishops)
+    bishopDiff = whiteBishops - blackBishops
+    whiteRooks = popCount (whitePieces ^. rooks)
+    blackRooks = popCount (blackPieces ^. rooks)
+    rookDiff = whiteRooks - blackRooks
+    whiteQueens = popCount (whitePieces ^. queens)
+    blackQueens = popCount (blackPieces ^. queens)
+    queenDiff = whiteQueens - popCount blackQueens
+    pstEval = pstEvalBitboard
+        $ pawnWorth * (whitePawns + blackPawns)
+        + knightWorth * (whiteKnights + blackKnights)
+        + bishopWorth * (whiteBishops + blackBishops)
+        + rookWorth * (whiteRooks + blackRooks)
+        + queenWorth * (whiteQueens + blackKnights)
+    pstEvalValue = pstEval Pawn (whitePieces ^. pawns)
+        + pstEval Knight (whitePieces ^. knights)
+        + pstEval Bishop (whitePieces ^. bishops)
+        + pstEval Rook (whitePieces ^. rooks)
+        + pstEval Queen (whitePieces ^. queens)
+        - pstEval Pawn (blackPieces ^. pawns)
+        - pstEval Knight (blackPieces ^. knights)
+        - pstEval Bishop (blackPieces ^. bishops)
+        - pstEval Rook (blackPieces ^. rooks)
+        - pstEval Queen (blackPieces ^. queens)

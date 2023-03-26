@@ -5,6 +5,7 @@ module Trout.Game.MoveGen.Sliding.Magic
     ) where
 
 import           Data.Foldable                      (foldl')
+import           Data.Functor                       ((<&>))
 import           Data.Vector.Primitive              (Vector, (!), (//))
 import qualified Data.Vector.Primitive              as V
 import           Data.Word                          (Word64)
@@ -36,7 +37,6 @@ import           Trout.Game.MoveGen.Sliding.Magics
     , rookBits
     , rookMagics
     )
-import Data.Functor ((<&>))
 
 bishopMasks :: Vector Bitboard
 bishopMasks = V.generate
