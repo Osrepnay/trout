@@ -1,7 +1,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 module Trout.Game
     ( Pieces (..)
-    , pawns, knights, bishops, rooks, queens, kings
+    , pawns, knights, bishops, rooks, queens, kings, byPiece
     , Sides
     , sideWhite, sideBlack, sideByColor, sideByntColor
     , colorize
@@ -83,6 +83,10 @@ byPiece Rook   = rooks
 byPiece Queen  = queens
 byPiece King   = kings
 
+piecesAll :: Pieces -> Bitboard
+piecesAll (Pieces p n b r q k) = p .|. n .|. b .|. r .|. q .|. k
+{-# INLINE piecesAll #-}
+
 type Sides a = (a, a)
 
 sideWhite :: Lens' (Sides a) a
@@ -147,10 +151,6 @@ maskQueenside afb bb = (.|. (bb .&. complement fileA))
     . (.&. fileA)
     <$> afb (bb .&. fileA)
 {-# INLINE maskQueenside #-}
-
-piecesAll :: Pieces -> Bitboard
-piecesAll (Pieces p n b r q k) = p .|. n .|. b .|. r .|. q .|. k
-{-# INLINE piecesAll #-}
 
 -- https://tearth.dev/bitboard-viewer/
 startingGame :: Game
