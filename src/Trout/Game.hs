@@ -4,7 +4,6 @@ module Trout.Game
     , pawns, knights, bishops, rooks, queens, kings, byPiece
     , Sides
     , sideWhite, sideBlack
-    , colorize
     , Game (..)
     , gamePlaying, gameWaiting, gameCastling, gameEnPassant, gameTurn
     , gamePieces
@@ -81,6 +80,7 @@ byPiece Bishop = bishops
 byPiece Rook   = rooks
 byPiece Queen  = queens
 byPiece King   = kings
+{-# INLINE byPiece #-}
 
 piecesAll :: Pieces -> Bitboard
 piecesAll (Pieces p n b r q k) = p .|. n .|. b .|. r .|. q .|. k
@@ -95,10 +95,6 @@ sideWhite afb (a, b) = (, b) <$> afb a
 sideBlack :: Lens' (Sides a) a
 sideBlack afb (a, b) = (a, ) <$> afb b
 {-# INLINE sideBlack #-}
-
-colorize :: Color -> ((a, Color) -> f a) -> a -> f a
-colorize c afb s = afb (s, c)
-{-# INLINE colorize #-}
 
 data Game = Game
     { _gamePlaying   :: Pieces
