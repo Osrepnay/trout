@@ -17,7 +17,6 @@ module Trout.Game
     ) where
 
 import Data.Bool                        (bool)
-import Data.Function                    ((&))
 import Data.Vector.Primitive            ((!))
 import Lens.Micro
     ( Lens
@@ -229,8 +228,8 @@ allMoves game = concat
     turnPieces = game ^. gamePieces . sideByColor
     oppPieces = game ^. gamePieces . sideByntColor
 
-squareAttacked :: Int -> Game -> Bool
-squareAttacked sq game = pawnAttackTable ! sq .&. oppPieces ^. pawns
+squareAttacked :: Bitboard -> Int -> Game -> Bool
+squareAttacked block sq game = pawnAttackTable ! sq .&. oppPieces ^. pawns
     .|. knightTable ! sq .&. oppPieces ^. knights
     .|. bishoped .&. oppPieces ^. bishops
     .|. rooked .&. oppPieces ^. rooks
@@ -241,7 +240,6 @@ squareAttacked sq game = pawnAttackTable ! sq .&. oppPieces ^. pawns
   where
     bishoped = bishopMovesMagic block sq
     rooked = rookMovesMagic block sq
-    block = gameBlockers game
     pawnAttackTable = case game ^. gameTurn of
         White -> pawnWhiteAttackTable
         Black -> pawnBlackAttackTable
@@ -250,7 +248,7 @@ squareAttacked sq game = pawnAttackTable ! sq .&. oppPieces ^. pawns
 inCheck :: Game -> Bool
 inCheck game
     | kingSq == 64 = True -- king gone!
-    | otherwise    = squareAttacked kingSq game
+    | otherwise    = squareAttacked (gameBlockers game) kingSq game
   where
     kingSq = countTrailingZeros kingMask
     kingMask = game ^. gamePieces . sideByColor . kings
@@ -331,17 +329,17 @@ makeMove game (Move piece special from to) = do
     clearEnPassant = gameEnPassant .~ Nothing
     -- assumes king is moved, rook is not
     throughCheckKing g
-        | squareAttacked (kingOrigin + 1) kingless = Nothing
-        | squareAttacked kingOrigin kingless = Nothing
+        | squareAttacked kingless (kingOrigin + 1) g = Nothing
+        | squareAttacked kingless kingOrigin g = Nothing
         | otherwise = Just g
       where
-        kingless = g & gamePieces . sideByColor . kings %~ (`clearBit` 6)
+        kingless = gameBlockers g `clearBit` 6
     throughCheckQueen g
-        | squareAttacked (kingOrigin - 1) kingless = Nothing
-        | squareAttacked kingOrigin kingless = Nothing
+        | squareAttacked kingless (kingOrigin - 1) g = Nothing
+        | squareAttacked kingless kingOrigin g = Nothing
         | otherwise = Just g
       where
-        kingless = g & gamePieces . sideByColor . kings %~ (`clearBit` 2)
+        kingless = gameBlockers g `clearBit` 2
     -- for castling things
     kingOrigin = case game ^. gameTurn of
         White -> 4
