@@ -3,10 +3,10 @@ module Trout.Game
     ( Pieces (..)
     , pawns, knights, bishops, rooks, queens, kings, byPiece
     , Sides
-    , sideWhite, sideBlack, sideByColor, sideByntColor
+    , sideWhite, sideBlack
     , colorize
     , Game (..)
-    , gameWhite, gameBlack, gameCastling, gameEnPassant, gameTurn
+    , gamePlaying, gameWaiting, gameCastling, gameEnPassant, gameTurn
     , gamePieces
     , gameCastling'
     , gameAsBoard
@@ -61,7 +61,7 @@ import Trout.Game.MoveGen
     , rookMoves
     )
 import Trout.Game.MoveGen.Sliding.Magic (bishopMovesMagic, rookMovesMagic)
-import Trout.Piece                      (Color (..), Piece (..))
+import Trout.Piece                      (Color (..), Piece (..), other)
 
 data Pieces = Pieces
     { _pawns   :: !Bitboard
@@ -96,32 +96,25 @@ sideBlack :: Lens' (Sides a) a
 sideBlack afb (a, b) = (a, ) <$> afb b
 {-# INLINE sideBlack #-}
 
-sideByColor :: Lens (Sides a, Color) (Sides a) a a
-sideByColor afb ((a, b), White) = (, b) <$> afb a
-sideByColor afb ((a, b), Black) = (a, ) <$> afb b
-{-# INLINE sideByColor #-}
-
-sideByntColor :: Lens (Sides a, Color) (Sides a) a a
-sideByntColor afb ((a, b), Black) = (, b) <$> afb a
-sideByntColor afb ((a, b), White) = (a, ) <$> afb b
-{-# INLINE sideByntColor #-}
-
 colorize :: Color -> ((a, Color) -> f a) -> a -> f a
 colorize c afb s = afb (s, c)
 {-# INLINE colorize #-}
 
 data Game = Game
-    { _gameWhite     :: Pieces
-    , _gameBlack     :: Pieces
+    { _gamePlaying   :: Pieces
+    , _gameWaiting   :: Pieces
     , _gameCastling  :: !Bitboard
     , _gameEnPassant :: !(Maybe Int)
     , _gameTurn      :: !Color
     } deriving (Eq, Show)
 makeLenses ''Game
 
-gamePieces :: Lens Game Game (Sides Pieces, Color) (Sides Pieces)
-gamePieces afb game@(Game {_gameWhite = w, _gameBlack = b, _gameTurn = t}) =
-    afb ((w, b), t) <&> \(w', b') -> game {_gameWhite = w', _gameBlack = b'}
+gamePieces :: Lens Game Game (Sides Pieces) (Sides Pieces)
+gamePieces afb game@(Game p w _ _ t) = case t of
+    White -> afb (p, w)
+        <&> \(p', w') -> game {_gamePlaying = p', _gameWaiting = w'}
+    Black -> afb (w, p)
+        <&> \(w', p') -> game {_gamePlaying = w', _gameWaiting = p'}
 {-# INLINE gamePieces #-}
 
 gameCastling' :: Lens Game Game (Bitboard, Color) Bitboard
@@ -191,19 +184,18 @@ gameAsBoard game = unlines [[posChar x y | x <- [0..7]] | y <- [7, 6..0]]
         , ('.', complement zeroBits)
         ]
       where
-        whitePieces = game ^. gameWhite
-        blackPieces = game ^. gameBlack
+        whitePieces = game ^. gamePieces . sideWhite
+        blackPieces = game ^. gamePieces . sideBlack
         sq = xyToSq x y
 
 flipTurn :: Game -> Game
-flipTurn (Game !w !b c enP White) = Game w b c enP Black
-flipTurn (Game !w !b c enP Black) = Game w b c enP White
+flipTurn (Game !p !w c enP t) = Game w p c enP (other t)
 {-# INLINE flipTurn #-}
 
 gameBlockers :: Game -> Bitboard
 gameBlockers game =
-    piecesAll (game ^. gamePieces . sideByColor)
-    .|. piecesAll (game ^. gamePieces . sideByntColor)
+    piecesAll (game ^. gamePlaying)
+    .|. piecesAll (game ^. gameWaiting)
 {-# INLINE gameBlockers #-}
 
 allMoves :: Game -> [Move]
@@ -225,8 +217,8 @@ allMoves game = concat
     -- TODO update incrementally
     block = myBlock .|. piecesAll oppPieces
     myBlock = piecesAll turnPieces
-    turnPieces = game ^. gamePieces . sideByColor
-    oppPieces = game ^. gamePieces . sideByntColor
+    turnPieces = game ^. gamePlaying
+    oppPieces = game ^. gameWaiting
 
 squareAttacked :: Bitboard -> Int -> Game -> Bool
 squareAttacked block sq game = pawnAttackTable ! sq .&. oppPieces ^. pawns
@@ -243,7 +235,7 @@ squareAttacked block sq game = pawnAttackTable ! sq .&. oppPieces ^. pawns
     pawnAttackTable = case game ^. gameTurn of
         White -> pawnWhiteAttackTable
         Black -> pawnBlackAttackTable
-    oppPieces = game ^. gamePieces . sideByntColor
+    oppPieces = game ^. gameWaiting
 
 inCheck :: Game -> Bool
 inCheck game
@@ -251,7 +243,7 @@ inCheck game
     | otherwise    = squareAttacked (gameBlockers game) kingSq game
   where
     kingSq = countTrailingZeros kingMask
-    kingMask = game ^. gamePieces . sideByColor . kings
+    kingMask = game ^. gamePlaying . kings
 
 makeMove :: Game -> Move -> Maybe Game
 makeMove game (Move piece special from to) = do
@@ -261,12 +253,10 @@ makeMove game (Move piece special from to) = do
     pure (flipTurn (clearCastles checkChecked))
   where
     -- basic moving
-    doMove = gamePieces
-        . sideByColor
+    doMove = gamePlaying
         . byPiece piece
         %~ (`setBit` to) . (`clearBit` from)
-    captureAll = gamePieces
-        . sideByntColor
+    captureAll = gameWaiting
         %~ \(Pieces p n b r q k) -> Pieces
             (p .&. clearMask)
             (n .&. clearMask)
@@ -295,32 +285,21 @@ makeMove game (Move piece special from to) = do
         PawnDouble -> Just . (gameEnPassant ?~ to)
         EnPassant enPSq -> Just
             . clearEnPassant
-            . (gamePieces
-                . sideByntColor
-                . pawns
-                %~ (`clearBit` enPSq))
+            . (gameWaiting . pawns %~ (`clearBit` enPSq))
         Promotion promote -> Just
             . clearEnPassant
-            . (gamePieces
-                . sideByColor
-                . byPiece promote
-                %~ (`setBit` to))
-            . (gamePieces
-                . sideByColor
-                . pawns
-                %~ (`clearBit` to))
+            . (gamePlaying . byPiece promote %~ (`setBit` to))
+            . (gamePlaying . pawns %~ (`clearBit` to))
         CastleKing ->
             fmap (clearEnPassant
-                . (gamePieces
-                    . sideByColor
+                . (gamePlaying
                     . rooks
                     %~ (`setBit` (kingOrigin + 1))
                     . (`clearBit` (kingOrigin + 3))))
             . throughCheckKing
         CastleQueen ->
             fmap (clearEnPassant
-                . (gamePieces
-                    . sideByColor
+                . (gamePlaying
                     . rooks
                     %~ (`setBit` (kingOrigin - 1))
                     . (`clearBit` (kingOrigin - 4))))

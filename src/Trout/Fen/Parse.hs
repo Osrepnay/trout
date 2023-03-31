@@ -104,9 +104,13 @@ readFen :: String -> Either String Fen
 readFen = first show . parse parseFen ""
 
 fenToGame :: Fen -> Game
-fenToGame fen = Game
-    w b
+fenToGame fen =
+    (case turn of
+        White -> Game w b
+        Black -> Game b w)
     (fenCastling fen)
     (fenEnPassant fen)
-    (fenTurn fen)
-  where (w, b) = fenPieces fen
+    turn
+  where
+      (w, b) = fenPieces fen
+      turn = fenTurn fen

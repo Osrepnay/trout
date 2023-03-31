@@ -9,14 +9,15 @@ import Trout.Game
     ( Game (..)
     , allMoves
     , bishops
-    , gameBlack
-    , gameWhite
+    , gamePieces
     , inCheck
     , knights
     , makeMove
     , pawns
     , queens
     , rooks
+    , sideBlack
+    , sideWhite
     )
 import Trout.Game.Move                  (Move (..), SpecialMove (..))
 import Trout.Piece                      (Color (..), Piece (..))
@@ -116,8 +117,8 @@ eval game = pawnWorth * pawnDiff
     + queenWorth * queenDiff
     + pstEvalValue
   where
-    whitePieces = game ^. gameWhite
-    blackPieces = game ^. gameBlack
+    whitePieces = game ^. gamePieces . sideWhite
+    blackPieces = game ^. gamePieces . sideBlack
     whitePawns = popCount (whitePieces ^. pawns)
     blackPawns = popCount (blackPieces ^. pawns)
     pawnDiff = whitePawns - blackPawns
