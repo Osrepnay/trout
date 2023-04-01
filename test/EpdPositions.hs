@@ -2,7 +2,6 @@ module EpdPositions
     ( epdSpec
     ) where
 
-import Data.Either
 import Data.Foldable
 import Data.List.Split
 import Data.Maybe
