@@ -185,7 +185,7 @@ gameAsBoard game = unlines [[posChar x y | x <- [0..7]] | y <- [7, 6..0]]
         sq = xyToSq x y
 
 flipTurn :: Game -> Game
-flipTurn (Game !p !w c enP t) = Game w p c enP (other t)
+flipTurn (Game p w c enP t) = Game w p c enP (other t)
 {-# INLINE flipTurn #-}
 
 gameBlockers :: Game -> Bitboard
