@@ -128,18 +128,6 @@ maskByColor afb (bb, Black) = (.|. (bb .&. complement rank8))
     <$> afb (bb .&. rank8)
 {-# INLINE maskByColor #-}
 
-maskKingside :: Lens' Bitboard Bitboard
-maskKingside afb bb = (.|. (bb .&. complement fileH))
-    . (.&. fileH)
-    <$> afb (bb .&. fileH)
-{-# INLINE maskKingside #-}
-
-maskQueenside :: Lens' Bitboard Bitboard
-maskQueenside afb bb = (.|. (bb .&. complement fileA))
-    . (.&. fileA)
-    <$> afb (bb .&. fileA)
-{-# INLINE maskQueenside #-}
-
 -- https://tearth.dev/bitboard-viewer/
 startingGame :: Game
 startingGame = Game
@@ -204,13 +192,13 @@ allMoves game = concat
     , moveSqs (kingMoves kingside queenside) kings
     ]
   where
-    kingside = 0 /= game ^. gameCastling' . maskByColor . maskKingside
-    queenside = 0 /= game ^. gameCastling' . maskByColor . maskQueenside
+    kingside = 0 /= fileH .&. thisCastling
+    queenside = 0 /= fileA .&. thisCastling
+    thisCastling = game ^. gameCastling' . maskByColor
     -- gets and concats the move for a set of squares (for a piece)
     moveSqs mover piece = concatMap
         (mover block myBlock)
         (toSqs (turnPieces ^. piece))
-    -- TODO update incrementally
     block = myBlock .|. piecesAll oppPieces
     myBlock = piecesAll turnPieces
     turnPieces = game ^. gamePlaying
