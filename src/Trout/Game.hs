@@ -95,16 +95,16 @@ instance Hashable Game where
         `xor` enPassantHash
         `xor` hashBitboard (white ^. pawns) whitePawnZobrists
         `xor` hashBitboard (black ^. pawns) blackPawnZobrists
-        `xor` hashBitboard (white ^. pawns) whiteKnightZobrists
-        `xor` hashBitboard (black ^. pawns) blackKnightZobrists
-        `xor` hashBitboard (white ^. pawns) whiteBishopZobrists
-        `xor` hashBitboard (black ^. pawns) blackBishopZobrists
-        `xor` hashBitboard (white ^. pawns) whiteRookZobrists
-        `xor` hashBitboard (black ^. pawns) blackRookZobrists
-        `xor` hashBitboard (white ^. pawns) whiteQueenZobrists
-        `xor` hashBitboard (black ^. pawns) blackQueenZobrists
-        `xor` hashBitboard (white ^. pawns) whiteKingZobrists
-        `xor` hashBitboard (black ^. pawns) blackKingZobrists
+        `xor` hashBitboard (white ^. knights) whiteKnightZobrists
+        `xor` hashBitboard (black ^. knights) blackKnightZobrists
+        `xor` hashBitboard (white ^. bishops) whiteBishopZobrists
+        `xor` hashBitboard (black ^. bishops) blackBishopZobrists
+        `xor` hashBitboard (white ^. rooks) whiteRookZobrists
+        `xor` hashBitboard (black ^. rooks) blackRookZobrists
+        `xor` hashBitboard (white ^. queens) whiteQueenZobrists
+        `xor` hashBitboard (black ^. queens) blackQueenZobrists
+        `xor` hashBitboard (white ^. kings) whiteKingZobrists
+        `xor` hashBitboard (black ^. kings) blackKingZobrists
       where
         hashBitboard bb table = foldl' (\b a -> table ! a `xor` b) 0 (toSqs bb)
         (white, black, turnHash) = case turn of

@@ -13,8 +13,9 @@ import           Control.Monad.Trans.State.Strict
     , modify
     )
 import           Data.Function                    (on)
-import           Data.HashMap.Strict              (HashMap)
-import qualified Data.HashMap.Strict              as HM
+import           Data.Hashable                    (hash)
+import           Data.IntMap.Strict               (IntMap)
+import qualified Data.IntMap.Strict               as IM
 import           Data.Maybe                       (mapMaybe)
 import           Lens.Micro                       ((^.))
 import           Trout.Bitboard                   (popCount)
@@ -51,7 +52,7 @@ data TTEntry = TTEntry
     , entryDepth :: Int
     } deriving (Eq, Show)
 data SearchState = SearchState
-    { ssTranspositions :: HashMap Game TTEntry
+    { ssTranspositions :: IntMap TTEntry
     } deriving (Eq, Show)
 
 -- simple best move finder
@@ -60,7 +61,7 @@ bestMove :: Int -> Game -> (Int, Move)
 bestMove 0 game = (eval game, head (allMoves game))
 bestMove depth game@(Game _ _ _ _ White) = evalState
     (go (alpha, Move Pawn Normal 0 0) (allMoves game))
-    (SearchState HM.empty)
+    (SearchState IM.empty)
   where
     alpha = minBound
     beta = maxBound
@@ -76,7 +77,7 @@ bestMove depth game@(Game _ _ _ _ White) = evalState
         Nothing -> go best ms
 bestMove depth game@(Game _ _ _ _ Black) = evalState
     (go (beta, Move Pawn Normal 0 0) (allMoves game))
-    (SearchState HM.empty)
+    (SearchState IM.empty)
   where
     alpha = minBound
     beta = maxBound
@@ -102,7 +103,8 @@ searchMini depth alpha beta game
   where
     newBeta b [] = pure b
     newBeta b (g : gs) = do
-        maybeEntry <- HM.lookup g . ssTranspositions <$> get
+        let gHash = hash g
+        maybeEntry <- IM.lookup gHash . ssTranspositions <$> get
         let ttScore = maybeEntry
                 >>= \(TTEntry s d) ->
                     if d < depth
@@ -113,7 +115,7 @@ searchMini depth alpha beta game
             Nothing -> do
                 ret <- searchMaxi (depth - 1) alpha b g
                 modify $ \(SearchState ntt) ->
-                    SearchState (HM.insert g (TTEntry ret depth) ntt)
+                    SearchState (IM.insert gHash (TTEntry ret depth) ntt)
                 pure ret
         if score < alpha
         then pure alpha
@@ -131,7 +133,8 @@ searchMaxi depth alpha beta game
   where
     newAlpha a [] = pure a
     newAlpha a (g : gs) = do
-        maybeEntry <- HM.lookup g . ssTranspositions <$> get
+        let gHash = hash g
+        maybeEntry <- IM.lookup gHash . ssTranspositions <$> get
         let ttScore = maybeEntry
                 >>= \(TTEntry s d) ->
                     if d < depth
@@ -142,7 +145,7 @@ searchMaxi depth alpha beta game
             Nothing -> do
                 ret <- searchMini (depth - 1) a beta g
                 modify $ \(SearchState ntt) ->
-                    SearchState (HM.insert g (TTEntry ret depth) ntt)
+                    SearchState (IM.insert gHash (TTEntry ret depth) ntt)
                 pure ret
         if score > beta
         then pure beta
