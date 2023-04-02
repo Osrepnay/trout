@@ -16,6 +16,8 @@ module Trout.Game
     ) where
 
 import Data.Bool                        (bool)
+import Data.Foldable                    (foldl')
+import Data.Hashable                    (Hashable (..))
 import Data.Vector.Primitive            ((!))
 import Lens.Micro
     ( Lens
@@ -36,6 +38,7 @@ import Trout.Bitboard
     , countTrailingZeros
     , setBit
     , toSqs
+    , xor
     , xyToSq
     , zeroBits
     , (.&.)
@@ -56,6 +59,23 @@ import Trout.Game.MoveGen
     , rookMoves
     )
 import Trout.Game.MoveGen.Sliding.Magic (bishopMovesMagic, rookMovesMagic)
+import Trout.Game.Zobrists
+    ( blackBishopZobrists
+    , blackKingZobrists
+    , blackKnightZobrists
+    , blackPawnZobrists
+    , blackQueenZobrists
+    , blackRookZobrists
+    , castleZobrists
+    , enPassantZobrists
+    , playingZobrist
+    , whiteBishopZobrists
+    , whiteKingZobrists
+    , whiteKnightZobrists
+    , whitePawnZobrists
+    , whiteQueenZobrists
+    , whiteRookZobrists
+    )
 import Trout.Piece                      (Color (..), Piece (..), other)
 
 data Pieces = Pieces
@@ -67,6 +87,38 @@ data Pieces = Pieces
     , _kings   :: !Bitboard
     } deriving (Eq, Show)
 makeLenses ''Pieces
+
+instance Hashable Game where
+    hash :: Game -> Int
+    hash (Game play wait castle enP turn) = turnHash
+        `xor` castleHash
+        `xor` enPassantHash
+        `xor` hashBitboard (white ^. pawns) whitePawnZobrists
+        `xor` hashBitboard (black ^. pawns) blackPawnZobrists
+        `xor` hashBitboard (white ^. pawns) whiteKnightZobrists
+        `xor` hashBitboard (black ^. pawns) blackKnightZobrists
+        `xor` hashBitboard (white ^. pawns) whiteBishopZobrists
+        `xor` hashBitboard (black ^. pawns) blackBishopZobrists
+        `xor` hashBitboard (white ^. pawns) whiteRookZobrists
+        `xor` hashBitboard (black ^. pawns) blackRookZobrists
+        `xor` hashBitboard (white ^. pawns) whiteQueenZobrists
+        `xor` hashBitboard (black ^. pawns) blackQueenZobrists
+        `xor` hashBitboard (white ^. pawns) whiteKingZobrists
+        `xor` hashBitboard (black ^. pawns) blackKingZobrists
+      where
+        hashBitboard bb table = foldl' (\b a -> table ! a `xor` b) 0 (toSqs bb)
+        (white, black, turnHash) = case turn of
+            White -> (play, wait, playingZobrist)
+            Black -> (wait, play, 0)
+        -- only first 4 bits of castle should be used
+        castleHash = castleZobrists ! castle
+        enPassantHash = case enP of
+            Just sq -> enPassantZobrists ! (sq `rem` 8)
+            Nothing -> 0
+
+    hashWithSalt :: Int -> Game -> Int
+    hashWithSalt salt game = hash game `xor` salt
+
 
 -- ghc gets mad when i use the normal lens typedef
 byPiece :: Functor f => Piece -> (Bitboard -> f Bitboard) -> Pieces -> f Pieces

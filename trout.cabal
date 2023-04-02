@@ -33,6 +33,7 @@ library
       Trout.Game.MoveGen.Sliding.Classic
       Trout.Game.MoveGen.Sliding.Magic
       Trout.Game.MoveGen.Sliding.Magics
+      Trout.Game.Zobrists
       Trout.Piece
       Trout.PieceSquareTables
       Trout.Search
@@ -49,6 +50,7 @@ library
   build-depends:
       base >=4.7 && <5
     , containers
+    , hashable
     , microlens
     , microlens-th
     , parsec
@@ -69,6 +71,7 @@ executable trout-exe
   build-depends:
       base >=4.7 && <5
     , containers
+    , hashable
     , microlens
     , microlens-th
     , parsec
@@ -95,6 +98,7 @@ test-suite trout-test
       QuickCheck
     , base >=4.7 && <5
     , containers
+    , hashable
     , hspec
     , microlens
     , microlens-th
@@ -120,6 +124,7 @@ benchmark trout-bench
     , containers
     , criterion
     , deepseq
+    , hashable
     , microlens
     , microlens-th
     , parsec

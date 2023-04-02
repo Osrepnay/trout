@@ -1,5 +1,17 @@
 module Trout.Game.Zobrists
-    ( castleZobrists
+    ( whitePawnZobrists
+    , blackPawnZobrists
+    , whiteKnightZobrists
+    , blackKnightZobrists
+    , whiteBishopZobrists
+    , blackBishopZobrists
+    , whiteRookZobrists
+    , blackRookZobrists
+    , whiteQueenZobrists
+    , blackQueenZobrists
+    , whiteKingZobrists
+    , blackKingZobrists
+    , castleZobrists
     , enPassantZobrists
     , pieceZobrists
     , playingZobrist
