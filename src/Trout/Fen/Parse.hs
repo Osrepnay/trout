@@ -8,7 +8,7 @@ import Text.Parsec            (char, oneOf, parse, spaces)
 import Text.Parsec.Char       (digit)
 import Text.Parsec.Combinator (many1)
 import Text.Parsec.String     (Parser)
-import Trout.Bitboard         (Bitboard, fromSqs, (.|.))
+import Trout.Bitboard         (fromSqs, (.|.))
 import Trout.Game             (Game (Game), Pieces (Pieces), Sides)
 import Trout.Piece            (Color (Black, White))
 
@@ -59,21 +59,21 @@ parseTurn :: Parser Color
 parseTurn = char 'w' $> White
     <|> char 'b' $> Black
 
-parseCastling :: Parser Bitboard
+parseCastling :: Parser Int
 parseCastling = many1 (oneOf "kqKQ-")
     <&>
         \c ->
             (if 'K' `elem` c
-                then 128
+                then 2
                 else 0)
             .|. (if 'Q' `elem` c
                 then 1
                 else 0)
             .|. (if 'k' `elem` c
-                then 9223372036854775808
+                then 8
                 else 0)
             .|. (if 'q' `elem` c
-                then 72057594037927936
+                then 4
                 else 0)
 
 parseEnPassant :: Parser (Maybe Int)
@@ -85,7 +85,7 @@ parseEnPassant = char '-' $> Nothing
 data Fen = Fen
     { fenPieces    :: Sides Pieces
     , fenTurn      :: Color
-    , fenCastling  :: Bitboard
+    , fenCastling  :: Int
     , fenEnPassant :: Maybe Int
     , fenHalfmove  :: Int
     , fenFullmove  :: Int

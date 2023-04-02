@@ -34,10 +34,6 @@ import Trout.Bitboard
     , clearBit
     , complement
     , countTrailingZeros
-    , fileA
-    , fileH
-    , rank1
-    , rank8
     , setBit
     , toSqs
     , xyToSq
@@ -99,7 +95,7 @@ sideBlack afb (a, b) = (a, ) <$> afb b
 data Game = Game
     { _gamePlaying   :: Pieces
     , _gameWaiting   :: Pieces
-    , _gameCastling  :: !Bitboard
+    , _gameCastling  :: !Int
     , _gameEnPassant :: !(Maybe Int)
     , _gameTurn      :: !Color
     } deriving (Eq, Show)
@@ -113,19 +109,19 @@ gamePieces afb game@(Game p w _ _ t) = case t of
         <&> \(w', p') -> game {_gamePlaying = w', _gameWaiting = p'}
 {-# INLINE gamePieces #-}
 
-gameCastling' :: Lens Game Game (Bitboard, Color) Bitboard
+gameCastling' :: Lens Game Game (Int, Color) Int
 gameCastling' afb game@(Game {_gameCastling = c, _gameTurn = t}) = afb (c, t)
     <&> \b -> game {_gameCastling = b}
 {-# INLINE gameCastling' #-}
 
 -- masks home rows by color
-maskByColor :: Lens (Bitboard, Color) Bitboard Bitboard Bitboard
-maskByColor afb (bb, White) = (.|. (bb .&. complement rank1))
-    . (.&. rank1)
-    <$> afb (bb .&. rank1)
-maskByColor afb (bb, Black) = (.|. (bb .&. complement rank8))
-    . (.&. rank8)
-    <$> afb (bb .&. rank8)
+maskByColor :: Lens (Int, Color) Int Int Int
+maskByColor afb (bb, White) = (.|. (bb .&. complement 3))
+    . (.&. 3)
+    <$> afb (bb .&. 3)
+maskByColor afb (bb, Black) = (.|. (bb .&. complement 12))
+    . (.&. 12)
+    <$> afb (bb .&. 12)
 {-# INLINE maskByColor #-}
 
 -- https://tearth.dev/bitboard-viewer/
@@ -145,7 +141,7 @@ startingGame = Game
         9295429630892703744
         576460752303423488
         1152921504606846976)
-    9295429630892703873
+    15
     Nothing
     White
 
@@ -192,8 +188,8 @@ allMoves game = concat
     , moveSqs (kingMoves kingside queenside) kings
     ]
   where
-    kingside = 0 /= fileH .&. thisCastling
-    queenside = 0 /= fileA .&. thisCastling
+    kingside = 0 /= 10 .&. thisCastling
+    queenside = 0 /= 5 .&. thisCastling
     thisCastling = game ^. gameCastling' . maskByColor
     -- gets and concats the move for a set of squares (for a piece)
     moveSqs mover piece = concatMap
@@ -254,16 +250,16 @@ makeMove game (Move piece special from to) = do
         %~ (complement
             (case piece of
                 King -> case game ^. gameTurn of
-                    White -> rank1
-                        .|. bool 0 (fileA .&. rank8) (from == 56 || to == 56)
-                        .|. bool 0 (fileH .&. rank8) (from == 63 || to == 63)
-                    Black -> rank8
-                        .|. bool 0 (fileA .&. rank1) (from == 0 || to == 0)
-                        .|. bool 0 (fileH .&. rank1) (from == 7 || to == 7)
-                _ -> bool 0 (fileA .&. rank1) (from == 0 || to == 0)
-                    .|. bool 0 (fileH .&. rank1) (from == 7 || to == 7)
-                    .|. bool 0 (fileA .&. rank8) (from == 56 || to == 56)
-                    .|. bool 0 (fileH .&. rank8) (from == 63 || to == 63)) .&.)
+                    White -> 3
+                        .|. bool 0 4 (from == 56 || to == 56)
+                        .|. bool 0 8 (from == 63 || to == 63)
+                    Black -> 12
+                        .|. bool 0 1 (from == 0 || to == 0)
+                        .|. bool 0 2 (from == 7 || to == 7)
+                _ -> bool 0 1 (from == 0 || to == 0)
+                    .|. bool 0 2 (from == 7 || to == 7)
+                    .|. bool 0 4 (from == 56 || to == 56)
+                    .|. bool 0 8 (from == 63 || to == 63)) .&.)
     nothingIfCheck g = if inCheck g then Nothing else Just g
     specials = case special of
         PawnDouble -> Just . (gameEnPassant ?~ to)
