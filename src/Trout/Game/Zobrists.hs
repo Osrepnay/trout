@@ -39,7 +39,7 @@ xorshiftState = state
 allOfThem :: Vector Int
 allOfThem = V.fromList
     $ evalState
-        (replicateM (12 * 64 + 16 + 1 + 8) xorshiftState)
+        (replicateM (12 * 64 + 16 + 1 + 16) xorshiftState)
         69420
 
 whitePawnZobrists   :: Vector Int

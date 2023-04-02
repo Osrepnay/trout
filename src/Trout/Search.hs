@@ -1,11 +1,24 @@
-module Trout.Search (SearchState (..), bestMove, eval, searchMini, searchMaxi) where
+module Trout.Search
+    ( SearchState (..)
+    , bestMove
+    , eval
+    , searchMini
+    , searchMaxi
+    ) where
 
-import Control.Monad.Trans.State.Strict (State, evalState)
-import Data.Function                    (on)
-import Data.Maybe                       (mapMaybe)
-import Lens.Micro                       ((^.))
-import Trout.Bitboard                   (popCount)
-import Trout.Game
+import           Control.Monad.Trans.State.Strict
+    ( State
+    , evalState
+    , get
+    , modify
+    )
+import           Data.Function                    (on)
+import           Data.HashMap.Strict              (HashMap)
+import qualified Data.HashMap.Strict              as HM
+import           Data.Maybe                       (mapMaybe)
+import           Lens.Micro                       ((^.))
+import           Trout.Bitboard                   (popCount)
+import           Trout.Game
     ( Game (..)
     , allMoves
     , bishops
@@ -19,10 +32,10 @@ import Trout.Game
     , sideBlack
     , sideWhite
     )
-import Trout.Game.Move                  (Move (..), SpecialMove (..))
-import Trout.Piece                      (Color (..), Piece (..))
-import Trout.PieceSquareTables          (pstEvalBitboard)
-import Trout.Search.Worthiness
+import           Trout.Game.Move                  (Move (..), SpecialMove (..))
+import           Trout.Piece                      (Color (..), Piece (..))
+import           Trout.PieceSquareTables          (pstEvalBitboard)
+import           Trout.Search.Worthiness
     ( bishopWorth
     , blackWonWorth
     , drawWorth
@@ -33,15 +46,21 @@ import Trout.Search.Worthiness
     , whiteWonWorth
     )
 
--- TODO transposition tables, pv, etc.
-data SearchState = SearchState deriving (Eq, Show)
+data TTEntry = TTEntry
+    { entryEval  :: Int
+    , entryDepth :: Int
+    } deriving (Eq, Show)
+data SearchState = SearchState
+    { ssTranspositions :: HashMap Game TTEntry
+    } deriving (Eq, Show)
 
 -- simple best move finder
 -- ok for now, gonna havve to replace to add statefulness between iterative deepening calls
 bestMove :: Int -> Game -> (Int, Move)
 bestMove 0 game = (eval game, head (allMoves game))
-bestMove depth game@(Game _ _ _ _ White) =
-    go (alpha, Move Pawn Normal 0 0) (allMoves game)
+bestMove depth game@(Game _ _ _ _ White) = evalState
+    (go (alpha, Move Pawn Normal 0 0) (allMoves game))
+    (SearchState HM.empty)
   where
     alpha = minBound
     beta = maxBound
@@ -49,16 +68,15 @@ bestMove depth game@(Game _ _ _ _ White) =
         LT -> b
         EQ -> a
         GT -> a
-    go best [] = best
+    go best [] = pure best
     go best (m : ms) = case makeMove game m of
-        Just g  -> go (maxByPreferFst (compare `on` fst) best (score g, m)) ms
+        Just g  -> do
+            score <- searchMini (depth - 1) (fst best) beta g
+            go (maxByPreferFst (compare `on` fst) best (score, m)) ms
         Nothing -> go best ms
-      where
-        score g = evalState
-            (searchMini (depth - 1) (fst best) beta g)
-            SearchState
-bestMove depth game@(Game _ _ _ _ Black) =
-    go (beta, Move Pawn Normal 0 0) (allMoves game)
+bestMove depth game@(Game _ _ _ _ Black) = evalState
+    (go (beta, Move Pawn Normal 0 0) (allMoves game))
+    (SearchState HM.empty)
   where
     alpha = minBound
     beta = maxBound
@@ -66,14 +84,12 @@ bestMove depth game@(Game _ _ _ _ Black) =
         LT -> a
         EQ -> a
         GT -> b
-    go best [] = best
+    go best [] = pure best
     go best (m : ms) = case makeMove game m of
-        Just g  -> go (minByPreferFst (compare `on` fst) best (score g, m)) ms
+        Just g  -> do
+            score <- searchMaxi (depth - 1) alpha (fst best) g
+            go (minByPreferFst (compare `on` fst) best (score, m)) ms
         Nothing -> go best ms
-      where
-        score g = evalState
-            (searchMaxi (depth - 1) alpha (fst best) g)
-            SearchState
 
 searchMini :: Int -> Int -> Int -> Game -> State SearchState Int
 searchMini depth alpha beta game
@@ -86,7 +102,19 @@ searchMini depth alpha beta game
   where
     newBeta b [] = pure b
     newBeta b (g : gs) = do
-        score <- searchMaxi (depth - 1) alpha b g
+        maybeEntry <- HM.lookup g . ssTranspositions <$> get
+        let ttScore = maybeEntry
+                >>= \(TTEntry s d) ->
+                    if d < depth
+                    then Nothing
+                    else pure s
+        score <- case ttScore of
+            Just score -> pure score
+            Nothing -> do
+                ret <- searchMaxi (depth - 1) alpha b g
+                modify $ \(SearchState ntt) ->
+                    SearchState (HM.insert g (TTEntry ret depth) ntt)
+                pure ret
         if score < alpha
         then pure alpha
         else newBeta (min b score) gs
@@ -103,7 +131,19 @@ searchMaxi depth alpha beta game
   where
     newAlpha a [] = pure a
     newAlpha a (g : gs) = do
-        score <- searchMini (depth - 1) a beta g
+        maybeEntry <- HM.lookup g . ssTranspositions <$> get
+        let ttScore = maybeEntry
+                >>= \(TTEntry s d) ->
+                    if d < depth
+                    then Nothing
+                    else pure s
+        score <- case ttScore of
+            Just score -> pure score
+            Nothing -> do
+                ret <- searchMini (depth - 1) a beta g
+                modify $ \(SearchState ntt) ->
+                    SearchState (HM.insert g (TTEntry ret depth) ntt)
+                pure ret
         if score > beta
         then pure beta
         else newAlpha (max a score) gs
