@@ -89,7 +89,6 @@ test-suite trout-test
   other-modules:
       EpdPositions
       MagicMoves
-      OtherMoves
       Paths_trout
   hs-source-dirs:
       test
