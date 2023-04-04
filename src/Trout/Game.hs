@@ -53,7 +53,7 @@ import Trout.Game.MoveGen
     , knightMoves
     , knightTable
     , pawnBlackAttackTable
-    , pawnMoves
+    , pawnsMoves
     , pawnWhiteAttackTable
     , queenMoves
     , rookMoves
@@ -232,7 +232,12 @@ gameBlockers game =
 
 allMoves :: Game -> [Move]
 allMoves game = concat
-    [ moveSqs (pawnMoves (game ^. gameEnPassant) (game ^. gameTurn)) pawns
+    [ pawnsMoves
+        (game ^. gameEnPassant)
+        (game ^. gameTurn)
+        block
+        myBlock
+        (turnPieces ^. pawns)
     , moveSqs knightMoves knights
     , moveSqs bishopMoves bishops
     , moveSqs rookMoves rooks

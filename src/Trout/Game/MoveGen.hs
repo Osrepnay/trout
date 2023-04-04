@@ -1,5 +1,5 @@
 module Trout.Game.MoveGen
-    ( pawnWhiteAttackTable, pawnBlackAttackTable, pawnMoves
+    ( pawnWhiteAttackTable, pawnBlackAttackTable, pawnsMoves
     , knightTable, knightMoves
     , bishopMoves
     , rookMoves
@@ -14,19 +14,22 @@ import           Data.Vector.Primitive            (Vector, (!))
 import qualified Data.Vector.Primitive            as V
 import           Trout.Bitboard
     ( Bitboard
-    , bit
-    , blocked
     , complement
     , fileA
     , fileH
     , fromSqs
-    , rank2
+    , rank1
+    , rank3
     , rank4
     , rank5
-    , rank7
+    , rank6
+    , rank8
+    , setBit
     , toSqs
     , unblocked
     , xyToSq
+    , (!<<.)
+    , (!>>.)
     , (.&.)
     , (.|.)
     )
@@ -61,56 +64,75 @@ pawnWhiteAttackTable = tableGen [(-1, 1), (1, 1)]
 pawnBlackAttackTable :: Vector Bitboard
 pawnBlackAttackTable = tableGen [(-1, -1), (1, -1)]
 
-promotions :: [Piece]
-promotions = [Knight, Bishop, Rook, Queen]
+promos :: [Piece]
+promos = [Knight, Bishop, Rook, Queen]
 
-pawnMoves :: Maybe Int -> Color -> Bitboard -> Bitboard -> Int -> [Move]
-pawnMoves enPSq White block myBlock sq = concat
-    [ [Move Pawn p sq (sq + 8) | frontOpen,    p <- promotes]
-    , [Move Pawn p sq (sq + 7) | captureLeft,  p <- promotes]
-    , [Move Pawn p sq (sq + 9) | captureRight, p <- promotes]
-    , [Move Pawn PawnDouble sq (sq + 16) | doubleFrontOpen] -- can't promote
-    , [Move Pawn (EnPassant en) sq (en + 8) | en <- enPassant]
+-- batched!
+pawnsMoves :: Maybe Int -> Color -> Bitboard -> Bitboard -> Bitboard -> [Move]
+pawnsMoves enPSq White block myBlock pawnBB = concat
+    [ enPassant
+    , [Move Pawn PawnDouble (to - 16) to | to <- toSqs doubles]
+    , [Move Pawn (Promotion p) (to - 8)  to | to <- toSqs normalP, p <- promos]
+    , [Move Pawn (Promotion p) (to - 7)  to | to <- toSqs leftP, p <- promos]
+    , [Move Pawn (Promotion p) (to - 9)  to | to <- toSqs rightP, p <- promos]
+    , [Move Pawn Normal (to - 8) to | to <- toSqs normalN]
+    , [Move Pawn Normal (to - 7) to | to <- toSqs leftN]
+    , [Move Pawn Normal (to - 9) to | to <- toSqs rightN]
     ]
   where
-    enPassant = filter
-        ((rank5 .&. bit sq /= 0 &&) . (== 1) . abs . (sq -))
-        (maybeToList enPSq)
-    promotes = case specialMaybeEmpty of
-        [] -> [Normal]
-        ps -> ps
-    specialMaybeEmpty = [Promotion p | rank7 .&. bit sq /= 0, p <- promotions]
-    frontOpen = unblocked block (sq + 8)
-    doubleFrontOpen = frontOpen
-        && (rank2 .&. bit sq /= 0)
-        && unblocked block (sq + 16)
-    captureLeft  = blocked (block .&. complement myBlock) (sq + 7)
-        && fileA .&. bit sq == 0
-    captureRight = blocked (block .&. complement myBlock) (sq + 9)
-        && fileH .&. bit sq == 0
-pawnMoves enPSq Black block myBlock sq = concat
-    [ [Move Pawn p sq (sq - 8) | frontOpen,    p <- promotes]
-    , [Move Pawn p sq (sq - 9) | captureLeft,  p <- promotes]
-    , [Move Pawn p sq (sq - 7) | captureRight, p <- promotes]
-    , [Move Pawn PawnDouble sq (sq - 16) | doubleFrontOpen]
-    , [Move Pawn (EnPassant en) sq (en - 8) | en <- enPassant]
+    normals = pawnBB !<<. 8 .&. complement block
+    doubles = (normals .&. rank3) !<<. 8 .&. complement block
+    leftCaptures = (pawnBB .&. complement fileA)
+        !<<. 7
+        .&. block
+        .&. complement myBlock
+    rightCaptures = (pawnBB .&. complement fileH)
+        !<<. 9
+        .&. block
+        .&. complement myBlock
+    normalN = normals .&. complement rank8
+    leftN = leftCaptures .&. complement rank8
+    rightN = rightCaptures .&. complement rank8
+    normalP = normals .&. rank8
+    leftP = leftCaptures .&. rank8
+    rightP = rightCaptures .&. rank8
+    enPassant = maybeToList enPSq
+        >>= \enP ->
+            let mask = rank5 .&. 0 `setBit` (enP - 1) `setBit` (enP + 1)
+            in (\sq -> Move Pawn (EnPassant enP) sq (enP + 8))
+                <$> toSqs (pawnBB .&. mask)
+pawnsMoves enPSq Black block myBlock pawnBB = concat
+    [ enPassant
+    , [Move Pawn PawnDouble (to + 16) to | to <- toSqs doubles]
+    , [Move Pawn (Promotion p) (to + 8)  to | to <- toSqs normalP, p <- promos]
+    , [Move Pawn (Promotion p) (to + 9)  to | to <- toSqs leftP, p <- promos]
+    , [Move Pawn (Promotion p) (to + 7)  to | to <- toSqs rightP, p <- promos]
+    , [Move Pawn Normal (to + 8) to | to <- toSqs normalN]
+    , [Move Pawn Normal (to + 9) to | to <- toSqs leftN]
+    , [Move Pawn Normal (to + 7) to | to <- toSqs rightN]
     ]
   where
-    enPassant = filter
-        ((rank4 .&. bit sq /= 0 &&) . (== 1) . abs . (sq -))
-        (maybeToList enPSq)
-    promotes = case specialMaybeEmpty of
-        [] -> [Normal]
-        ps -> ps
-    specialMaybeEmpty = [Promotion p | rank2 .&. bit sq /= 0, p <- promotions]
-    frontOpen = unblocked block (sq - 8)
-    doubleFrontOpen = frontOpen
-        && (rank7 .&. bit sq /= 0)
-        && unblocked block (sq - 16)
-    captureLeft  = blocked (block .&. complement myBlock) (sq - 9)
-        && fileA .&. bit sq == 0
-    captureRight = blocked (block .&. complement myBlock) (sq - 7)
-        && fileH .&. bit sq == 0
+    normals = pawnBB !>>. 8 .&. complement block
+    doubles = (normals .&. rank6) !>>. 8 .&. complement block
+    leftCaptures = (pawnBB .&. complement fileA)
+        !>>. 9
+        .&. block
+        .&. complement myBlock
+    rightCaptures = (pawnBB .&. complement fileH)
+        !>>. 7
+        .&. block
+        .&. complement myBlock
+    normalN = normals .&. complement rank1
+    leftN = leftCaptures .&. complement rank1
+    rightN = rightCaptures .&. complement rank1
+    normalP = normals .&. rank1
+    leftP = leftCaptures .&. rank1
+    rightP = rightCaptures .&. rank1
+    enPassant = maybeToList enPSq
+        >>= \enP ->
+            let mask = rank4 .&. 0 `setBit` (enP - 1) `setBit` (enP + 1)
+            in (\sq -> Move Pawn (EnPassant enP) sq (enP - 8))
+                <$> toSqs (pawnBB .&. mask)
 
 knightTable :: Vector Bitboard
 knightTable = tableGen
