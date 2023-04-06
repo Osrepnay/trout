@@ -26,7 +26,6 @@ import           Trout.Bitboard
     , rank8
     , setBit
     , toSqs
-    , unblocked
     , xyToSq
     , (!<<.)
     , (!>>.)
@@ -174,8 +173,5 @@ kingMoves kAllowed qAllowed block myBlock sq = concat
     , Move King Normal sq <$> toSqs (kingTable ! sq .&. complement myBlock)
     ]
   where
-    castleK = kAllowed && unblocked block (sq + 1) && unblocked block (sq + 2)
-    castleQ = qAllowed
-        && unblocked block (sq - 1)
-        && unblocked block (sq - 2)
-        && unblocked block (sq - 3)
+    castleK = kAllowed && block .&. (3 !<<. (sq + 1)) == 0
+    castleQ = qAllowed && block .&. (7 !<<. (sq - 3)) == 0

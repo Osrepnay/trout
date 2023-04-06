@@ -32,7 +32,6 @@ import Lens.Micro.TH                    (makeLenses)
 import Trout.Bitboard
     ( Bitboard
     , bit
-    , blocked
     , clearBit
     , complement
     , countTrailingZeros
@@ -42,7 +41,7 @@ import Trout.Bitboard
     , xyToSq
     , zeroBits
     , (.&.)
-    , (.|.)
+    , (.|.), testBit
     )
 import Trout.Game.MoveGen
     ( Move (..)
@@ -200,7 +199,7 @@ startingGame = Game
 gameAsBoard :: Game -> String
 gameAsBoard game = unlines [[posChar x y | x <- [0..7]] | y <- [7, 6..0]]
   where
-    posChar x y = fst $ head $ filter (\(_, b) -> blocked b sq)
+    posChar x y = fst $ head $ filter (\(_, b) -> b `testBit` sq)
         [ ('P', whitePieces ^. pawns)
         , ('N', whitePieces ^. knights)
         , ('B', whitePieces ^. bishops)
