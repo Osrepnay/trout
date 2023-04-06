@@ -23,9 +23,11 @@ fromSqs = foldl' setBit 0
 {-# INLINE fromSqs #-}
 
 toSqs :: Bitboard -> [Int]
-toSqs 0 = []
-toSqs b = trailing : toSqs (clearBit b trailing)
-  where trailing = countTrailingZeros b
+toSqs bitboard = go bitboard []
+  where
+    go 0 acc = acc
+    go bb acc = go (bb `clearBit` trailing) (trailing : acc)
+      where trailing = countTrailingZeros bb
 {-# INLINE toSqs #-}
 
 xyToSq :: Int -> Int -> Int
