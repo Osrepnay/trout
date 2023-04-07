@@ -36,12 +36,13 @@ import Trout.Bitboard
     , complement
     , countTrailingZeros
     , setBit
+    , testBit
     , toSqs
     , xor
     , xyToSq
     , zeroBits
     , (.&.)
-    , (.|.), testBit
+    , (.|.)
     )
 import Trout.Game.MoveGen
     ( Move (..)
@@ -52,8 +53,8 @@ import Trout.Game.MoveGen
     , knightMoves
     , knightTable
     , pawnBlackAttackTable
-    , pawnsMoves
     , pawnWhiteAttackTable
+    , pawnsMoves
     , queenMoves
     , rookMoves
     )
