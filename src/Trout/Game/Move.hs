@@ -18,10 +18,10 @@ data SpecialMove
     deriving (Eq, Show)
 
 data Move = Move
-    { movePiece   :: Piece
-    , moveSpecial :: SpecialMove
-    , moveFrom    :: Int
-    , moveTo      :: Int
+    { movePiece   :: !Piece
+    , moveSpecial :: !SpecialMove
+    , moveFrom    :: !Int
+    , moveTo      :: !Int
     } deriving (Eq, Show)
 
 -- show uci format of move
