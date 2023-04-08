@@ -7,9 +7,9 @@ module Trout.Game.MoveGen
     , kingTable, kingMoves
     , SpecialMove (..)
     , Move (..)
+    , DList, concatDL, toSqsDL
     ) where
 
-import           Data.Maybe                       (maybeToList)
 import           Data.Vector.Primitive            (Vector, (!))
 import qualified Data.Vector.Primitive            as V
 import           Trout.Bitboard
@@ -25,12 +25,11 @@ import           Trout.Bitboard
     , rank6
     , rank8
     , setBit
-    , toSqs
     , xyToSq
     , (!<<.)
     , (!>>.)
     , (.&.)
-    , (.|.)
+    , (.|.), clearBit, countTrailingZeros
     )
 import           Trout.Game.Move                  (Move (..), SpecialMove (..))
 import           Trout.Game.MoveGen.Sliding.Magic
@@ -38,6 +37,19 @@ import           Trout.Game.MoveGen.Sliding.Magic
     , rookMovesMagic
     )
 import           Trout.Piece                      (Color (..), Piece (..))
+import Data.Functor ((<&>))
+
+type DList a = [a] -> [a]
+
+concatDL :: [DList a] -> DList a
+concatDL = foldr (.) id
+
+-- difference list version of toSqs
+-- has mapping function because can't map on dlist without converting to list first
+toSqsDL :: (Int -> a) -> Bitboard -> DList a
+toSqsDL _ 0 acc = acc
+toSqsDL f bb acc = toSqsDL f (bb `clearBit` trailing) (f trailing : acc)
+  where trailing = countTrailingZeros bb
 
 tableGen :: [(Int, Int)] -> Vector Bitboard
 tableGen ds = V.fromList
@@ -67,16 +79,26 @@ promos :: [Piece]
 promos = [Knight, Bishop, Rook, Queen]
 
 -- batched!
-pawnsMoves :: Maybe Int -> Color -> Bitboard -> Bitboard -> Bitboard -> [Move]
-pawnsMoves enPSq White block myBlock pawnBB = concat
+pawnsMoves
+    :: Maybe Int
+    -> Color
+    -> Bitboard
+    -> Bitboard
+    -> Bitboard
+    -> DList Move
+pawnsMoves enPSq White block myBlock pawnBB = concatDL
     [ enPassant
-    , [Move Pawn PawnDouble (to - 16) to | to <- toSqs doubles]
-    , [Move Pawn (Promotion p) (to - 8)  to | to <- toSqs normalP, p <- promos]
-    , [Move Pawn (Promotion p) (to - 7)  to | to <- toSqs leftP, p <- promos]
-    , [Move Pawn (Promotion p) (to - 9)  to | to <- toSqs rightP, p <- promos]
-    , [Move Pawn Normal (to - 8) to | to <- toSqs normalN]
-    , [Move Pawn Normal (to - 7) to | to <- toSqs leftN]
-    , [Move Pawn Normal (to - 9) to | to <- toSqs rightN]
+    , toSqsDL (\to -> Move Pawn PawnDouble (to - 16) to) doubles
+    , concatDL
+        $ promos
+        <&> \p -> concatDL
+            [ toSqsDL (\to -> Move Pawn (Promotion p) (to - 8) to) normalP
+            , toSqsDL (\to -> Move Pawn (Promotion p) (to - 7) to) leftP
+            , toSqsDL (\to -> Move Pawn (Promotion p) (to - 9) to) rightP
+            ]
+    , toSqsDL (\to -> Move Pawn Normal (to - 8) to) normalN
+    , toSqsDL (\to -> Move Pawn Normal (to - 7) to) leftN
+    , toSqsDL (\to -> Move Pawn Normal (to - 9) to) rightN
     ]
   where
     normals = pawnBB !<<. 8 .&. complement block
@@ -95,20 +117,25 @@ pawnsMoves enPSq White block myBlock pawnBB = concat
     normalP = normals .&. rank8
     leftP = leftCaptures .&. rank8
     rightP = rightCaptures .&. rank8
-    enPassant = maybeToList enPSq
-        >>= \enP ->
-            let mask = rank5 .&. 0 `setBit` (enP - 1) `setBit` (enP + 1)
-            in (\sq -> Move Pawn (EnPassant enP) sq (enP + 8))
-                <$> toSqs (pawnBB .&. mask)
-pawnsMoves enPSq Black block myBlock pawnBB = concat
+    enPassant = case enPSq of
+        Just enP -> toSqsDL (\sq -> Move Pawn (EnPassant enP) sq (enP + 8))
+            (pawnBB
+                .&. rank5
+                .&. 0 `setBit` (enP - 1) `setBit` (enP + 1))
+        Nothing -> id
+pawnsMoves enPSq Black block myBlock pawnBB = concatDL
     [ enPassant
-    , [Move Pawn PawnDouble (to + 16) to | to <- toSqs doubles]
-    , [Move Pawn (Promotion p) (to + 8)  to | to <- toSqs normalP, p <- promos]
-    , [Move Pawn (Promotion p) (to + 9)  to | to <- toSqs leftP, p <- promos]
-    , [Move Pawn (Promotion p) (to + 7)  to | to <- toSqs rightP, p <- promos]
-    , [Move Pawn Normal (to + 8) to | to <- toSqs normalN]
-    , [Move Pawn Normal (to + 9) to | to <- toSqs leftN]
-    , [Move Pawn Normal (to + 7) to | to <- toSqs rightN]
+    , toSqsDL (\to -> Move Pawn PawnDouble (to + 16) to) doubles
+    , concatDL
+        $ promos
+        <&> \p -> concatDL
+            [ toSqsDL (\to -> Move Pawn (Promotion p) (to + 8) to) normalP
+            , toSqsDL (\to -> Move Pawn (Promotion p) (to + 9) to) leftP
+            , toSqsDL (\to -> Move Pawn (Promotion p) (to + 7) to) rightP
+            ]
+    , toSqsDL (\to -> Move Pawn Normal (to + 8) to) normalN
+    , toSqsDL (\to -> Move Pawn Normal (to + 9) to) leftN
+    , toSqsDL (\to -> Move Pawn Normal (to + 7) to) rightN
     ]
   where
     normals = pawnBB !>>. 8 .&. complement block
@@ -127,11 +154,12 @@ pawnsMoves enPSq Black block myBlock pawnBB = concat
     normalP = normals .&. rank1
     leftP = leftCaptures .&. rank1
     rightP = rightCaptures .&. rank1
-    enPassant = maybeToList enPSq
-        >>= \enP ->
-            let mask = rank4 .&. 0 `setBit` (enP - 1) `setBit` (enP + 1)
-            in (\sq -> Move Pawn (EnPassant enP) sq (enP - 8))
-                <$> toSqs (pawnBB .&. mask)
+    enPassant = case enPSq of
+        Just enP -> toSqsDL (\sq -> Move Pawn (EnPassant enP) sq (enP - 8))
+            (pawnBB
+                .&. rank4
+                .&. 0 `setBit` (enP - 1) `setBit` (enP + 1))
+        Nothing -> id
 
 knightTable :: Vector Bitboard
 knightTable = tableGen
@@ -141,23 +169,26 @@ knightTable = tableGen
     , ( 2, -1), ( 2, 1)
     ]
 
-knightMoves :: Bitboard -> Bitboard -> Int -> [Move]
-knightMoves _ myBlock sq = Move Knight Normal sq
-    <$> toSqs (knightTable ! sq .&. complement myBlock)
+knightMoves :: Bitboard -> Bitboard -> Int -> DList Move
+knightMoves _ myBlock sq = toSqsDL
+    (Move Knight Normal sq)
+    (knightTable ! sq .&. complement myBlock)
 
-bishopMoves :: Bitboard -> Bitboard -> Int -> [Move]
-bishopMoves block myBlock sq = Move Bishop Normal sq
-    <$> toSqs (bishopMovesMagic block sq .&. complement myBlock)
+bishopMoves :: Bitboard -> Bitboard -> Int -> DList Move
+bishopMoves block myBlock sq = toSqsDL
+    (Move Bishop Normal sq)
+    (bishopMovesMagic block sq .&. complement myBlock)
 
-rookMoves :: Bitboard -> Bitboard -> Int -> [Move]
-rookMoves block myBlock sq = Move Rook Normal sq
-    <$> toSqs (rookMovesMagic block sq .&. complement myBlock)
+rookMoves :: Bitboard -> Bitboard -> Int -> DList Move
+rookMoves block myBlock sq = toSqsDL
+    (Move Rook Normal sq)
+    (rookMovesMagic block sq .&. complement myBlock)
 
-queenMoves :: Bitboard -> Bitboard -> Int -> [Move]
-queenMoves block myBlock sq = Move Queen Normal sq
-    <$> toSqs
-        ((bishopMovesMagic block sq .|. rookMovesMagic block sq)
-            .&. complement myBlock)
+queenMoves :: Bitboard -> Bitboard -> Int -> DList Move
+queenMoves block myBlock sq = toSqsDL
+    (Move Queen Normal sq)
+    ((bishopMovesMagic block sq .|. rookMovesMagic block sq)
+        .&. complement myBlock)
 
 kingTable :: Vector Bitboard
 kingTable = tableGen
@@ -166,11 +197,11 @@ kingTable = tableGen
     , ( 1, -1), ( 1, 0), ( 1, 1)
     ]
 
-kingMoves :: Bool -> Bool -> Bitboard -> Bitboard -> Int -> [Move]
-kingMoves kAllowed qAllowed block myBlock sq = concat
-    [ [Move King CastleKing sq (sq + 2) | castleK]
-    , [Move King CastleQueen sq (sq - 2) | castleQ]
-    , Move King Normal sq <$> toSqs (kingTable ! sq .&. complement myBlock)
+kingMoves :: Bool -> Bool -> Bitboard -> Bitboard -> Int -> DList Move
+kingMoves kAllowed qAllowed block myBlock sq = concatDL
+    [ ([Move King CastleKing sq (sq + 2) | castleK] ++)
+    , ([Move King CastleQueen sq (sq - 2) | castleQ] ++)
+    , toSqsDL (Move King Normal sq) (kingTable ! sq .&. complement myBlock)
     ]
   where
     castleK = kAllowed && block .&. (3 !<<. (sq + 1)) == 0
