@@ -54,7 +54,7 @@ import Trout.Game.MoveGen
     , knightTable
     , pawnsMoves
     , queenMoves
-    , rookMoves, concatDL, toSqsDL
+    , rookMoves, concatDL, mapOnes
     )
 import Trout.Game.MoveGen.Sliding.Magic (bishopMovesMagic, rookMovesMagic)
 import Trout.Game.Zobrists
@@ -248,7 +248,7 @@ allMoves game =
     queenside = 0 /= 5 .&. thisCastling
     thisCastling = game ^. gameCastling' . maskByColor
     -- gets and concats the move for a set of squares (for a piece)
-    moveSqs mover = toSqsDL (mover block myBlock)
+    moveSqs mover = mapOnes (mover block myBlock)
     block = myBlock .|. piecesAll (game ^. gameWaiting)
     myBlock = piecesAll turnPieces
     turnPieces@(Pieces p n b r q k) = game ^. gamePlaying
