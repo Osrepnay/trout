@@ -49,8 +49,8 @@ concatDL = foldr (.) id
 mapOnes :: (Int -> a) -> Bitboard -> DList a
 mapOnes f = go
   where
-    go 0 acc = acc
-    go bb acc = go (bb `clearBit` trailing) (f trailing : acc)
+    go 0 !acc = acc
+    go bb !acc = go (bb `clearBit` trailing) (f trailing : acc)
       where trailing = countTrailingZeros bb
 
 tableGen :: [(Int, Int)] -> Vector Bitboard
