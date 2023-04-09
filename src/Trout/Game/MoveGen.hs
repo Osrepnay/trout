@@ -1,5 +1,5 @@
 module Trout.Game.MoveGen
-    ( pawnWhiteAttackTable, pawnBlackAttackTable, pawnsMoves
+    ( pawnsMoves
     , knightTable, knightMoves
     , bishopMoves
     , rookMoves
@@ -47,9 +47,11 @@ concatDL = foldr (.) id
 -- difference list version of toSqs
 -- has mapping function because can't map on dlist without converting to list first
 toSqsDL :: (Int -> a) -> Bitboard -> DList a
-toSqsDL _ 0 acc = acc
-toSqsDL f bb acc = toSqsDL f (bb `clearBit` trailing) (f trailing : acc)
-  where trailing = countTrailingZeros bb
+toSqsDL f = go
+  where
+    go 0 acc = acc
+    go bb acc = go (bb `clearBit` trailing) (f trailing : acc)
+      where trailing = countTrailingZeros bb
 
 tableGen :: [(Int, Int)] -> Vector Bitboard
 tableGen ds = V.fromList
@@ -65,15 +67,6 @@ tableGen ds = V.fromList
     , let sqX = sq `rem` 8
     , let sqY = sq `quot` 8
     ]
-
--- only used for check detection rn
--- might use in actual pawnmoves, need perft speed test first
--- dont use for now it's slowwer
-pawnWhiteAttackTable :: Vector Bitboard
-pawnWhiteAttackTable = tableGen [(-1, 1), (1, 1)]
-
-pawnBlackAttackTable :: Vector Bitboard
-pawnBlackAttackTable = tableGen [(-1, -1), (1, -1)]
 
 promos :: [Piece]
 promos = [Knight, Bishop, Rook, Queen]

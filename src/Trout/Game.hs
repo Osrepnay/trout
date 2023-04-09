@@ -42,7 +42,7 @@ import Trout.Bitboard
     , xyToSq
     , zeroBits
     , (.&.)
-    , (.|.)
+    , (.|.), fileA, (!>>.), fileH, (!<<.)
     )
 import Trout.Game.MoveGen
     ( Move (..)
@@ -52,8 +52,6 @@ import Trout.Game.MoveGen
     , kingTable
     , knightMoves
     , knightTable
-    , pawnBlackAttackTable
-    , pawnWhiteAttackTable
     , pawnsMoves
     , queenMoves
     , rookMoves, concatDL, toSqsDL
@@ -256,20 +254,22 @@ allMoves game =
     turnPieces@(Pieces p n b r q k) = game ^. gamePlaying
 
 squareAttacked :: Bitboard -> Int -> Game -> Bool
-squareAttacked block sq game = pawnAttackTable ! sq .&. p
-    .|. knightTable ! sq .&. n
+squareAttacked block sq game = knightTable ! sq .&. n
     .|. bishoped .&. b
     .|. rooked .&. r
     .|. bishoped .&. q
     .|. rooked .&. q
     .|. kingTable ! sq .&. k
     /= 0
+    || pawnMask `testBit` sq
   where
     bishoped = bishopMovesMagic block sq
     rooked = rookMovesMagic block sq
-    pawnAttackTable = case game ^. gameTurn of
-        White -> pawnWhiteAttackTable
-        Black -> pawnBlackAttackTable
+    pawnMask = case game ^. gameTurn of
+        White -> (p .&. complement fileA) !>>. 9
+            .|. (p .&. complement fileH) !>>. 7
+        Black -> (p .&. complement fileA) !<<. 7
+            .|. (p .&. complement fileH) !<<. 9
     (Pieces p n b r q k) = game ^. gameWaiting
 
 inCheck :: Game -> Bool
