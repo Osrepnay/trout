@@ -237,33 +237,32 @@ allMoves game =
         (game ^. gameTurn)
         block
         myBlock
-        (turnPieces ^. pawns)
+        p
     $ concatDL
-        (moveSqs knightMoves knights
-            $ moveSqs bishopMoves bishops
-            $ moveSqs rookMoves rooks
-            $ moveSqs queenMoves queens
-            $ moveSqs (kingMoves kingside queenside) kings [])
+        (moveSqs knightMoves n
+            $ moveSqs bishopMoves b
+            $ moveSqs rookMoves r
+            $ moveSqs queenMoves q
+            $ moveSqs (kingMoves kingside queenside) k [])
         []
   where
     kingside = 0 /= 10 .&. thisCastling
     queenside = 0 /= 5 .&. thisCastling
     thisCastling = game ^. gameCastling' . maskByColor
     -- gets and concats the move for a set of squares (for a piece)
-    moveSqs mover piece = toSqsDL (mover block myBlock) (turnPieces ^. piece)
-    block = myBlock .|. piecesAll oppPieces
+    moveSqs mover = toSqsDL (mover block myBlock)
+    block = myBlock .|. piecesAll (game ^. gameWaiting)
     myBlock = piecesAll turnPieces
-    turnPieces = game ^. gamePlaying
-    oppPieces = game ^. gameWaiting
+    turnPieces@(Pieces p n b r q k) = game ^. gamePlaying
 
 squareAttacked :: Bitboard -> Int -> Game -> Bool
-squareAttacked block sq game = pawnAttackTable ! sq .&. oppPieces ^. pawns
-    .|. knightTable ! sq .&. oppPieces ^. knights
-    .|. bishoped .&. oppPieces ^. bishops
-    .|. rooked .&. oppPieces ^. rooks
-    .|. bishoped .&. oppPieces ^. queens
-    .|. rooked .&. oppPieces ^. queens
-    .|. kingTable ! sq .&. oppPieces ^. kings
+squareAttacked block sq game = pawnAttackTable ! sq .&. p
+    .|. knightTable ! sq .&. n
+    .|. bishoped .&. b
+    .|. rooked .&. r
+    .|. bishoped .&. q
+    .|. rooked .&. q
+    .|. kingTable ! sq .&. k
     /= 0
   where
     bishoped = bishopMovesMagic block sq
@@ -271,7 +270,7 @@ squareAttacked block sq game = pawnAttackTable ! sq .&. oppPieces ^. pawns
     pawnAttackTable = case game ^. gameTurn of
         White -> pawnWhiteAttackTable
         Black -> pawnBlackAttackTable
-    oppPieces = game ^. gameWaiting
+    (Pieces p n b r q k) = game ^. gameWaiting
 
 inCheck :: Game -> Bool
 inCheck game
