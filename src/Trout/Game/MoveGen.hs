@@ -153,6 +153,7 @@ pawnsMoves enPSq Black block myBlock pawnBB = concatDL
                 .&. rank4
                 .&. 0 `setBit` (enP - 1) `setBit` (enP + 1))
         Nothing -> id
+{-# INLINE pawnsMoves #-}
 
 knightTable :: Vector Bitboard
 knightTable = tableGen
@@ -166,22 +167,26 @@ knightMoves :: Bitboard -> Bitboard -> Int -> DList Move
 knightMoves _ myBlock sq = mapOnes
     (Move Knight Normal sq)
     (knightTable ! sq .&. complement myBlock)
+{-# INLINE knightMoves #-}
 
 bishopMoves :: Bitboard -> Bitboard -> Int -> DList Move
 bishopMoves block myBlock sq = mapOnes
     (Move Bishop Normal sq)
     (bishopMovesMagic block sq .&. complement myBlock)
+{-# INLINE bishopMoves #-}
 
 rookMoves :: Bitboard -> Bitboard -> Int -> DList Move
 rookMoves block myBlock sq = mapOnes
     (Move Rook Normal sq)
     (rookMovesMagic block sq .&. complement myBlock)
+{-# INLINE rookMoves #-}
 
 queenMoves :: Bitboard -> Bitboard -> Int -> DList Move
 queenMoves block myBlock sq = mapOnes
     (Move Queen Normal sq)
     ((bishopMovesMagic block sq .|. rookMovesMagic block sq)
         .&. complement myBlock)
+{-# INLINE queenMoves #-}
 
 kingTable :: Vector Bitboard
 kingTable = tableGen
@@ -199,3 +204,4 @@ kingMoves kAllowed qAllowed block myBlock sq = concatDL
   where
     castleK = kAllowed && block .&. (3 !<<. (sq + 1)) == 0
     castleQ = qAllowed && block .&. (7 !<<. (sq - 3)) == 0
+{-# INLINE kingMoves #-}
