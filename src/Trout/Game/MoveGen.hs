@@ -56,19 +56,18 @@ mapOnes f = go
       where trailing = countTrailingZeros bb
 
 tableGen :: [(Int, Int)] -> Vector Bitboard
-tableGen ds = V.fromList
-    [ fromSqs
-        [ xyToSq nSqX nSqY
-        | (dx, dy) <- ds
-        , let nSqX = sqX + dx
-        , 0 <= nSqX, nSqX < 8
-        , let nSqY = sqY + dy
-        , 0 <= nSqY, nSqY < 8
-        ]
-    | sq <- [0..63]
-    , let sqX = sq `rem` 8
-    , let sqY = sq `quot` 8
-    ]
+tableGen ds = V.generate 64
+    $ \sq ->
+        let sqX = sq `rem` 8
+            sqY = sq `quot` 8
+        in fromSqs
+            [ xyToSq nSqX nSqY
+            | (dx, dy) <- ds
+            , let nSqX = sqX + dx
+            , 0 <= nSqX, nSqX < 8
+            , let nSqY = sqY + dy
+            , 0 <= nSqY, nSqY < 8
+            ]
 
 promos :: [Piece]
 promos = [Knight, Bishop, Rook, Queen]
