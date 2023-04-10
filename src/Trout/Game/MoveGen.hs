@@ -10,11 +10,14 @@ module Trout.Game.MoveGen
     , DList, concatDL, mapOnes
     ) where
 
+import           Data.Functor                     ((<&>))
 import           Data.Vector.Primitive            (Vector, (!))
 import qualified Data.Vector.Primitive            as V
 import           Trout.Bitboard
     ( Bitboard
+    , clearBit
     , complement
+    , countTrailingZeros
     , fileA
     , fileH
     , fromSqs
@@ -29,7 +32,7 @@ import           Trout.Bitboard
     , (!<<.)
     , (!>>.)
     , (.&.)
-    , (.|.), clearBit, countTrailingZeros
+    , (.|.)
     )
 import           Trout.Game.Move                  (Move (..), SpecialMove (..))
 import           Trout.Game.MoveGen.Sliding.Magic
@@ -37,7 +40,6 @@ import           Trout.Game.MoveGen.Sliding.Magic
     , rookMovesMagic
     )
 import           Trout.Piece                      (Color (..), Piece (..))
-import Data.Functor ((<&>))
 
 type DList a = [a] -> [a]
 

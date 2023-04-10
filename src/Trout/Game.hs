@@ -35,26 +35,32 @@ import Trout.Bitboard
     , clearBit
     , complement
     , countTrailingZeros
+    , fileA
+    , fileH
     , setBit
     , testBit
     , toSqs
     , xor
     , xyToSq
     , zeroBits
+    , (!<<.)
+    , (!>>.)
     , (.&.)
-    , (.|.), fileA, (!>>.), fileH, (!<<.)
+    , (.|.)
     )
 import Trout.Game.MoveGen
     ( Move (..)
     , SpecialMove (..)
     , bishopMoves
+    , concatDL
     , kingMoves
     , kingTable
     , knightMoves
     , knightTable
+    , mapOnes
     , pawnsMoves
     , queenMoves
-    , rookMoves, concatDL, mapOnes
+    , rookMoves
     )
 import Trout.Game.MoveGen.Sliding.Magic (bishopMovesMagic, rookMovesMagic)
 import Trout.Game.Zobrists
