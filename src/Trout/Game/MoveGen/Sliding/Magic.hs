@@ -6,7 +6,7 @@ module Trout.Game.MoveGen.Sliding.Magic
 
 import           Data.Foldable                      (foldl')
 import           Data.Functor                       ((<&>))
-import           Data.Vector.Primitive              (Vector, (!), (//))
+import           Data.Vector.Primitive              (Vector, unsafeIndex, (//))
 import qualified Data.Vector.Primitive              as V
 import           Data.Word                          (Word64)
 import           Trout.Bitboard
@@ -44,7 +44,7 @@ bishopMasks = V.generate
     ((complement (rank1 .|. rank8 .|. fileA .|. fileH) .&.)
         . foldl' (.|.) 0
         . (<$> bishopRays)
-        . flip (!))
+        . flip unsafeIndex)
 
 rookMasks :: Vector Bitboard
 rookMasks = V.generate
@@ -58,7 +58,7 @@ rookMasks = V.generate
                 , fileA
                 ])
         . (<$> rookRays)
-        . flip (!))
+        . flip unsafeIndex)
 
 -- maps an index to a mask
 -- index has to be less than or equal to the number of set bits in the mask
@@ -78,29 +78,35 @@ bishopMagicTable = V.concat
     $ [0..63]
     <&> \sq -> flip bishopMovesClassic sq
         `V.map` allMapped
-            (bishopMagics ! sq)
-            (bishopBits ! sq)
+            (bishopMagics `unsafeIndex` sq)
+            (bishopBits `unsafeIndex` sq)
             1024
-            (bishopMasks ! sq)
+            (bishopMasks `unsafeIndex` sq)
 
 rookMagicTable :: Vector Bitboard
 rookMagicTable = V.concat
     $ [0..63]
     <&> \sq -> flip rookMovesClassic sq
         `V.map` allMapped
-            (rookMagics ! sq)
-            (rookBits ! sq)
+            (rookMagics `unsafeIndex` sq)
+            (rookBits `unsafeIndex` sq)
             4096
-            (rookMasks ! sq)
+            (rookMasks `unsafeIndex` sq)
 
 bishopMovesMagic :: Bitboard -> Int -> Bitboard
-bishopMovesMagic block sq = bishopMagicTable
-    ! (sq * 1024 + genKey masked (bishopMagics ! sq) (bishopBits ! sq))
-  where masked = block .&. (bishopMasks ! sq)
+bishopMovesMagic block sq = unsafeIndex
+    bishopMagicTable
+    $ sq * 1024
+    + genKey masked
+        (bishopMagics `unsafeIndex` sq)
+        (bishopBits `unsafeIndex` sq)
+  where masked = block .&. (bishopMasks `unsafeIndex` sq)
 {-# INLINE bishopMovesMagic #-}
 
 rookMovesMagic :: Bitboard -> Int -> Bitboard
-rookMovesMagic block sq = rookMagicTable
-    ! (sq * 4096 + genKey masked (rookMagics ! sq) (rookBits ! sq))
-  where masked = block .&. (rookMasks ! sq)
+rookMovesMagic block sq = unsafeIndex
+    rookMagicTable
+    $ sq * 4096
+    + genKey masked (rookMagics `unsafeIndex` sq) (rookBits `unsafeIndex` sq)
+  where masked = block .&. (rookMasks `unsafeIndex` sq)
 {-# INLINE rookMovesMagic #-}

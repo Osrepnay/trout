@@ -18,7 +18,7 @@ module Trout.Game
 import Data.Bool                        (bool)
 import Data.Foldable                    (foldl')
 import Data.Hashable                    (Hashable (..))
-import Data.Vector.Primitive            ((!))
+import Data.Vector.Primitive            (unsafeIndex)
 import Lens.Micro
     ( Lens
     , Lens'
@@ -110,14 +110,17 @@ instance Hashable Game where
         `xor` hashBitboard (white ^. kings) whiteKingZobrists
         `xor` hashBitboard (black ^. kings) blackKingZobrists
       where
-        hashBitboard bb table = foldl' (\b a -> table ! a `xor` b) 0 (toSqs bb)
+        hashBitboard bb table = foldl'
+            (\b a -> table `unsafeIndex` a `xor` b)
+            0
+            (toSqs bb)
         (white, black, turnHash) = case turn of
             White -> (play, wait, playingZobrist)
             Black -> (wait, play, 0)
         -- only first 4 bits of castle should be used
-        castleHash = castleZobrists ! castle
+        castleHash = castleZobrists `unsafeIndex` castle
         enPassantHash = case enP of
-            Just sq -> enPassantZobrists ! (sq `rem` 8)
+            Just sq -> enPassantZobrists `unsafeIndex` (sq `rem` 8)
             Nothing -> 0
 
     hashWithSalt :: Int -> Game -> Int
@@ -260,12 +263,12 @@ allMoves game =
     turnPieces@(Pieces p n b r q k) = game ^. gamePlaying
 
 squareAttacked :: Bitboard -> Int -> Game -> Bool
-squareAttacked block sq game = knightTable ! sq .&. n
+squareAttacked block sq game = knightTable `unsafeIndex` sq .&. n
     .|. bishoped .&. b
     .|. rooked .&. r
     .|. bishoped .&. q
     .|. rooked .&. q
-    .|. kingTable ! sq .&. k
+    .|. kingTable `unsafeIndex` sq .&. k
     /= 0
     || pawnMask `testBit` sq
   where
