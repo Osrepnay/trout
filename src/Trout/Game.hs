@@ -173,16 +173,6 @@ gameCastling' afb game@(Game {_gameCastling = c, _gameTurn = t}) = afb (c, t)
     <&> \b -> game {_gameCastling = b}
 {-# INLINE gameCastling' #-}
 
--- masks home rows by color
-maskByColor :: Lens (Int, Color) Int Int Int
-maskByColor afb (bb, White) = (.|. (bb .&. complement 3))
-    . (.&. 3)
-    <$> afb (bb .&. 3)
-maskByColor afb (bb, Black) = (.|. (bb .&. complement 12))
-    . (.&. 12)
-    <$> afb (bb .&. 12)
-{-# INLINE maskByColor #-}
-
 -- https://tearth.dev/bitboard-viewer/
 startingGame :: Game
 startingGame = Game
@@ -255,7 +245,10 @@ allMoves game =
   where
     kingside = 0 /= 10 .&. thisCastling
     queenside = 0 /= 5 .&. thisCastling
-    thisCastling = game ^. gameCastling' . maskByColor
+    thisCastling = game ^. gameCastling
+        .&. case game ^. gameTurn of
+            White -> 3
+            Black -> 12
     -- gets and concats the move for a set of squares (for a piece)
     moveSqs mover = mapOnes (mover block myBlock)
     block = myBlock .|. piecesAll (game ^. gameWaiting)
