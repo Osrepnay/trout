@@ -349,13 +349,13 @@ makeMove game (Move piece special from to) = do
         | squareAttacked kingless kingOrigin g = Nothing
         | otherwise = Just g
       where
-        kingless = gameBlockers g `clearBit` 6
+        kingless = gameBlockers g `clearBit` (kingOrigin + 2)
     throughCheckQueen g
         | squareAttacked kingless (kingOrigin - 1) g = Nothing
         | squareAttacked kingless kingOrigin g = Nothing
         | otherwise = Just g
       where
-        kingless = gameBlockers g `clearBit` 2
+        kingless = gameBlockers g `clearBit` (kingOrigin - 2)
     -- for castling things
     kingOrigin = case game ^. gameTurn of
         White -> 4
