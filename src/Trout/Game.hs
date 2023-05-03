@@ -127,8 +127,7 @@ instance Hashable Game where
     hashWithSalt salt game = hash game `xor` salt
 
 
--- ghc gets mad when i use the normal lens typedef
-byPiece :: Functor f => Piece -> (Bitboard -> f Bitboard) -> Pieces -> f Pieces
+byPiece :: Piece -> Lens' Pieces Bitboard
 byPiece Pawn   = pawns
 byPiece Knight = knights
 byPiece Bishop = bishops
