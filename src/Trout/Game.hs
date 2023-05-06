@@ -7,7 +7,6 @@ module Trout.Game
     , Game (..)
     , gamePlaying, gameWaiting, gameCastling, gameEnPassant, gameTurn
     , gamePieces
-    , gameCastling'
     , gameAsBoard
     , startingGame
     , allMoves
@@ -166,11 +165,6 @@ gamePieces afb game@(Game p w _ _ t) = case t of
     Black -> afb (w, p)
         <&> \(w', p') -> game {_gamePlaying = w', _gameWaiting = p'}
 {-# INLINE gamePieces #-}
-
-gameCastling' :: Lens Game Game (Int, Color) Int
-gameCastling' afb game@(Game {_gameCastling = c, _gameTurn = t}) = afb (c, t)
-    <&> \b -> game {_gameCastling = b}
-{-# INLINE gameCastling' #-}
 
 -- https://tearth.dev/bitboard-viewer/
 startingGame :: Game
