@@ -254,8 +254,8 @@ allMoves game =
     myBlock = piecesAll turnPieces
     turnPieces@(Pieces p n b r q k) = game ^. gamePlaying
 
-squareAttacked :: Int -> Game -> Bool
-squareAttacked sq game = knightTable `unsafeIndex` sq .&. n
+squareAttacked :: Bitboard -> Int -> Game -> Bool
+squareAttacked block sq game = knightTable `unsafeIndex` sq .&. n
     .|. bishoped .&. b
     .|. rooked .&. r
     .|. bishoped .&. q
@@ -266,19 +266,17 @@ squareAttacked sq game = knightTable `unsafeIndex` sq .&. n
   where
     bishoped = bishopMovesMagic block sq
     rooked = rookMovesMagic block sq
-    block = gameBlockers game
     pawnMask = case game ^. gameTurn of
         White -> (p .&. complement fileA) !>>. 9
             .|. (p .&. complement fileH) !>>. 7
         Black -> (p .&. complement fileA) !<<. 7
             .|. (p .&. complement fileH) !<<. 9
     (Pieces p n b r q k) = game ^. gameWaiting
-{-# INLINE squareAttacked #-}
 
 inCheck :: Game -> Bool
 inCheck game
     | kingSq == 64 = True -- king gone!
-    | otherwise    = squareAttacked kingSq game
+    | otherwise    = squareAttacked (gameBlockers game) kingSq game
   where
     kingSq = countTrailingZeros kingMask
     kingMask = game ^. gamePlaying . kings
@@ -348,13 +346,15 @@ makeMove game (Move piece special from to) = do
     -- originally it cleared the original king square from blockers
     -- doesnt matter because if kingOrigin +- 1 is prevented from check by blocker then kingOrigin has to be in check too
     throughCheckKing g
-        | squareAttacked kingOrigin g = Nothing
-        | squareAttacked (kingOrigin + 1) g = Nothing
+        | squareAttacked block kingOrigin g = Nothing
+        | squareAttacked block (kingOrigin + 1) g = Nothing
         | otherwise = Just g
+      where block = gameBlockers g
     throughCheckQueen g
-        | squareAttacked kingOrigin g = Nothing
-        | squareAttacked (kingOrigin - 1) g = Nothing
+        | squareAttacked block kingOrigin g = Nothing
+        | squareAttacked block (kingOrigin - 1) g = Nothing
         | otherwise = Just g
+      where block = gameBlockers g
     -- for castling things
     kingOrigin = case game ^. gameTurn of
         White -> 4
