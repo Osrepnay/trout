@@ -220,6 +220,23 @@ gameBlockers game =
     .|. piecesAll (game ^. gameWaiting)
 {-# INLINE gameBlockers #-}
 
+setSqPlaying :: Piece -> Int -> Game -> Game
+setSqPlaying piece sq = gamePlaying . byPiece piece %~ (`setBit` sq)
+{-# INLINE setSqPlaying #-}
+
+clearSqPlaying :: Piece -> Int -> Game -> Game
+clearSqPlaying piece sq = gamePlaying . byPiece piece %~ (`clearBit` sq)
+{-# INLINE clearSqPlaying #-}
+
+clearSqWaiting :: Piece -> Int -> Game -> Game
+clearSqWaiting piece sq = gameWaiting . byPiece piece %~ (`clearBit` sq)
+{-# INLINE clearSqWaiting #-}
+
+moveSqPlaying :: Piece -> Int -> Int -> Game -> Game
+moveSqPlaying piece from to = gamePlaying . byPiece piece
+    %~ (`clearBit` from) . (`setBit` to)
+{-# INLINE moveSqPlaying #-}
+
 allMoves :: Game -> [Move]
 allMoves game =
     pawnsMoves
@@ -238,6 +255,7 @@ allMoves game =
   where
     kingside = 0 /= 10 .&. thisCastling
     queenside = 0 /= 5 .&. thisCastling
+    -- only having 1 switch on turn is important. apparently.
     thisCastling = game ^. gameCastling
         .&. case game ^. gameTurn of
             White -> 3
@@ -283,19 +301,19 @@ makeMove game (Move piece special from to) = do
     pure (flipTurn (clearCastles checkChecked))
   where
     -- basic moving
-    doMove = gamePlaying
-        . byPiece piece
-        %~ (`setBit` to) . (`clearBit` from)
+    doMove = moveSqPlaying piece from to
     captureAll = gameWaiting
-        %~ \(Pieces p n b r q k) -> Pieces
-            (p .&. clearMask)
-            (n .&. clearMask)
-            (b .&. clearMask)
-            (r .&. clearMask)
-            (q .&. clearMask)
-            (k .&. clearMask)
+        %~ \(Pieces p n b r q k) ->
+            if p .&. toBit /= 0 then Pieces (p .&. clearMask) n b r q k
+            else if n .&. toBit /= 0 then Pieces p (n .&. clearMask) b r q k
+            else if b .&. toBit /= 0 then Pieces p n (b .&. clearMask) r q k
+            else if r .&. toBit /= 0 then Pieces p n b (r .&. clearMask) q k
+            else if q .&. toBit /= 0 then Pieces p n b r (q .&. clearMask) k
+            else if k .&. toBit /= 0 then Pieces p n r b q (k .&. clearMask)
+            else Pieces p n b r q k
       where
-        clearMask = complement (bit to)
+        toBit = bit to
+        clearMask = complement toBit
     clearCastles = gameCastling
         %~ (complement
             (case piece of
@@ -315,24 +333,18 @@ makeMove game (Move piece special from to) = do
         PawnDouble -> Just . (gameEnPassant ?~ to)
         EnPassant enPSq -> Just
             . clearEnPassant
-            . (gameWaiting . pawns %~ (`clearBit` enPSq))
+            . clearSqWaiting Pawn enPSq
         Promotion promote -> Just
             . clearEnPassant
-            . (gamePlaying . byPiece promote %~ (`setBit` to))
-            . (gamePlaying . pawns %~ (`clearBit` to))
+            . setSqPlaying promote to
+            . clearSqPlaying Pawn to
         CastleKing ->
             fmap (clearEnPassant
-                . (gamePlaying
-                    . rooks
-                    %~ (`setBit` (kingOrigin + 1))
-                    . (`clearBit` (kingOrigin + 3))))
+                . moveSqPlaying Rook (kingOrigin + 3) (kingOrigin + 1))
             . throughCheckKing
         CastleQueen ->
             fmap (clearEnPassant
-                . (gamePlaying
-                    . rooks
-                    %~ (`setBit` (kingOrigin - 1))
-                    . (`clearBit` (kingOrigin - 4))))
+                . moveSqPlaying Rook (kingOrigin - 4) (kingOrigin - 1))
             . throughCheckQueen
         Normal -> Just . clearEnPassant
     clearEnPassant = gameEnPassant .~ Nothing
