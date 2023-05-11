@@ -14,7 +14,6 @@ module Trout.Game
     , makeMove
     ) where
 
-import Data.Bool                        (bool)
 import Data.Foldable                    (foldl')
 import Data.Hashable                    (Hashable (..))
 import Data.Vector.Primitive            (unsafeIndex)
@@ -25,7 +24,7 @@ import Lens.Micro
     , (.~)
     , (<&>)
     , (?~)
-    , (^.)
+    , (^.), (&)
     )
 import Lens.Micro.TH                    (makeLenses)
 import Trout.Bitboard
@@ -295,39 +294,44 @@ inCheck game
 
 makeMove :: Game -> Move -> Maybe Game
 makeMove game (Move piece special from to) = do
-    let moveAndCaptured = captureAll (doMove game)
-    afterSpecials <- specials moveAndCaptured
+    let movedAndCleared = game
+            & \(Game playing waiting c enP t) -> Game
+                (doMove playing)
+                (captureAll waiting)
+                (clearCastles c)
+                enP t
+    afterSpecials <- specials movedAndCleared
     checkChecked <- nothingIfCheck afterSpecials
-    pure (flipTurn (clearCastles checkChecked))
+    pure (flipTurn checkChecked)
   where
     -- basic moving
-    doMove = moveSqPlaying piece from to
-    captureAll = gameWaiting
-        %~ \(Pieces p n b r q k) ->
-            if p .&. toBit /= 0 then Pieces (p .&. clearMask) n b r q k
-            else if n .&. toBit /= 0 then Pieces p (n .&. clearMask) b r q k
-            else if b .&. toBit /= 0 then Pieces p n (b .&. clearMask) r q k
-            else if r .&. toBit /= 0 then Pieces p n b (r .&. clearMask) q k
-            else if q .&. toBit /= 0 then Pieces p n b r (q .&. clearMask) k
-            else if k .&. toBit /= 0 then Pieces p n r b q (k .&. clearMask)
-            else Pieces p n b r q k
+    doMove !pcs = pcs & byPiece piece %~ (`clearBit` from) . (`setBit` to)
+    captureAll (Pieces p n b r q k)
+        | p .&. toBit /= 0 = Pieces (p .&. clearMask) n b r q k
+        | n .&. toBit /= 0 = Pieces p (n .&. clearMask) b r q k
+        | b .&. toBit /= 0 = Pieces p n (b .&. clearMask) r q k
+        | r .&. toBit /= 0 = Pieces p n b (r .&. clearMask) q k
+        | q .&. toBit /= 0 = Pieces p n b r (q .&. clearMask) k
+        | k .&. toBit /= 0 = Pieces p n r b q (k .&. clearMask)
+        | otherwise = Pieces p n b r q k
       where
         toBit = bit to
         clearMask = complement toBit
-    clearCastles = gameCastling
-        %~ (complement
-            (case piece of
+    clearCastles c = c .&. complement
+        (castleMask from
+            .|. castleMask to
+            .|. case piece of
                 King -> case game ^. gameTurn of
                     White -> 3
-                        .|. bool 0 4 (from == 56 || to == 56)
-                        .|. bool 0 8 (from == 63 || to == 63)
                     Black -> 12
-                        .|. bool 0 1 (from == 0 || to == 0)
-                        .|. bool 0 2 (from == 7 || to == 7)
-                _ -> bool 0 1 (from == 0 || to == 0)
-                    .|. bool 0 2 (from == 7 || to == 7)
-                    .|. bool 0 4 (from == 56 || to == 56)
-                    .|. bool 0 8 (from == 63 || to == 63)) .&.)
+                _ -> 0)
+      where
+        castleMask sq = case sq of
+            0 -> 1
+            7 -> 2
+            56 -> 4
+            63 -> 8
+            _ -> 0
     nothingIfCheck g = if inCheck g then Nothing else Just g
     specials = case special of
         PawnDouble -> Just . (gameEnPassant ?~ to)
