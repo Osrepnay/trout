@@ -21,7 +21,6 @@ import Lens.Micro
     ( Lens
     , Lens'
     , (%~)
-    , (.~)
     , (<&>)
     , (?~)
     , (^.), (&)
@@ -295,11 +294,12 @@ inCheck game
 makeMove :: Game -> Move -> Maybe Game
 makeMove game (Move piece special from to) = do
     let movedAndCleared = game
-            & \(Game playing waiting c enP t) -> Game
+            & \(Game playing waiting c _ t) -> Game
                 (doMove playing)
                 (captureAll waiting)
                 (clearCastles c)
-                enP t
+                Nothing
+                t
     afterSpecials <- specials movedAndCleared
     checkChecked <- nothingIfCheck afterSpecials
     pure (flipTurn checkChecked)
@@ -333,25 +333,17 @@ makeMove game (Move piece special from to) = do
             63 -> 8
             _ -> 0
     nothingIfCheck g = if inCheck g then Nothing else Just g
-    specials = case special of
-        PawnDouble -> Just . (gameEnPassant ?~ to)
-        EnPassant enPSq -> Just
-            . clearEnPassant
-            . clearSqWaiting Pawn enPSq
+    specials g = case special of
+        PawnDouble -> Just (g & gameEnPassant ?~ to)
+        EnPassant enPSq -> Just (clearSqWaiting Pawn enPSq g)
         Promotion promote -> Just
-            . clearEnPassant
-            . setSqPlaying promote to
-            . clearSqPlaying Pawn to
-        CastleKing ->
-            fmap (clearEnPassant
-                . moveSqPlaying Rook (kingOrigin + 3) (kingOrigin + 1))
-            . throughCheckKing
-        CastleQueen ->
-            fmap (clearEnPassant
-                . moveSqPlaying Rook (kingOrigin - 4) (kingOrigin - 1))
-            . throughCheckQueen
-        Normal -> Just . clearEnPassant
-    clearEnPassant = gameEnPassant .~ Nothing
+            $ setSqPlaying promote to
+            $ clearSqPlaying Pawn to g
+        CastleKing -> moveSqPlaying Rook (kingOrigin + 3) (kingOrigin + 1)
+            <$> throughCheckKing g
+        CastleQueen -> moveSqPlaying Rook (kingOrigin - 4) (kingOrigin - 1)
+            <$> throughCheckQueen g
+        Normal -> Just g
     -- assumes king is moved, rook is not
     -- originally it cleared the original king square from blockers
     -- doesnt matter because if kingOrigin +- 1 is prevented from check by blocker then kingOrigin has to be in check too
