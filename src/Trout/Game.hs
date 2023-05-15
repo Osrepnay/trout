@@ -21,9 +21,10 @@ import Lens.Micro
     ( Lens
     , Lens'
     , (%~)
+    , (&)
     , (<&>)
     , (?~)
-    , (^.), (&)
+    , (^.)
     )
 import Lens.Micro.TH                    (makeLenses)
 import Trout.Bitboard
@@ -327,11 +328,11 @@ makeMove game (Move piece special from to) = do
                 _ -> 0)
       where
         castleMask sq = case sq of
-            0 -> 1
-            7 -> 2
+            0  -> 1
+            7  -> 2
             56 -> 4
             63 -> 8
-            _ -> 0
+            _  -> 0
     nothingIfCheck g = if inCheck g then Nothing else Just g
     specials g = case special of
         PawnDouble -> Just (g & gameEnPassant ?~ to)
