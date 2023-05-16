@@ -80,20 +80,16 @@ pawnsMoves
     -> Bitboard
     -> Bitboard
     -> DList Move
-pawnsMoves enPSq White block myBlock pawnBB = concatDL
-    [ enPassant
-    , mapOnes (\to -> Move Pawn PawnDouble (to - 16) to) doubles
-    , concatDL
-        $ promos
-        <&> \p -> concatDL
-            [ mapOnes (\to -> Move Pawn (Promotion p) (to - 8) to) normalP
-            , mapOnes (\to -> Move Pawn (Promotion p) (to - 7) to) leftP
-            , mapOnes (\to -> Move Pawn (Promotion p) (to - 9) to) rightP
-            ]
-    , mapOnes (\to -> Move Pawn Normal (to - 8) to) normalN
-    , mapOnes (\to -> Move Pawn Normal (to - 7) to) leftN
-    , mapOnes (\to -> Move Pawn Normal (to - 9) to) rightN
-    ]
+pawnsMoves enPSq White block myBlock pawnBB = enPassant
+    . mapOnes (\to -> Move Pawn PawnDouble (to - 16) to) doubles
+    . concatDL
+        (promos
+            <&> \p -> mapOnes (\to -> Move Pawn (Promotion p) (to - 8) to) normalP
+                . mapOnes (\to -> Move Pawn (Promotion p) (to - 7) to) leftP
+                . mapOnes (\to -> Move Pawn (Promotion p) (to - 9) to) rightP)
+    . mapOnes (\to -> Move Pawn Normal (to - 8) to) normalN
+    . mapOnes (\to -> Move Pawn Normal (to - 7) to) leftN
+    . mapOnes (\to -> Move Pawn Normal (to - 9) to) rightN
   where
     normals = pawnBB !<<. 8 .&. complement block
     doubles = (normals .&. rank3) !<<. 8 .&. complement block
@@ -117,20 +113,16 @@ pawnsMoves enPSq White block myBlock pawnBB = concatDL
                 .&. rank5
                 .&. 0 `setBit` (enP - 1) `setBit` (enP + 1))
         Nothing -> id
-pawnsMoves enPSq Black block myBlock pawnBB = concatDL
-    [ enPassant
-    , mapOnes (\to -> Move Pawn PawnDouble (to + 16) to) doubles
-    , concatDL
-        $ promos
-        <&> \p -> concatDL
-            [ mapOnes (\to -> Move Pawn (Promotion p) (to + 8) to) normalP
-            , mapOnes (\to -> Move Pawn (Promotion p) (to + 9) to) leftP
-            , mapOnes (\to -> Move Pawn (Promotion p) (to + 7) to) rightP
-            ]
-    , mapOnes (\to -> Move Pawn Normal (to + 8) to) normalN
-    , mapOnes (\to -> Move Pawn Normal (to + 9) to) leftN
-    , mapOnes (\to -> Move Pawn Normal (to + 7) to) rightN
-    ]
+pawnsMoves enPSq Black block myBlock pawnBB = enPassant
+    . mapOnes (\to -> Move Pawn PawnDouble (to + 16) to) doubles
+    . concatDL
+        (promos
+            <&> \p -> mapOnes (\to -> Move Pawn (Promotion p) (to + 8) to) normalP
+                . mapOnes (\to -> Move Pawn (Promotion p) (to + 9) to) leftP
+                . mapOnes (\to -> Move Pawn (Promotion p) (to + 7) to) rightP)
+    . mapOnes (\to -> Move Pawn Normal (to + 8) to) normalN
+    . mapOnes (\to -> Move Pawn Normal (to + 9) to) leftN
+    . mapOnes (\to -> Move Pawn Normal (to + 7) to) rightN
   where
     normals = pawnBB !>>. 8 .&. complement block
     doubles = (normals .&. rank6) !>>. 8 .&. complement block
@@ -197,13 +189,11 @@ kingTable = tableGen
     ]
 
 kingMoves :: Bool -> Bool -> Bitboard -> Bitboard -> Int -> DList Move
-kingMoves kAllowed qAllowed block myBlock sq = concatDL
-    [ ([Move King CastleKing sq (sq + 2) | castleK] ++)
-    , ([Move King CastleQueen sq (sq - 2) | castleQ] ++)
-    , mapOnes
+kingMoves kAllowed qAllowed block myBlock sq = ([Move King CastleKing sq (sq + 2) | castleK] ++)
+    . ([Move King CastleQueen sq (sq - 2) | castleQ] ++)
+    . mapOnes
         (Move King Normal sq)
         (kingTable `unsafeIndex` sq .&. complement myBlock)
-    ]
   where
     castleK = kAllowed && block .&. (3 !<<. (sq + 1)) == 0
     castleQ = qAllowed && block .&. (7 !<<. (sq - 3)) == 0
