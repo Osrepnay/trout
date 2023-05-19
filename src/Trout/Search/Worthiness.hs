@@ -5,8 +5,7 @@ module Trout.Search.Worthiness
     , rookWorth
     , queenWorth
     , kingWorth
-    , whiteWonWorth
-    , blackWonWorth
+    , lossWorth
     , drawWorth
     ) where
 
@@ -24,11 +23,8 @@ rookWorth   = 500
 queenWorth  = 900
 kingWorth   = 100000000
 
-whiteWonWorth :: Int
-whiteWonWorth = kingWorth
-
-blackWonWorth :: Int
-blackWonWorth = -kingWorth
+lossWorth :: Int
+lossWorth = -kingWorth
 
 drawWorth :: Int
 drawWorth = 0

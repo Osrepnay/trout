@@ -1,9 +1,8 @@
 module Trout.Search
     ( SearchState (..)
     , bestMove
+    , searchNega
     , eval
-    , searchMini
-    , searchMaxi
     ) where
 
 import           Control.Monad.Trans.State.Strict
@@ -12,6 +11,7 @@ import           Control.Monad.Trans.State.Strict
     , get
     , modify
     )
+import           Data.Bifunctor                   (first)
 import           Data.Function                    (on)
 import           Data.Hashable                    (hash)
 import           Data.IntMap.Strict               (IntMap)
@@ -21,36 +21,32 @@ import           Lens.Micro                       ((^.))
 import           Trout.Bitboard                   (popCount)
 import           Trout.Game
     ( Game (..)
+    , Pieces (..)
     , allMoves
-    , bishops
-    , gamePieces
+    , gamePlaying
+    , gameTurn
+    , gameWaiting
     , inCheck
-    , knights
     , makeMove
-    , pawns
-    , queens
-    , rooks
-    , sideBlack
-    , sideWhite
     )
 import           Trout.Game.Move                  (Move (..), SpecialMove (..))
 import           Trout.Piece                      (Color (..), Piece (..))
 import           Trout.PieceSquareTables          (pstEvalBitboard)
 import           Trout.Search.Worthiness
     ( bishopWorth
-    , blackWonWorth
     , drawWorth
     , knightWorth
+    , lossWorth
     , pawnWorth
     , queenWorth
     , rookWorth
-    , whiteWonWorth
     )
 
 data TTEntry = TTEntry
     { entryEval  :: Int
     , entryDepth :: Int
     } deriving (Eq, Show)
+
 data SearchState = SearchState
     { ssTranspositions :: IntMap TTEntry
     } deriving (Eq, Show)
@@ -58,12 +54,23 @@ data SearchState = SearchState
 -- simple best move finder
 -- ok for now, gonna havve to replace to add statefulness between iterative deepening calls
 bestMove :: Int -> Game -> (Int, Move)
-bestMove 0 game = (eval game, head (allMoves game))
-bestMove depth game@(Game _ _ _ _ White) = evalState
-    (go (alpha, Move Pawn Normal 0 0) (allMoves game))
-    (SearchState IM.empty)
+bestMove 0 game =
+    ( eval game
+        * case game ^. gameTurn of
+            White -> 1
+            Black -> -1
+    , head (allMoves game)
+    )
+bestMove depth game = first
+    -- if player is black, flip because negamax is relative
+    (* case game ^. gameTurn of
+        White -> 1
+        Black -> -1)
+    (evalState
+        (go (alpha, Move Pawn Normal 0 0) (allMoves game))
+        (SearchState IM.empty))
   where
-    alpha = minBound
+    alpha = minBound + 1 -- so negate works!!!!!!!
     beta = maxBound
     maxByPreferFst cmp a b = case a `cmp` b of
         LT -> b
@@ -72,62 +79,16 @@ bestMove depth game@(Game _ _ _ _ White) = evalState
     go best [] = pure best
     go best (m : ms) = case makeMove game m of
         Just g  -> do
-            score <- searchMini (depth - 1) (fst best) beta g
+            score <- negate <$> searchNega (depth - 1) (-beta) (-fst best) g
             go (maxByPreferFst (compare `on` fst) best (score, m)) ms
         Nothing -> go best ms
-bestMove depth game@(Game _ _ _ _ Black) = evalState
-    (go (beta, Move Pawn Normal 0 0) (allMoves game))
-    (SearchState IM.empty)
-  where
-    alpha = minBound
-    beta = maxBound
-    minByPreferFst cmp a b = case a `cmp` b of
-        LT -> a
-        EQ -> a
-        GT -> b
-    go best [] = pure best
-    go best (m : ms) = case makeMove game m of
-        Just g  -> do
-            score <- searchMaxi (depth - 1) alpha (fst best) g
-            go (minByPreferFst (compare `on` fst) best (score, m)) ms
-        Nothing -> go best ms
 
-searchMini :: Int -> Int -> Int -> Game -> State SearchState Int
-searchMini depth alpha beta game
+searchNega :: Int -> Int -> Int -> Game -> State SearchState Int
+searchNega depth alpha beta game
     | depth <= 0 = pure (eval game)
     | null moved = pure
         $ if inCheck game
-        then whiteWonWorth -- checkmate
-        else drawWorth -- stalemate
-    | otherwise = newBeta beta moved
-  where
-    newBeta b [] = pure b
-    newBeta b (g : gs) = do
-        let gHash = hash g
-        maybeEntry <- IM.lookup gHash . ssTranspositions <$> get
-        let ttScore = maybeEntry
-                >>= \(TTEntry s d) ->
-                    if d < depth
-                    then Nothing
-                    else pure s
-        score <- case ttScore of
-            Just score -> pure score
-            Nothing -> do
-                ret <- searchMaxi (depth - 1) alpha b g
-                modify $ \(SearchState ntt) ->
-                    SearchState (IM.insert gHash (TTEntry ret depth) ntt)
-                pure ret
-        if score < alpha
-        then pure alpha
-        else newBeta (min b score) gs
-    moved = mapMaybe (makeMove game) (allMoves game)
-
-searchMaxi :: Int -> Int -> Int -> Game -> State SearchState Int
-searchMaxi depth alpha beta game
-    | depth <= 0 = pure (eval game)
-    | null moved = pure
-        $ if inCheck game
-        then blackWonWorth -- checkmate
+        then lossWorth -- checkmate
         else drawWorth -- stalemate
     | otherwise = newAlpha alpha moved
   where
@@ -143,11 +104,11 @@ searchMaxi depth alpha beta game
         score <- case ttScore of
             Just score -> pure score
             Nothing -> do
-                ret <- searchMini (depth - 1) a beta g
+                ret <- negate <$> searchNega (depth - 1) (-beta) (-a) g
                 modify $ \(SearchState ntt) ->
                     SearchState (IM.insert gHash (TTEntry ret depth) ntt)
                 pure ret
-        if score > beta
+        if score >= beta
         then pure beta
         else newAlpha (max a score) gs
     moved = mapMaybe (makeMove game) (allMoves game)
@@ -160,36 +121,36 @@ eval game = pawnWorth * pawnDiff
     + queenWorth * queenDiff
     + pstEvalValue
   where
-    whitePieces = game ^. gamePieces . sideWhite
-    blackPieces = game ^. gamePieces . sideBlack
-    whitePawns = popCount (whitePieces ^. pawns)
-    blackPawns = popCount (blackPieces ^. pawns)
-    pawnDiff = whitePawns - blackPawns
-    whiteKnights = popCount (whitePieces ^. knights)
-    blackKnights = popCount (blackPieces ^. knights)
-    knightDiff = whiteKnights - blackKnights
-    whiteBishops = popCount (whitePieces ^. bishops)
-    blackBishops = popCount (blackPieces ^. bishops)
-    bishopDiff = whiteBishops - blackBishops
-    whiteRooks = popCount (whitePieces ^. rooks)
-    blackRooks = popCount (blackPieces ^. rooks)
-    rookDiff = whiteRooks - blackRooks
-    whiteQueens = popCount (whitePieces ^. queens)
-    blackQueens = popCount (blackPieces ^. queens)
-    queenDiff = whiteQueens - popCount blackQueens
+    (Pieces pp pn pb pr pq _) = game ^. gamePlaying
+    (Pieces wp wn wb wr wq _) = game ^. gameWaiting
+    pPawns = popCount pp
+    wPawns = popCount wp
+    pawnDiff = pPawns - wPawns
+    pKnights = popCount pn
+    wKnights = popCount wn
+    knightDiff = pKnights - wKnights
+    pBishops = popCount pb
+    wBishops = popCount wb
+    bishopDiff = pBishops - wBishops
+    pRooks = popCount pr
+    wRooks = popCount wr
+    rookDiff = pRooks - wRooks
+    pQueens = popCount pq
+    wQueens = popCount wq
+    queenDiff = pQueens - popCount wQueens
     pstEval = pstEvalBitboard
-        $ pawnWorth * (whitePawns + blackPawns)
-        + knightWorth * (whiteKnights + blackKnights)
-        + bishopWorth * (whiteBishops + blackBishops)
-        + rookWorth * (whiteRooks + blackRooks)
-        + queenWorth * (whiteQueens + blackKnights)
-    pstEvalValue = pstEval Pawn (whitePieces ^. pawns)
-        + pstEval Knight (whitePieces ^. knights)
-        + pstEval Bishop (whitePieces ^. bishops)
-        + pstEval Rook (whitePieces ^. rooks)
-        + pstEval Queen (whitePieces ^. queens)
-        - pstEval Pawn (blackPieces ^. pawns)
-        - pstEval Knight (blackPieces ^. knights)
-        - pstEval Bishop (blackPieces ^. bishops)
-        - pstEval Rook (blackPieces ^. rooks)
-        - pstEval Queen (blackPieces ^. queens)
+        $ pawnWorth * (pPawns + wPawns)
+        + knightWorth * (pKnights + wKnights)
+        + bishopWorth * (pBishops + wBishops)
+        + rookWorth * (pRooks + wRooks)
+        + queenWorth * (pQueens + wQueens)
+    pstEvalValue = pstEval Pawn pp
+        + pstEval Knight pn
+        + pstEval Bishop pb
+        + pstEval Rook pr
+        + pstEval Queen pq
+        - pstEval Pawn wp
+        - pstEval Knight wn
+        - pstEval Bishop wb
+        - pstEval Rook wr
+        - pstEval Queen wq
