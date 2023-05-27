@@ -1,22 +1,31 @@
 module Trout.Uci (doUci, UciState (..)) where
 
-import Control.Concurrent
+import           Control.Concurrent
     ( MVar
     , ThreadId
     , forkIO
     , killThread
     , newEmptyMVar
     , putMVar
+    , readMVar
+    , swapMVar
     , tryTakeMVar
     )
-import Control.Exception  (evaluate)
-import Data.Foldable      (foldl')
-import Data.Maybe         (fromMaybe)
-import Lens.Micro         ((&), (.~), (^.))
-import System.IO          (hFlush, hPutStrLn, stderr, stdout)
-import System.Timeout     (timeout)
-import Trout.Fen.Parse    (fenToGame)
-import Trout.Game
+import           Control.Exception                (evaluate)
+import           Control.Monad.Trans.State.Strict (runState)
+import           Data.Foldable                    (foldl')
+import qualified Data.IntMap.Strict               as IM
+import           Data.Maybe                       (fromMaybe)
+import           Lens.Micro                       ((&), (.~), (^.))
+import           System.IO
+    ( hFlush
+    , hPutStrLn
+    , stderr
+    , stdout
+    )
+import           System.Timeout                   (timeout)
+import           Trout.Fen.Parse                  (fenToGame)
+import           Trout.Game
     ( Game (..)
     , Sides
     , allMoves
@@ -26,10 +35,14 @@ import Trout.Game
     , sideWhite
     , startingGame
     )
-import Trout.Game.Move    (Move (..), SpecialMove (Promotion), uciShowMove)
-import Trout.Piece        (Color (..))
-import Trout.Search       (bestMove)
-import Trout.Uci.Parse
+import           Trout.Game.Move
+    ( Move (..)
+    , SpecialMove (Promotion)
+    , uciShowMove
+    )
+import           Trout.Piece                      (Color (..))
+import           Trout.Search                     (SearchState (..), bestMove)
+import           Trout.Uci.Parse
     ( CommGoArg (..)
     , CommPositionInit (..)
     , UciCommand (..)
@@ -38,9 +51,10 @@ import Trout.Uci.Parse
     )
 
 data UciState = UciState
-    { uciGame    :: Game
-    , uciIsDebug :: Bool
-    , uciSearch  :: Maybe (ThreadId, MVar Move)
+    { uciGame        :: Game
+    , uciIsDebug     :: Bool
+    , uciSearch      :: Maybe (ThreadId, MVar Move)
+    , uciSearchState :: Maybe (MVar SearchState)
     }
 
 data GoSettings = GoSettings
@@ -68,16 +82,21 @@ reportMove moveVar = do
     putStrLn ("bestmove " ++ move)
     hFlush stdout
 
-launchGo :: MVar Move -> Game -> GoSettings -> IO ()
-launchGo moveVar game (GoSettings movetime times _incs maxDepth) = do
+launchGo :: MVar Move -> MVar SearchState -> Game -> GoSettings -> IO ()
+launchGo moveVar ssVar game (GoSettings movetime times _incs maxDepth) = do
     _ <- timeout (time * 1000) (searches 0)
     reportMove moveVar
   where
     searches depth
         | depth <= maxDepth = do
-            (score, move) <- evaluate (bestMove depth game)
+            st0 <- readMVar ssVar
+            let ((score, move), st1) = runState
+                    (bestMove depth game)
+                    st0
+            _ <- evaluate score
             _ <- tryTakeMVar moveVar
             putMVar moveVar move
+            _ <- swapMVar ssVar st1
             putStrLn ("info depth " ++ show depth ++ " score cp " ++ show score)
             hFlush stdout
             searches (depth + 1)
@@ -127,14 +146,23 @@ doUci uciState = do
                     doUci (uciState { uciGame = game })
         Right (CommGo args) -> do
             goVar <- newEmptyMVar
+            ssVar <- case uciSearchState uciState of
+                Just x  -> pure x
+                Nothing -> do
+                    v <- newEmptyMVar
+                    _ <- putMVar v (SearchState IM.empty)
+                    pure v
             thread <- forkIO
                 $ launchGo
                     goVar
+                    ssVar
                     (uciGame uciState)
                     (foldl' (&) defaultSettings (doGoArg <$> args))
             doUci
                 (uciState
-                    { uciSearch = Just (thread, goVar) })
+                    { uciSearch = Just (thread, goVar)
+                    , uciSearchState = Just ssVar
+                    })
         Right CommStop -> case uciSearch uciState of
             Just (searchId, moveVar) -> do
                 killThread searchId

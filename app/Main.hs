@@ -3,4 +3,4 @@ import Trout.Game (startingGame)
 import Trout.Uci  (UciState (UciState), doUci)
 
 main :: IO ()
-main = doUci (UciState startingGame False Nothing)
+main = doUci (UciState startingGame False Nothing Nothing)

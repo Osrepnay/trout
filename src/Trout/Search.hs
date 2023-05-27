@@ -5,12 +5,7 @@ module Trout.Search
     , eval
     ) where
 
-import           Control.Monad.Trans.State.Strict
-    ( State
-    , evalState
-    , get
-    , modify
-    )
+import           Control.Monad.Trans.State.Strict (State, get, modify)
 import           Data.Bifunctor                   (first)
 import           Data.Function                    (on)
 import           Data.Hashable                    (hash)
@@ -53,8 +48,8 @@ data SearchState = SearchState
 
 -- simple best move finder
 -- ok for now, gonna havve to replace to add statefulness between iterative deepening calls
-bestMove :: Int -> Game -> (Int, Move)
-bestMove 0 game =
+bestMove :: Int -> Game -> State SearchState (Int, Move)
+bestMove 0 game = pure
     ( eval game
         * case game ^. gameTurn of
             White -> 1
@@ -66,9 +61,7 @@ bestMove depth game = first
     (* case game ^. gameTurn of
         White -> 1
         Black -> -1)
-    (evalState
-        (go (alpha, Move Pawn Normal 0 0) (allMoves game))
-        (SearchState IM.empty))
+    <$> go (alpha, Move Pawn Normal 0 0) (allMoves game)
   where
     alpha = minBound + 1 -- so negate works!!!!!!!
     beta = maxBound
