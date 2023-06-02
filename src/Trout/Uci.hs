@@ -12,10 +12,10 @@ import           Control.Concurrent
     , tryTakeMVar
     )
 import           Control.Exception                (evaluate)
-import           Control.Monad.Trans.State.Strict (runState)
+import           Control.Monad.Trans.State.Strict (StateT (..))
 import           Data.Foldable                    (foldl')
-import qualified Data.IntMap.Strict               as IM
 import           Data.Maybe                       (fromMaybe)
+import qualified Data.Vector.Mutable              as MV
 import           Lens.Micro                       ((&), (.~), (^.))
 import           System.IO
     ( hFlush
@@ -90,7 +90,7 @@ launchGo moveVar ssVar game (GoSettings movetime times _incs maxDepth) = do
     searches depth
         | depth <= maxDepth = do
             st0 <- readMVar ssVar
-            let ((score, move), st1) = runState
+            ((score, move), st1) <- runStateT
                     (bestMove depth game)
                     st0
             _ <- evaluate score
@@ -150,7 +150,9 @@ doUci uciState = do
                 Just x  -> pure x
                 Nothing -> do
                     v <- newEmptyMVar
-                    _ <- putMVar v (SearchState IM.empty)
+                    tt <- MV.new 1000000
+                    _ <- MV.set tt Nothing
+                    _ <- putMVar v (SearchState tt)
                     pure v
             thread <- forkIO
                 $ launchGo

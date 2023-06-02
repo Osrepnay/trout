@@ -5,13 +5,14 @@ module Trout.Search
     , eval
     ) where
 
-import           Control.Monad.Trans.State.Strict (State, get, modify)
+import           Control.Monad.IO.Class           (liftIO)
+import           Control.Monad.Trans.State.Strict (StateT (..), get)
 import           Data.Bifunctor                   (first)
 import           Data.Function                    (on)
 import           Data.Hashable                    (hash)
-import           Data.IntMap.Strict               (IntMap)
-import qualified Data.IntMap.Strict               as IM
 import           Data.Maybe                       (mapMaybe)
+import           Data.Vector.Mutable              (IOVector)
+import qualified Data.Vector.Mutable              as MV
 import           Lens.Micro                       ((^.))
 import           Trout.Bitboard                   (popCount)
 import           Trout.Game
@@ -38,17 +39,18 @@ import           Trout.Search.Worthiness
     )
 
 data TTEntry = TTEntry
-    { entryEval  :: Int
+    { entryHash  :: Int -- real hash, not moduloed
+    , entryEval  :: Int
     , entryDepth :: Int
     } deriving (Eq, Show)
 
 data SearchState = SearchState
-    { ssTranspositions :: IntMap TTEntry
-    } deriving (Eq, Show)
+    { ssTranspositions :: IOVector (Maybe TTEntry)
+    }
 
 -- simple best move finder
 -- ok for now, gonna havve to replace to add statefulness between iterative deepening calls
-bestMove :: Int -> Game -> State SearchState (Int, Move)
+bestMove :: Int -> Game -> StateT SearchState IO (Int, Move)
 bestMove 0 game = pure
     ( eval game
         * case game ^. gameTurn of
@@ -76,7 +78,7 @@ bestMove depth game = first
             go (maxByPreferFst (compare `on` fst) best (score, m)) ms
         Nothing -> go best ms
 
-searchNega :: Int -> Int -> Int -> Game -> State SearchState Int
+searchNega :: Int -> Int -> Int -> Game -> StateT SearchState IO Int
 searchNega depth alpha beta game
     | depth <= 0 = pure (eval game)
     | null moved = pure
@@ -87,19 +89,24 @@ searchNega depth alpha beta game
   where
     newAlpha a [] = pure a
     newAlpha a (g : gs) = do
+        table <- ssTranspositions <$> get
         let gHash = hash g
-        maybeEntry <- IM.lookup gHash . ssTranspositions <$> get
+        -- shenanigans to ensure gIdx is positive
+        let gIdx = fromIntegral
+                $ (fromIntegral gHash :: Word)
+                `rem` (fromIntegral (MV.length table) :: Word)
+        maybeEntry <- liftIO (MV.read table gIdx)
         let ttScore = maybeEntry
-                >>= \(TTEntry s d) ->
-                    if d < depth
-                    then Nothing
-                    else pure s
+                >>= \(TTEntry h s d) ->
+                    if d >= depth && h == gHash
+                    then pure s
+                    else Nothing
         score <- case ttScore of
             Just score -> pure score
             Nothing -> do
                 ret <- negate <$> searchNega (depth - 1) (-beta) (-a) g
-                modify $ \(SearchState ntt) ->
-                    SearchState (IM.insert gHash (TTEntry ret depth) ntt)
+                _ <- liftIO
+                    $ MV.write table gIdx (Just (TTEntry gHash ret depth))
                 pure ret
         if score >= beta
         then pure beta
