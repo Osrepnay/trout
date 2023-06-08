@@ -26,11 +26,13 @@ import           System.IO
 import           System.Timeout                   (timeout)
 import           Trout.Fen.Parse                  (fenToGame)
 import           Trout.Game
-    ( Game (..)
+    ( HGame (..)
     , Sides
     , allMoves
     , gameTurn
+    , hgGame
     , makeMove
+    , mkHGame
     , sideBlack
     , sideWhite
     , startingGame
@@ -51,7 +53,7 @@ import           Trout.Uci.Parse
     )
 
 data UciState = UciState
-    { uciGame        :: Game
+    { uciGame        :: HGame
     , uciIsDebug     :: Bool
     , uciSearch      :: Maybe (ThreadId, MVar Move)
     , uciSearchState :: Maybe (MVar SearchState)
@@ -82,7 +84,7 @@ reportMove moveVar = do
     putStrLn ("bestmove " ++ move)
     hFlush stdout
 
-launchGo :: MVar Move -> MVar SearchState -> Game -> GoSettings -> IO ()
+launchGo :: MVar Move -> MVar SearchState -> HGame -> GoSettings -> IO ()
 launchGo moveVar ssVar game (GoSettings movetime times _incs maxDepth) = do
     _ <- timeout (time * 1000) (searches 0)
     reportMove moveVar
@@ -103,7 +105,7 @@ launchGo moveVar ssVar game (GoSettings movetime times _incs maxDepth) = do
         | otherwise = pure ()
     time = flip fromMaybe movetime
         $ flip quot 20
-        $ case game ^. gameTurn of
+        $ case game ^. hgGame . gameTurn of
             White -> fst times
             Black -> snd times
 
@@ -132,9 +134,10 @@ doUci uciState = do
             hFlush stderr
             doUci uciState
         Right (CommRegister _) -> doUci uciState
-        Right CommUcinewgame -> doUci (uciState { uciGame = startingGame })
+        Right CommUcinewgame -> doUci
+            $ uciState { uciGame = mkHGame startingGame }
         Right (CommPosition posInit moves) ->
-            let ng = case posInit of
+            let ng = mkHGame $ case posInit of
                     PositionStartpos -> startingGame
                     PositionFen fen  -> fenToGame fen
             in case playMoves ng moves of
@@ -188,7 +191,7 @@ doUci uciState = do
             && f == from
             && t == to
         moveMatches (Move _ _ f t) = f == from && t == to
-        gMoves = filter moveMatches (allMoves g)
+        gMoves = filter moveMatches (allMoves (g ^. hgGame))
     doGoArg arg gs@(GoSettings mt ts is depth) = case arg of
         GoSearchMoves _ -> gs
         GoPonder        -> gs

@@ -17,11 +17,13 @@ import           Lens.Micro                       ((^.))
 import           Trout.Bitboard                   (popCount)
 import           Trout.Game
     ( Game (..)
+    , HGame
     , Pieces (..)
     , allMoves
     , gamePlaying
     , gameTurn
     , gameWaiting
+    , hgGame
     , inCheck
     , makeMove
     )
@@ -50,20 +52,20 @@ data SearchState = SearchState
 
 -- simple best move finder
 -- ok for now, gonna havve to replace to add statefulness between iterative deepening calls
-bestMove :: Int -> Game -> StateT SearchState IO (Int, Move)
+bestMove :: Int -> HGame -> StateT SearchState IO (Int, Move)
 bestMove 0 game = pure
-    ( eval game
-        * case game ^. gameTurn of
+    ( eval (game ^. hgGame)
+        * case game ^. hgGame . gameTurn of
             White -> 1
             Black -> -1
-    , head (allMoves game)
+    , head (allMoves (game ^. hgGame))
     )
 bestMove depth game = first
     -- if player is black, flip because negamax is relative
-    (* case game ^. gameTurn of
+    (* case game ^. hgGame . gameTurn of
         White -> 1
         Black -> -1)
-    <$> go (alpha, Move Pawn Normal 0 0) (allMoves game)
+    <$> go (alpha, Move Pawn Normal 0 0) (allMoves (game ^. hgGame))
   where
     alpha = minBound + 1 -- so negate works!!!!!!!
     beta = maxBound
@@ -78,11 +80,11 @@ bestMove depth game = first
             go (maxByPreferFst (compare `on` fst) best (score, m)) ms
         Nothing -> go best ms
 
-searchNega :: Int -> Int -> Int -> Game -> StateT SearchState IO Int
+searchNega :: Int -> Int -> Int -> HGame -> StateT SearchState IO Int
 searchNega depth alpha beta game
-    | depth <= 0 = pure (eval game)
+    | depth <= 0 = pure (eval (game ^. hgGame))
     | null moved = pure
-        $ if inCheck game
+        $ if inCheck (game ^. hgGame)
         then lossWorth -- checkmate
         else drawWorth -- stalemate
     | otherwise = newAlpha alpha moved
@@ -111,7 +113,7 @@ searchNega depth alpha beta game
         if score >= beta
         then pure beta
         else newAlpha (max a score) gs
-    moved = mapMaybe (makeMove game) (allMoves game)
+    moved = mapMaybe (makeMove game) (allMoves (game ^. hgGame))
 
 eval :: Game -> Int
 eval game = pawnWorth * pawnDiff

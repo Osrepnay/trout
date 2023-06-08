@@ -39,7 +39,7 @@ xorshiftState = state
 allOfThem :: Vector Int
 allOfThem = V.fromList
     $ evalState
-        (replicateM (12 * 64 + 16 + 1 + 16) xorshiftState)
+        (replicateM (12 * 64 + 16 + 1 + 8) xorshiftState)
         69420
 
 whitePawnZobrists   :: Vector Int
@@ -76,7 +76,7 @@ playingZobrist :: Int
 playingZobrist = allOfThem ! (12 * 64 + 16)
 
 enPassantZobrists :: Vector Int
-enPassantZobrists = V.slice (12 * 64 + 16 + 1) 16 allOfThem
+enPassantZobrists = V.slice (12 * 64 + 16 + 1) 8 allOfThem
 
 pieceZobrists :: Color -> Piece -> Vector Int
 pieceZobrists White Pawn   = whitePawnZobrists

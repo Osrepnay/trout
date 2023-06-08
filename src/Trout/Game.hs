@@ -6,12 +6,14 @@ module Trout.Game
     , sideWhite, sideBlack
     , Game (..)
     , gamePlaying, gameWaiting, gameCastling, gameEnPassant, gameTurn
+    , HGame (..)
+    , hgGame, hgHash
     , gamePieces
     , gameAsBoard
     , startingGame
     , allMoves
     , inCheck
-    , makeMove
+    , makeMove, mkHGame
     ) where
 
 import Data.Foldable                    (foldl')
@@ -70,6 +72,7 @@ import Trout.Game.Zobrists
     , blackRookZobrists
     , castleZobrists
     , enPassantZobrists
+    , pieceZobrists
     , playingZobrist
     , whiteBishopZobrists
     , whiteKingZobrists
@@ -89,41 +92,6 @@ data Pieces = Pieces
     , _kings   :: !Bitboard
     } deriving (Eq, Show)
 makeLenses ''Pieces
-
-instance Hashable Game where
-    hash :: Game -> Int
-    hash (Game play wait castle enP turn) = turnHash
-        `xor` castleHash
-        `xor` enPassantHash
-        `xor` hashBitboard (white ^. pawns) whitePawnZobrists
-        `xor` hashBitboard (black ^. pawns) blackPawnZobrists
-        `xor` hashBitboard (white ^. knights) whiteKnightZobrists
-        `xor` hashBitboard (black ^. knights) blackKnightZobrists
-        `xor` hashBitboard (white ^. bishops) whiteBishopZobrists
-        `xor` hashBitboard (black ^. bishops) blackBishopZobrists
-        `xor` hashBitboard (white ^. rooks) whiteRookZobrists
-        `xor` hashBitboard (black ^. rooks) blackRookZobrists
-        `xor` hashBitboard (white ^. queens) whiteQueenZobrists
-        `xor` hashBitboard (black ^. queens) blackQueenZobrists
-        `xor` hashBitboard (white ^. kings) whiteKingZobrists
-        `xor` hashBitboard (black ^. kings) blackKingZobrists
-      where
-        hashBitboard bb table = foldl'
-            (\b a -> table `unsafeIndex` a `xor` b)
-            0
-            (toSqs bb)
-        (white, black, turnHash) = case turn of
-            White -> (play, wait, playingZobrist)
-            Black -> (wait, play, 0)
-        -- only first 4 bits of castle should be used
-        castleHash = castleZobrists `unsafeIndex` castle
-        enPassantHash = case enP of
-            Just sq -> enPassantZobrists `unsafeIndex` (sq `rem` 8)
-            Nothing -> 0
-
-    hashWithSalt :: Int -> Game -> Int
-    hashWithSalt salt game = hash game `xor` salt
-
 
 byPiece :: Piece -> Lens' Pieces Bitboard
 byPiece Pawn   = pawns
@@ -157,6 +125,38 @@ data Game = Game
     } deriving (Eq, Show)
 makeLenses ''Game
 
+instance Hashable Game where
+    hash (Game play wait castle enP turn) = turnHash
+        `xor` castleHash
+        `xor` enPassantHash
+        `xor` hashBitboard (white ^. pawns) whitePawnZobrists
+        `xor` hashBitboard (black ^. pawns) blackPawnZobrists
+        `xor` hashBitboard (white ^. knights) whiteKnightZobrists
+        `xor` hashBitboard (black ^. knights) blackKnightZobrists
+        `xor` hashBitboard (white ^. bishops) whiteBishopZobrists
+        `xor` hashBitboard (black ^. bishops) blackBishopZobrists
+        `xor` hashBitboard (white ^. rooks) whiteRookZobrists
+        `xor` hashBitboard (black ^. rooks) blackRookZobrists
+        `xor` hashBitboard (white ^. queens) whiteQueenZobrists
+        `xor` hashBitboard (black ^. queens) blackQueenZobrists
+        `xor` hashBitboard (white ^. kings) whiteKingZobrists
+        `xor` hashBitboard (black ^. kings) blackKingZobrists
+      where
+        hashBitboard bb table = foldl'
+            (\b a -> table `unsafeIndex` a `xor` b)
+            0
+            (toSqs bb)
+        (white, black, turnHash) = case turn of
+            White -> (play, wait, playingZobrist)
+            Black -> (wait, play, 0)
+        -- only first 4 bits of castle should be used
+        castleHash = castleZobrists `unsafeIndex` castle
+        enPassantHash = case enP of
+            Just sq -> enPassantZobrists `unsafeIndex` (sq `rem` 8)
+            Nothing -> 0
+
+    hashWithSalt salt game = hash game `xor` salt
+
 gamePieces :: Lens Game Game (Sides Pieces) (Sides Pieces)
 gamePieces afb game@(Game p w _ _ t) = case t of
     White -> afb (p, w)
@@ -164,6 +164,21 @@ gamePieces afb game@(Game p w _ _ t) = case t of
     Black -> afb (w, p)
         <&> \(w', p') -> game {_gamePlaying = w', _gameWaiting = p'}
 {-# INLINE gamePieces #-}
+
+-- incrementally hashed game
+data HGame = HGame
+    { _hgGame :: {-# UNPACK #-} !Game
+    , _hgHash :: !Int
+    } deriving (Eq, Show)
+makeLenses ''HGame
+
+instance Hashable HGame where
+    hash (HGame _ h) = h
+    hashWithSalt salt game = hash game `xor` salt
+
+mkHGame :: Game -> HGame
+mkHGame game = HGame game (hash game)
+{-# INLINE mkHGame #-}
 
 -- https://tearth.dev/bitboard-viewer/
 startingGame :: Game
@@ -209,8 +224,10 @@ gameAsBoard game = unlines [[posChar x y | x <- [0..7]] | y <- [7, 6..0]]
         blackPieces = game ^. gamePieces . sideBlack
         sq = xyToSq x y
 
-flipTurn :: Game -> Game
-flipTurn (Game p w c enP t) = Game w p c enP (other t)
+flipTurn :: HGame -> HGame
+flipTurn (HGame (Game p w c enP t) h) = HGame
+    (Game w p c enP (other t))
+    (h `xor` playingZobrist)
 {-# INLINE flipTurn #-}
 
 gameBlockers :: Game -> Bitboard
@@ -219,21 +236,39 @@ gameBlockers game =
     .|. piecesAll (game ^. gameWaiting)
 {-# INLINE gameBlockers #-}
 
-setSqPlaying :: Piece -> Int -> Game -> Game
-setSqPlaying piece sq = gamePlaying . byPiece piece %~ (`setBit` sq)
+-- TODO CONSIDER -> MAYBE HGAME; NOTHING IF UNCHANGED
+setSqPlaying :: Piece -> Int -> HGame -> HGame
+setSqPlaying piece sq game = game
+    & hgGame . gamePlaying . byPiece piece %~ (`setBit` sq)
+    & hgHash %~ xor
+        (pieceZobrists (game ^. hgGame . gameTurn) piece `unsafeIndex` sq)
 {-# INLINE setSqPlaying #-}
 
-clearSqPlaying :: Piece -> Int -> Game -> Game
-clearSqPlaying piece sq = gamePlaying . byPiece piece %~ (`clearBit` sq)
+clearSqPlaying :: Piece -> Int -> HGame -> HGame
+clearSqPlaying piece sq game = game
+    & hgGame . gamePlaying . byPiece piece %~ (`clearBit` sq)
+    & hgHash %~ xor
+        (pieceZobrists (game ^. hgGame . gameTurn) piece `unsafeIndex` sq)
 {-# INLINE clearSqPlaying #-}
 
-clearSqWaiting :: Piece -> Int -> Game -> Game
-clearSqWaiting piece sq = gameWaiting . byPiece piece %~ (`clearBit` sq)
+clearSqWaiting :: Piece -> Int -> HGame -> HGame
+clearSqWaiting piece sq game = game
+    & hgGame . gamePlaying . byPiece piece %~ (`clearBit` sq)
+    & hgHash %~ xor
+        (pieceZobrists
+            (other (game ^. hgGame . gameTurn))
+            piece
+            `unsafeIndex` sq)
 {-# INLINE clearSqWaiting #-}
 
-moveSqPlaying :: Piece -> Int -> Int -> Game -> Game
-moveSqPlaying piece from to = gamePlaying . byPiece piece
-    %~ (`clearBit` from) . (`setBit` to)
+moveSqPlaying :: Piece -> Int -> Int -> HGame -> HGame
+moveSqPlaying piece from to game = game
+    & hgGame . gamePlaying . byPiece piece %~ (`setBit` to) . (`clearBit` from)
+    & hgHash %~ xor
+        (pieceZobrists color piece `unsafeIndex` from
+            `xor` pieceZobrists color piece `unsafeIndex` to)
+  where
+    color = game ^. hgGame . gameTurn
 {-# INLINE moveSqPlaying #-}
 
 allMoves :: Game -> [Move]
@@ -292,50 +327,75 @@ inCheck game
     kingSq = countTrailingZeros kingMask
     kingMask = game ^. gamePlaying . kings
 
-makeMove :: Game -> Move -> Maybe Game
+-- maybe rename game/g's to hgame/hg?
+makeMove :: HGame -> Move -> Maybe HGame
 makeMove game (Move piece special from to) = do
     let movedAndCleared = game
-            & \(Game playing waiting c _ t) -> Game
-                (doMove playing)
-                (captureAll waiting)
-                (clearCastles c)
-                Nothing
-                t
+            & \(HGame (Game playing waiting c enP t) h) ->
+                let (nPlaying, pz) = doMove playing
+                    (nWaiting, wz) = captureAll waiting
+                    (nCastles, cz) = clearCastles c
+                    ez = maybe
+                            0
+                            (unsafeIndex enPassantZobrists . (`rem` 8))
+                            enP
+                in HGame
+                    (Game
+                        nPlaying
+                        nWaiting
+                        nCastles
+                        Nothing
+                        t)
+                    (h `xor` pz `xor` wz `xor` cz `xor` ez)
     afterSpecials <- specials movedAndCleared
     checkChecked <- nothingIfCheck afterSpecials
     pure (flipTurn checkChecked)
   where
+    playZs = pieceZobrists (game ^. hgGame . gameTurn)
+    waitZs = pieceZobrists (other (game ^. hgGame . gameTurn))
+    moverZs = playZs piece
     -- basic moving
-    doMove !pcs = pcs & byPiece piece %~ (`clearBit` from) . (`setBit` to)
+    doMove !pcs =
+        ( pcs & byPiece piece %~ (`clearBit` from) . (`setBit` to)
+        , (moverZs `unsafeIndex` from) `xor` (moverZs `unsafeIndex` to)
+        )
     captureAll (Pieces p n b r q k)
-        | p .&. toBit /= 0 = Pieces (p .&. clearMask) n b r q k
-        | n .&. toBit /= 0 = Pieces p (n .&. clearMask) b r q k
-        | b .&. toBit /= 0 = Pieces p n (b .&. clearMask) r q k
-        | r .&. toBit /= 0 = Pieces p n b (r .&. clearMask) q k
-        | q .&. toBit /= 0 = Pieces p n b r (q .&. clearMask) k
-        | k .&. toBit /= 0 = Pieces p n r b q (k .&. clearMask)
-        | otherwise = Pieces p n b r q k
+        | p .&. toBit /= 0 =
+            (Pieces (p .&. clearMask) n b r q k, mkMask Pawn)
+        | n .&. toBit /= 0 =
+            (Pieces p (n .&. clearMask) b r q k, mkMask Knight)
+        | b .&. toBit /= 0 =
+            (Pieces p n (b .&. clearMask) r q k, mkMask Bishop)
+        | r .&. toBit /= 0 =
+            (Pieces p n b (r .&. clearMask) q k, mkMask Rook)
+        | q .&. toBit /= 0 =
+            (Pieces p n b r (q .&. clearMask) k, mkMask Queen)
+        | k .&. toBit /= 0 =
+            (Pieces p n r b q (k .&. clearMask), mkMask King)
+        | otherwise = (Pieces p n b r q k, 0)
       where
         toBit = bit to
         clearMask = complement toBit
-    clearCastles c = c .&. complement
-        (castleMask from
-            .|. castleMask to
-            .|. case piece of
-                King -> case game ^. gameTurn of
-                    White -> 3
-                    Black -> 12
-                _ -> 0)
+        mkMask pc = waitZs pc `unsafeIndex` to
+    clearCastles c = (newC, castleZobrists `unsafeIndex` newC)
       where
+        newC = c .&. complement
+            (castleMask from
+                .|. castleMask to
+                .|. case piece of
+                    King -> case game ^. hgGame . gameTurn of
+                        White -> 3
+                        Black -> 12
+                    _ -> 0)
         castleMask sq = case sq of
             0  -> 1
             7  -> 2
             56 -> 4
             63 -> 8
             _  -> 0
-    nothingIfCheck g = if inCheck g then Nothing else Just g
+    nothingIfCheck hg@(HGame g _) = if inCheck g then Nothing else Just hg
     specials g = case special of
-        PawnDouble -> Just (g & gameEnPassant ?~ to)
+        PawnDouble -> Just (g & hgGame . gameEnPassant ?~ to)
         EnPassant enPSq -> Just (clearSqWaiting Pawn enPSq g)
         Promotion promote -> Just
             $ setSqPlaying promote to
@@ -348,17 +408,17 @@ makeMove game (Move piece special from to) = do
     -- assumes king is moved, rook is not
     -- originally it cleared the original king square from blockers
     -- doesnt matter because if kingOrigin +- 1 is prevented from check by blocker then kingOrigin has to be in check too
-    throughCheckKing g
+    throughCheckKing hg@(HGame g _)
         | squareAttacked block kingOrigin g = Nothing
         | squareAttacked block (kingOrigin + 1) g = Nothing
-        | otherwise = Just g
+        | otherwise = Just hg
       where block = gameBlockers g
-    throughCheckQueen g
+    throughCheckQueen hg@(HGame g _)
         | squareAttacked block kingOrigin g = Nothing
         | squareAttacked block (kingOrigin - 1) g = Nothing
-        | otherwise = Just g
+        | otherwise = Just hg
       where block = gameBlockers g
     -- for castling things
-    kingOrigin = case game ^. gameTurn of
+    kingOrigin = case game ^. hgGame . gameTurn of
         White -> 4
         Black -> 60

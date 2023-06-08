@@ -17,6 +17,7 @@ data SpecialMove
     | Promotion Piece -- promote piece
     deriving (Eq, Show)
 
+-- TODO consider moveIsCapture :: Bool
 data Move = Move
     { movePiece   :: !Piece
     , moveSpecial :: !SpecialMove
