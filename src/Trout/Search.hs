@@ -39,7 +39,6 @@ import           Trout.Search.Worthiness
     , queenWorth
     , rookWorth
     )
-import Debug.Trace
 
 data TTEntry = TTEntry
     { entryHash  :: Int -- real hash, not moduloed
@@ -189,7 +188,6 @@ eval game = pawnWorth * pawnDiff
     wQueens = popCount wq
     queenDiff = pQueens - popCount wQueens
     pstEval = pstEvalBitboard
-        $ traceShowId
         $ pawnWorth * (pPawns + wPawns)
         + knightWorth * (pKnights + wKnights)
         + bishopWorth * (pBishops + wBishops)
