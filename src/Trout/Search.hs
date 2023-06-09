@@ -10,7 +10,7 @@ import           Control.Monad.Trans.State.Strict (StateT (..), get)
 import           Data.Bifunctor                   (first)
 import           Data.Function                    (on)
 import           Data.Hashable                    (hash)
-import           Data.Maybe                       (mapMaybe)
+import           Data.Maybe                       (fromMaybe, mapMaybe)
 import           Data.Vector.Mutable              (IOVector)
 import qualified Data.Vector.Mutable              as MV
 import           Lens.Micro                       ((^.))
@@ -50,8 +50,13 @@ data SearchState = SearchState
     { ssTranspositions :: IOVector (Maybe TTEntry)
     }
 
+hashToIdx :: Int -> Int -> Int
+hashToIdx h tableLen = fromIntegral
+    $ (fromIntegral h :: Word)
+    `rem` (fromIntegral tableLen :: Word)
+
 -- simple best move finder
--- ok for now, gonna havve to replace to add statefulness between iterative deepening calls
+-- ReaderT works because of IO, for now
 bestMove :: Int -> HGame -> StateT SearchState IO (Int, Move)
 bestMove 0 game = pure
     ( eval (game ^. hgGame)
@@ -87,16 +92,17 @@ searchNega depth alpha beta game
         $ if inCheck (game ^. hgGame)
         then lossWorth -- checkmate
         else drawWorth -- stalemate
-    | otherwise = newAlpha alpha moved
+    | otherwise = do
+        state <- get
+        sorted <- liftIO (ioSortBy (gameCmp state) moved)
+        newAlpha alpha sorted
   where
     newAlpha a [] = pure a
     newAlpha a (g : gs) = do
+        -- check transpositions
         table <- ssTranspositions <$> get
         let gHash = hash g
-        -- shenanigans to ensure gIdx is positive
-        let gIdx = fromIntegral
-                $ (fromIntegral gHash :: Word)
-                `rem` (fromIntegral (MV.length table) :: Word)
+        let gIdx = hashToIdx gHash (MV.length table)
         maybeEntry <- liftIO (MV.read table gIdx)
         let ttScore = maybeEntry
                 >>= \(TTEntry h s d) ->
@@ -104,6 +110,7 @@ searchNega depth alpha beta game
                     then pure s
                     else Nothing
         score <- case ttScore of
+            -- return already if entry exists
             Just score -> pure score
             Nothing -> do
                 ret <- negate <$> searchNega (depth - 1) (-beta) (-a) g
@@ -113,7 +120,47 @@ searchNega depth alpha beta game
         if score >= beta
         then pure beta
         else newAlpha (max a score) gs
+    -- games from all possible moves from current position
     moved = mapMaybe (makeMove game) (allMoves (game ^. hgGame))
+
+-- iolic insertion sort
+ioSortBy :: (a -> a -> IO Ordering) -> [a] -> IO [a]
+ioSortBy cmp = go []
+  where
+    go acc (x : xs) = insert x acc >>= \nacc -> go nacc xs
+    go acc []       = pure acc
+    insert a (b : bs) = cmp a b
+        >>= \c -> case c of
+            LT -> pure (a : b : bs)
+            EQ -> pure (a : b : bs)
+            GT -> (b :) <$> insert a bs
+    insert a [] = pure [a]
+
+-- currently only checks transposition table
+-- supposed to be "movecmp" but transposition table doesn't store previous move
+gameCmp :: SearchState -> HGame -> HGame -> IO Ordering
+gameCmp (SearchState table) hgameA hgameB = do
+    let aHash = hash hgameA
+    let aIdx = hashToIdx aHash (MV.length table)
+    maybeAEntry <- liftIO (MV.read table aIdx)
+    let checkedAEntry = maybeAEntry
+            >>= \(TTEntry h s _) ->
+                if h == aHash
+                then Just s
+                else Nothing
+    let bHash = hash hgameB
+    let bIdx = hashToIdx bHash (MV.length table)
+    maybeBEntry <- liftIO (MV.read table bIdx)
+    let checkedBEntry = maybeBEntry
+            >>= \(TTEntry h s _) ->
+                if h == bHash
+                then Just s
+                else Nothing
+    -- assume 0 score if no entry
+    let aEntry = fromMaybe 0 checkedAEntry
+    let bEntry = fromMaybe 0 checkedBEntry
+    -- intentionally flipped to get greatest -> least ordering
+    pure (compare bEntry aEntry)
 
 eval :: Game -> Int
 eval game = pawnWorth * pawnDiff
