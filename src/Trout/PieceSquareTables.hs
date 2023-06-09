@@ -1,7 +1,7 @@
 module Trout.PieceSquareTables (egMaterial, mgMaterial, pstEvalBitboard) where
 
 import           Data.Foldable           (foldl')
-import           Data.Vector             (Vector, (!))
+import           Data.Vector             (Vector, unsafeIndex)
 import qualified Data.Vector             as V
 import           Trout.Bitboard          (Bitboard, toSqs)
 import           Trout.Piece             (Piece (..))
@@ -42,9 +42,9 @@ bishopMPST = V.fromList
     [   3,  -4,  -3,   0,  -1,  -3,  -4,   3 -- rook :D
     ,  -2,   0,   1,   0,   0,   1,   0,  -2
     ,   2,  -3,   2,  -2,  -2,   2,  -3,   2
-    ,   4,   9,   0,  -2,  -2,   0,  10,   4
-    ,   5,   4,  10,   1,   1,  15,   4,   6
-    ,   0,   1,   3,   6,   6,   3,   1,   0
+    ,   4,   6,   0,  -2,  -2,   0,   6,   4
+    ,   5,   4,  10,   1,   1,  10,   4,   6
+    ,   0,   1,   3,   3,   3,   3,   1,   0
     ,   1,   7,   2,   4,   4,   2,   8,   1
     ,  -5,  -5,  -2,  -5,  -5,  -2,  -5,  -5
     ]
@@ -82,7 +82,7 @@ kingMPST = V.fromList
     , -20, -20, -20, -20, -20, -20, -20, -20
     , -10, -10, -10, -10, -10, -10, -10, -10
     ,  -6,  -6,  -6,  -9,  -9,  -6,  -6,  -6
-    ,   3,   7,  15,  -3,   0,   5,  20,  10
+    ,  10,  20,   3,  -3,  -3,  15,  14,   3
     ]
 
 pawnEPST :: Vector Int
@@ -172,17 +172,22 @@ egMaterial = 8 * pawnWorth
 
 pstEvalBitboard :: Int -> Piece -> Bitboard -> Int
 pstEvalBitboard material piece bb = foldl'
-    (\b a -> b + blend (pstM ! a) (pstE ! a))
+    (\b a ->
+        let na = 63 - a
+        in b + blend (pstM `unsafeIndex` na) (pstE `unsafeIndex` na))
     0
     (toSqs bb)
   where
-    blend m e = round $ mFac * fromIntegral m + (1 - mFac) * fromIntegral e
+    blend m e = round $ fromIntegral m
+        + mFac * (fromIntegral e - fromIntegral m)
       where
+        --                                        v mFac (fraction of total)
+        -- less egMaterial --------- material --------- mgMaterial more
         mFac :: Double
         mFac = zeroOneClamp
-            $ negate
-            $ fromIntegral (material - egMaterial)
-            / fromIntegral (egMaterial - mgMaterial)
+            $ fromIntegral (mgMaterial - material)
+            / fromIntegral diff
+        diff = mgMaterial - egMaterial
     zeroOneClamp x
         | x < 0     = 0
         | x > 1     = 1
