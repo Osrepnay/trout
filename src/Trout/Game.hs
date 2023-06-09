@@ -253,7 +253,7 @@ clearSqPlaying piece sq game = game
 
 clearSqWaiting :: Piece -> Int -> HGame -> HGame
 clearSqWaiting piece sq game = game
-    & hgGame . gamePlaying . byPiece piece %~ (`clearBit` sq)
+    & hgGame . gameWaiting . byPiece piece %~ (`clearBit` sq)
     & hgHash %~ xor
         (pieceZobrists
             (other (game ^. hgGame . gameTurn))
