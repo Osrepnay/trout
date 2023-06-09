@@ -83,6 +83,9 @@ import Trout.Game.Zobrists
     )
 import Trout.Piece                      (Color (..), Piece (..), other)
 
+-- one player's pieces
+-- maybe consider ekmett/barbarossa's approach: 14->4 bitboards
+-- use bit twiddling to get pieces
 data Pieces = Pieces
     { _pawns   :: !Bitboard
     , _knights :: !Bitboard
@@ -93,6 +96,7 @@ data Pieces = Pieces
     } deriving (Eq, Show)
 makeLenses ''Pieces
 
+-- lens by piece
 byPiece :: Piece -> Lens' Pieces Bitboard
 byPiece Pawn   = pawns
 byPiece Knight = knights
@@ -102,6 +106,7 @@ byPiece Queen  = queens
 byPiece King   = kings
 {-# INLINE byPiece #-}
 
+-- all occupied squares for a side
 piecesAll :: Pieces -> Bitboard
 piecesAll (Pieces p n b r q k) = p .|. n .|. b .|. r .|. q .|. k
 {-# INLINE piecesAll #-}
@@ -116,6 +121,10 @@ sideBlack :: Lens' (Sides a) a
 sideBlack afb (a, b) = (a, ) <$> afb b
 {-# INLINE sideBlack #-}
 
+-- base game
+-- current rules are this should be all the data needed for move generation
+-- so no history, move counter, hash, etc
+-- is this good idea?
 data Game = Game
     { _gamePlaying   :: Pieces
     , _gameWaiting   :: Pieces
@@ -157,6 +166,8 @@ instance Hashable Game where
 
     hashWithSalt salt game = hash game `xor` salt
 
+-- lens for getting the side objectively (white/black) instead of based on
+-- current player (playing/waiting)
 gamePieces :: Lens Game Game (Sides Pieces) (Sides Pieces)
 gamePieces afb game@(Game p w _ _ t) = case t of
     White -> afb (p, w)
@@ -164,6 +175,36 @@ gamePieces afb game@(Game p w _ _ t) = case t of
     Black -> afb (w, p)
         <&> \(w', p') -> game {_gamePlaying = w', _gameWaiting = p'}
 {-# INLINE gamePieces #-}
+
+-- bitboard of all occupied squares
+gameBlockers :: Game -> Bitboard
+gameBlockers game = piecesAll (game ^. gamePlaying)
+    .|. piecesAll (game ^. gameWaiting)
+{-# INLINE gameBlockers #-}
+
+-- pretty human-readable board
+gameAsBoard :: Game -> String
+gameAsBoard game = unlines [[posChar x y | x <- [0..7]] | y <- [7, 6..0]]
+  where
+    posChar x y = fst $ head $ filter (\(_, b) -> b `testBit` sq)
+        [ ('P', whitePieces ^. pawns)
+        , ('N', whitePieces ^. knights)
+        , ('B', whitePieces ^. bishops)
+        , ('R', whitePieces ^. rooks)
+        , ('Q', whitePieces ^. queens)
+        , ('K', whitePieces ^. kings)
+        , ('p', blackPieces ^. pawns)
+        , ('n', blackPieces ^. knights)
+        , ('b', blackPieces ^. bishops)
+        , ('r', blackPieces ^. rooks)
+        , ('q', blackPieces ^. queens)
+        , ('k', blackPieces ^. kings)
+        , ('.', complement zeroBits)
+        ]
+      where
+        whitePieces = game ^. gamePieces . sideWhite
+        blackPieces = game ^. gamePieces . sideBlack
+        sq = xyToSq x y
 
 -- incrementally hashed game
 data HGame = HGame
@@ -176,6 +217,7 @@ instance Hashable HGame where
     hash (HGame _ h) = h
     hashWithSalt salt game = hash game `xor` salt
 
+-- create a HGame (hashed game) from a Game
 mkHGame :: Game -> HGame
 mkHGame game = HGame game (hash game)
 {-# INLINE mkHGame #-}
@@ -201,41 +243,17 @@ startingGame = Game
     Nothing
     White
 
-gameAsBoard :: Game -> String
-gameAsBoard game = unlines [[posChar x y | x <- [0..7]] | y <- [7, 6..0]]
-  where
-    posChar x y = fst $ head $ filter (\(_, b) -> b `testBit` sq)
-        [ ('P', whitePieces ^. pawns)
-        , ('N', whitePieces ^. knights)
-        , ('B', whitePieces ^. bishops)
-        , ('R', whitePieces ^. rooks)
-        , ('Q', whitePieces ^. queens)
-        , ('K', whitePieces ^. kings)
-        , ('p', blackPieces ^. pawns)
-        , ('n', blackPieces ^. knights)
-        , ('b', blackPieces ^. bishops)
-        , ('r', blackPieces ^. rooks)
-        , ('q', blackPieces ^. queens)
-        , ('k', blackPieces ^. kings)
-        , ('.', complement zeroBits)
-        ]
-      where
-        whitePieces = game ^. gamePieces . sideWhite
-        blackPieces = game ^. gamePieces . sideBlack
-        sq = xyToSq x y
-
+-- change current player
+-- also swaps playing and waiting
 flipTurn :: HGame -> HGame
 flipTurn (HGame (Game p w c enP t) h) = HGame
     (Game w p c enP (other t))
     (h `xor` playingZobrist)
 {-# INLINE flipTurn #-}
 
-gameBlockers :: Game -> Bitboard
-gameBlockers game =
-    piecesAll (game ^. gamePlaying)
-    .|. piecesAll (game ^. gameWaiting)
-{-# INLINE gameBlockers #-}
-
+-- helpers for moving whole pieces around
+-- do we really need this? there are a few missing ones (e.g. setSqWaiting)
+-- and they're very bulky
 -- TODO CONSIDER -> MAYBE HGAME; NOTHING IF UNCHANGED
 setSqPlaying :: Piece -> Int -> HGame -> HGame
 setSqPlaying piece sq game = game
@@ -271,6 +289,11 @@ moveSqPlaying piece from to game = game
     color = game ^. hgGame . gameTurn
 {-# INLINE moveSqPlaying #-}
 
+-- returns possible moves at a position
+-- TODO having HGame and Game simultaneously is strange; merge into one?
+-- but I like having the hash separate because
+-- 1. it isn't necessary for move generation (here)
+-- 2. having a wrong hash for a game is... weird, hgame adds more separation
 allMoves :: Game -> [Move]
 allMoves game =
     pawnsMoves
@@ -300,6 +323,7 @@ allMoves game =
     myBlock = piecesAll turnPieces
     turnPieces@(Pieces p n b r q k) = game ^. gamePlaying
 
+-- checks if a square is attacked by the opponent (waiting)
 squareAttacked :: Bitboard -> Int -> Game -> Bool
 squareAttacked block sq game = knightTable `unsafeIndex` sq .&. n
     .|. bishoped .&. b
@@ -319,6 +343,7 @@ squareAttacked block sq game = knightTable `unsafeIndex` sq .&. n
             .|. (p .&. complement fileH) !<<. 9
     (Pieces p n b r q k) = game ^. gameWaiting
 
+-- simple wrapper around squareAttacked for the king's square
 inCheck :: Game -> Bool
 inCheck game
     | kingSq == 64 = True -- king gone!
@@ -335,8 +360,7 @@ makeMove game (Move piece special from to) = do
                 let (nPlaying, pz) = doMove playing
                     (nWaiting, wz) = captureAll waiting
                     (nCastles, cz) = clearCastles c
-                    ez = maybe
-                            0
+                    ez = maybe 0
                             (unsafeIndex enPassantZobrists . (`rem` 8))
                             enP
                 in HGame
@@ -359,6 +383,7 @@ makeMove game (Move piece special from to) = do
         ( pcs & byPiece piece %~ (`clearBit` from) . (`setBit` to)
         , (moverZs `unsafeIndex` from) `xor` (moverZs `unsafeIndex` to)
         )
+    -- capture opponent's piece if needed
     captureAll (Pieces p n b r q k)
         | p .&. toBit /= 0 =
             (Pieces (p .&. clearMask) n b r q k, mkMask Pawn)
@@ -377,7 +402,12 @@ makeMove game (Move piece special from to) = do
         toBit = bit to
         clearMask = complement toBit
         mkMask pc = waitZs pc `unsafeIndex` to
-    clearCastles c = (newC, castleZobrists `unsafeIndex` newC)
+    -- clears any castling rights if needed
+    clearCastles c =
+        ( newC
+        , castleZobrists `unsafeIndex` c
+            `xor` castleZobrists `unsafeIndex` newC
+        )
       where
         newC = c .&. complement
             (castleMask from
@@ -393,9 +423,14 @@ makeMove game (Move piece special from to) = do
             56 -> 4
             63 -> 8
             _  -> 0
+    -- checks for check after moving
     nothingIfCheck hg@(HGame g _) = if inCheck g then Nothing else Just hg
+    -- handle special cases
     specials g = case special of
-        PawnDouble -> Just (g & hgGame . gameEnPassant ?~ to)
+        PawnDouble -> Just
+            $ g
+            & hgGame . gameEnPassant ?~ to
+            & hgHash %~ xor (enPassantZobrists `unsafeIndex` (to `rem` 8))
         EnPassant enPSq -> Just (clearSqWaiting Pawn enPSq g)
         Promotion promote -> Just
             $ setSqPlaying promote to
@@ -405,6 +440,7 @@ makeMove game (Move piece special from to) = do
         CastleQueen -> moveSqPlaying Rook (kingOrigin - 4) (kingOrigin - 1)
             <$> throughCheckQueen g
         Normal -> Just g
+    -- checks for castling through check
     -- assumes king is moved, rook is not
     -- originally it cleared the original king square from blockers
     -- doesnt matter because if kingOrigin +- 1 is prevented from check by blocker then kingOrigin has to be in check too
@@ -418,6 +454,7 @@ makeMove game (Move piece special from to) = do
         | squareAttacked block (kingOrigin - 1) g = Nothing
         | otherwise = Just hg
       where block = gameBlockers g
+    -- where the king starts on the board
     -- for castling things
     kingOrigin = case game ^. hgGame . gameTurn of
         White -> 4
