@@ -8,14 +8,15 @@ import Data.Maybe
 import Test.Hspec
 import Trout.Fen.Parse
 import Trout.Game
+import Lens.Micro ((^.))
 
-perft :: Int -> Game -> Int
+perft :: Int -> HGame -> Int
 perft 0 _ = 1
-perft depth game = sum
+perft depth hgame = sum
     $ perft (depth - 1)
-    <$> mapMaybe (makeMove game) (allMoves game)
+    <$> mapMaybe (makeMove hgame) (allMoves (hgame ^. hgGame))
 
-readDepthEpd :: String -> IO [(Game, [(Int, Int)])]
+readDepthEpd :: String -> IO [(HGame, [(Int, Int)])]
 readDepthEpd filename = do
     file <- readFile filename
     let fileLines = lines file
@@ -23,7 +24,7 @@ readDepthEpd filename = do
   where
     -- performance? what's that?
     trimSpaces = reverse . dropWhile (== ' ') . reverse . dropWhile (== ' ')
-    parseLine line = (game, depths)
+    parseLine line = (mkHGame game, depths)
       where
         (Right game) = fenToGame <$> readFen (head parts)
         depths = depth <$> tail parts

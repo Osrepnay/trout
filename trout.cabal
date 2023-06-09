@@ -87,6 +87,7 @@ test-suite trout-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
+      CheckIncZobrist
       EpdPositions
       MagicMoves
       Paths_trout
