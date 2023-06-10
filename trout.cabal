@@ -35,8 +35,8 @@ library
       Trout.Game.MoveGen.Sliding.Magics
       Trout.Game.Zobrists
       Trout.Piece
-      Trout.PieceSquareTables
       Trout.Search
+      Trout.Search.PieceSquareTables
       Trout.Search.Worthiness
       Trout.Uci
       Trout.Uci.Parse

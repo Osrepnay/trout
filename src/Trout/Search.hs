@@ -29,12 +29,28 @@ import           Trout.Game
     )
 import           Trout.Game.Move                  (Move (..), SpecialMove (..))
 import           Trout.Piece                      (Color (..), Piece (..))
-import           Trout.PieceSquareTables          (pstEvalBitboard)
+import           Trout.Search.PieceSquareTables
+    ( bishopEPST
+    , bishopMPST
+    , kingEPST
+    , kingMPST
+    , knightEPST
+    , knightMPST
+    , pawnEPST
+    , pawnMPST
+    , pstEval
+    , queenEPST
+    , queenMPST
+    , rookEPST
+    , rookMPST
+    )
 import           Trout.Search.Worthiness
     ( bishopWorth
     , drawWorth
+    , egMaterial
     , knightWorth
     , lossWorth
+    , mgMaterial
     , pawnWorth
     , queenWorth
     , rookWorth
@@ -170,6 +186,7 @@ eval game = pawnWorth * pawnDiff
     + queenWorth * queenDiff
     + pstEvalValue
   where
+    -- piece counting
     (Pieces pp pn pb pr pq pk) = game ^. gamePlaying
     (Pieces wp wn wb wr wq wk) = game ^. gameWaiting
     pPawns = popCount pp
@@ -187,21 +204,29 @@ eval game = pawnWorth * pawnDiff
     pQueens = popCount pq
     wQueens = popCount wq
     queenDiff = pQueens - popCount wQueens
-    pstEval = pstEvalBitboard
-        $ pawnWorth * (pPawns + wPawns)
+
+    -- psqtables part
+    diff = mgMaterial - egMaterial
+    material = pawnWorth * (pPawns + wPawns)
         + knightWorth * (pKnights + wKnights)
         + bishopWorth * (pBishops + wBishops)
         + rookWorth * (pRooks + wRooks)
         + queenWorth * (pQueens + wQueens)
-    pstEvalValue = pstEval Pawn pp
-        + pstEval Knight pn
-        + pstEval Bishop pb
-        + pstEval Rook pr
-        + pstEval Queen pq
-        + pstEval King pk
-        - pstEval Pawn wp
-        - pstEval Knight wn
-        - pstEval Bishop wb
-        - pstEval Rook wr
-        - pstEval Queen wq
-        - pstEval King wk
+    -- blend is 0-1; 0=all middlegame, 1=allendgame
+    --                                        v blend (fraction of total)
+    -- less egMaterial --------- material --------- mgMaterial more
+    blend = fromIntegral (mgMaterial - material)
+        / fromIntegral diff
+
+    pstEvalValue = pstEval pp pawnMPST pawnEPST blend
+        - pstEval wp pawnMPST pawnEPST blend
+        + pstEval pn knightMPST knightEPST blend
+        - pstEval wn knightMPST knightEPST blend
+        + pstEval pb bishopMPST bishopEPST blend
+        - pstEval wb bishopMPST bishopEPST blend
+        - pstEval wr rookMPST rookEPST blend
+        + pstEval pr rookMPST rookEPST blend
+        + pstEval pq queenMPST queenEPST blend
+        - pstEval wq queenMPST queenEPST blend
+        + pstEval pk kingMPST kingEPST blend
+        - pstEval wk kingMPST kingEPST blend
