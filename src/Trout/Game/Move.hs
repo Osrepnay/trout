@@ -2,6 +2,7 @@ module Trout.Game.Move
     ( SpecialMove(..)
     , Move(..)
     , uciShowMove
+    , nullMove
     ) where
 
 import Data.Char   (chr, ord)
@@ -24,6 +25,9 @@ data Move = Move
     , moveFrom    :: !Int
     , moveTo      :: !Int
     } deriving (Eq, Show)
+
+nullMove :: Move
+nullMove = Move Pawn Normal 0 0
 
 -- show uci format of move
 uciShowMove :: Move -> String

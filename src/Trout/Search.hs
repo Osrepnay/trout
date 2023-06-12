@@ -10,7 +10,7 @@ import           Control.Monad.Trans.State.Strict (StateT (..), get)
 import           Data.Bifunctor                   (first)
 import           Data.Function                    (on)
 import           Data.Hashable                    (hash)
-import           Data.Maybe                       (fromMaybe, mapMaybe)
+import           Data.Maybe                       (mapMaybe)
 import           Data.Vector.Mutable              (IOVector)
 import qualified Data.Vector.Mutable              as MV
 import           Lens.Micro                       ((^.))
@@ -27,8 +27,8 @@ import           Trout.Game
     , inCheck
     , makeMove
     )
-import           Trout.Game.Move                  (Move (..), SpecialMove (..))
-import           Trout.Piece                      (Color (..), Piece (..))
+import           Trout.Game.Move                  (Move (..), nullMove)
+import           Trout.Piece                      (Color (..))
 import           Trout.Search.PieceSquareTables
     ( bishopEPST
     , bishopMPST
@@ -58,6 +58,7 @@ data TTEntry = TTEntry
     { entryHash  :: Int -- real hash, not moduloed
     , entryEval  :: Int
     , entryDepth :: Int
+    , entryMove  :: Move
     } deriving (Eq, Show)
 
 data SearchState = SearchState
@@ -84,7 +85,7 @@ bestMove depth game = first
     (* case game ^. hgGame . gameTurn of
         White -> 1
         Black -> -1)
-    <$> go (alpha, Move Pawn Normal 0 0) (allMoves (game ^. hgGame))
+    <$> go (alpha, nullMove) (allMoves (game ^. hgGame))
   where
     alpha = minBound + 1 -- so negate works!!!!!!!
     beta = maxBound
@@ -107,74 +108,54 @@ searchNega depth alpha beta game
         then lossWorth -- checkmate
         else drawWorth -- stalemate
     | otherwise = do
-        state <- get
-        sorted <- liftIO (ioSortBy (gameCmp state) moved)
-        newAlpha alpha sorted
+        (SearchState table) <- get
+        -- TODO abstract this
+        let gHash = hash game
+        let gIdx = hashToIdx gHash (MV.length table)
+        maybeEntry <- liftIO (MV.read table gIdx)
+        let ttMove = maybeEntry
+                >>= \(TTEntry h _ _ m) ->
+                    if h == gHash
+                    then pure m
+                    else Nothing
+        -- if there is a tt move, make it first
+        let movedWithTT = case ttMove of
+                Just m  -> case makeMove game m of
+                    Just g  -> (m, g) : filter ((/= m) . fst) moved
+                    Nothing -> moved
+                Nothing -> moved
+        (nAlpha, nMove) <- newAlpha (alpha, nullMove) movedWithTT
+        _ <- liftIO
+            $ MV.write table gIdx
+            $ Just (TTEntry gHash nAlpha depth nMove)
+        pure nAlpha
   where
-    newAlpha a [] = pure a
-    newAlpha a (g : gs) = do
+    -- main search body
+    newAlpha best [] = pure best
+    newAlpha (a, bm) ((m, g) : mgs) = do
         -- check transpositions
         table <- ssTranspositions <$> get
         let gHash = hash g
         let gIdx = hashToIdx gHash (MV.length table)
         maybeEntry <- liftIO (MV.read table gIdx)
         let ttScore = maybeEntry
-                >>= \(TTEntry h s d) ->
+                >>= \(TTEntry h s d _) ->
                     if d >= depth && h == gHash
                     then pure s
                     else Nothing
         score <- case ttScore of
-            -- return already if entry exists
+            -- skip search if entry exists
             Just score -> pure score
-            Nothing -> do
-                ret <- negate <$> searchNega (depth - 1) (-beta) (-a) g
-                _ <- liftIO
-                    $ MV.write table gIdx (Just (TTEntry gHash ret depth))
-                pure ret
+            Nothing    -> negate <$> searchNega (depth - 1) (-beta) (-a) g
         if score >= beta
-        then pure beta
-        else newAlpha (max a score) gs
-    -- games from all possible moves from current position
-    moved = mapMaybe (makeMove game) (allMoves (game ^. hgGame))
-
--- iolic insertion sort
-ioSortBy :: (a -> a -> IO Ordering) -> [a] -> IO [a]
-ioSortBy cmp = go []
-  where
-    go acc (x : xs) = insert x acc >>= \nacc -> go nacc xs
-    go acc []       = pure acc
-    insert a (b : bs) = cmp a b
-        >>= \c -> case c of
-            LT -> pure (a : b : bs)
-            EQ -> pure (a : b : bs)
-            GT -> (b :) <$> insert a bs
-    insert a [] = pure [a]
-
--- currently only checks transposition table
--- supposed to be "movecmp" but transposition table doesn't store previous move
-gameCmp :: SearchState -> HGame -> HGame -> IO Ordering
-gameCmp (SearchState table) hgameA hgameB = do
-    let aHash = hash hgameA
-    let aIdx = hashToIdx aHash (MV.length table)
-    maybeAEntry <- liftIO (MV.read table aIdx)
-    let checkedAEntry = maybeAEntry
-            >>= \(TTEntry h s _) ->
-                if h == aHash
-                then Just s
-                else Nothing
-    let bHash = hash hgameB
-    let bIdx = hashToIdx bHash (MV.length table)
-    maybeBEntry <- liftIO (MV.read table bIdx)
-    let checkedBEntry = maybeBEntry
-            >>= \(TTEntry h s _) ->
-                if h == bHash
-                then Just s
-                else Nothing
-    -- assume 0 score if no entry
-    let aEntry = fromMaybe 0 checkedAEntry
-    let bEntry = fromMaybe 0 checkedBEntry
-    -- intentionally flipped to get greatest -> least ordering
-    pure (compare bEntry aEntry)
+        then pure (beta, m) -- fail high
+        else newAlpha (if a < score then (score, m) else (a, bm)) mgs
+    -- games from all possible moves from current position w/ their respective
+    -- moves
+    moved = mapMaybe
+        (\m -> (m, ) <$> makeMove game m)
+        (allMoves (game ^. hgGame))
+-- TODO FLIP makemove args
 
 eval :: Game -> Int
 eval game = pawnWorth * pawnDiff
