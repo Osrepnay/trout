@@ -47,10 +47,10 @@ import           Trout.Search.PieceSquareTables
 import           Trout.Search.Worthiness          (drawWorth, lossWorth)
 
 data TTEntry = TTEntry
-    { entryHash  :: Int -- real hash, not moduloed
-    , entryEval  :: Int
-    , entryDepth :: Int
-    , entryMove  :: Move
+    { entryHash  :: !Int -- real hash, not moduloed
+    , entryEval  :: !Int
+    , entryDepth :: !Int
+    , entryMove  :: !Move
     } deriving (Eq, Show)
 
 data SearchState = SearchState
