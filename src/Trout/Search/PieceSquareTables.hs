@@ -7,14 +7,21 @@ module Trout.Search.PieceSquareTables
     , kingMPST, kingEPST, pstEval
     ) where
 
-import           Data.Foldable         (foldl')
-import           Data.Vector.Primitive (Vector, unsafeIndex)
-import qualified Data.Vector.Primitive as V
-import           Trout.Bitboard        (Bitboard, toSqs, xor)
-import           Trout.Piece           (Color (..))
+import           Data.Foldable           (foldl')
+import           Data.Vector.Primitive   (Vector, unsafeIndex)
+import qualified Data.Vector.Primitive   as V
+import           Trout.Bitboard          (Bitboard, toSqs, xor)
+import           Trout.Piece             (Color (..))
+import           Trout.Search.Worthiness
+    ( bishopWorth
+    , knightWorth
+    , pawnWorth
+    , queenWorth
+    , rookWorth
+    )
 
 pawnMPST :: Vector Int
-pawnMPST = V.fromList $ concat $ reverse
+pawnMPST = V.fromList $ fmap (+ pawnWorth) $ concat $ reverse
     [ [   0,   0,   0,   0,   0,   0,   0,   0 ]
     , [  16,  17,  18,  20,  18,  16,  12,  11 ]
     , [   8,  10,  13,  18,  18,  16,  13,  10 ]
@@ -26,7 +33,7 @@ pawnMPST = V.fromList $ concat $ reverse
     ]
 
 knightMPST :: Vector Int
-knightMPST = V.fromList $ concat $ reverse
+knightMPST = V.fromList $ fmap (+ knightWorth) $ concat $ reverse
     [ [  -4,   0,   4,   2,   8,   3,   5,  -4 ]
     , [   2,   2,  16,  10,  15,  21,  14,  13 ]
     , [   3,  11,  11,  18,  21,  24,  19,  14 ]
@@ -38,7 +45,7 @@ knightMPST = V.fromList $ concat $ reverse
     ]
 
 bishopMPST :: Vector Int
-bishopMPST = V.fromList $ concat $ reverse
+bishopMPST = V.fromList $ fmap (+ bishopWorth) $ concat $ reverse
     [ [   4,   3,   3,   3,   3,   3,   6,   7 ]
     , [   3,   6,   6,   6,   9,  15,  12,  12 ]
     , [   8,  10,   9,  13,  15,  17,  21,  14 ]
@@ -50,7 +57,7 @@ bishopMPST = V.fromList $ concat $ reverse
     ]
 
 rookMPST :: Vector Int
-rookMPST = V.fromList $ concat $ reverse
+rookMPST = V.fromList $ fmap (+ rookWorth) $ concat $ reverse
     [ [   8,   6,   8,   8,   9,   6,   7,  11 ]
     , [   7,   9,  10,  10,  12,  12,  11,  10 ]
     , [   5,   6,   7,   9,  12,  12,  10,  10 ]
@@ -62,7 +69,7 @@ rookMPST = V.fromList $ concat $ reverse
     ]
 
 queenMPST :: Vector Int
-queenMPST = V.fromList $ concat $ reverse
+queenMPST = V.fromList $ fmap (+ queenWorth) $ concat $ reverse
     [ [   9,   9,  11,  11,  12,  15,  16,  21 ]
     , [   4,   6,   9,  12,  15,  25,  24,  27 ]
     , [   4,   9,  12,  16,  19,  24,  26,  20 ]
@@ -86,7 +93,7 @@ kingMPST = V.fromList $ concat $ reverse
     ]
 
 pawnEPST :: Vector Int
-pawnEPST = V.fromList $ concat $ reverse
+pawnEPST = V.fromList $ fmap (+ pawnWorth) $ concat $ reverse
     [ [   0,   0,   0,   0,   0,   0,   0,   0 ]
     , [  50,  45,  44,  38,  35,  36,  31,  34 ]
     , [  16,  18,  17,  14,  16,  15,  18,  12 ]
@@ -98,7 +105,7 @@ pawnEPST = V.fromList $ concat $ reverse
     ]
 
 knightEPST :: Vector Int
-knightEPST = V.fromList $ concat $ reverse
+knightEPST = V.fromList $ fmap (+ knightWorth) $ concat $ reverse
     [ [  -4,   3,   9,   5,   9,   5,   9,  -5 ]
     , [  -1,   2,   6,   8,  10,   7,   5,   3 ]
     , [   2,   5,   7,   7,   9,  12,   6,   4 ]
@@ -110,7 +117,7 @@ knightEPST = V.fromList $ concat $ reverse
     ]
 
 bishopEPST :: Vector Int
-bishopEPST = V.fromList $ concat $ reverse
+bishopEPST = V.fromList $ fmap (+ bishopWorth) $ concat $ reverse
     [ [   4,   7,   9,   8,   8,   6,   9,   4 ]
     , [   2,   6,   6,   8,   7,   6,   7,   3 ]
     , [   4,   7,   7,   7,   8,   9,   8,   3 ]
@@ -122,7 +129,7 @@ bishopEPST = V.fromList $ concat $ reverse
     ]
 
 rookEPST :: Vector Int
-rookEPST = V.fromList $ concat $ reverse
+rookEPST = V.fromList $ fmap (+ rookWorth) $ concat $ reverse
     [ [  11,  11,  12,  11,  11,  10,  12,  12 ]
     , [   8,  10,  11,  12,  12,  13,  13,  11 ]
     , [   5,   7,   8,   9,   9,   9,   9,   6 ]
@@ -134,7 +141,7 @@ rookEPST = V.fromList $ concat $ reverse
     ]
 
 queenEPST :: Vector Int
-queenEPST = V.fromList $ concat $ reverse
+queenEPST = V.fromList $ fmap (+ queenWorth) $ concat $ reverse
     [ [   4,   7,   8,  10,  10,  12,  11,  10 ]
     , [   2,   3,   7,  10,  12,  11,   8,   9 ]
     , [   2,   5,   6,   7,  10,  13,   9,   6 ]

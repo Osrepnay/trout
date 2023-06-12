@@ -44,15 +44,7 @@ import           Trout.Search.PieceSquareTables
     , rookEPST
     , rookMPST
     )
-import           Trout.Search.Worthiness
-    ( bishopWorth
-    , drawWorth
-    , knightWorth
-    , lossWorth
-    , pawnWorth
-    , queenWorth
-    , rookWorth
-    )
+import           Trout.Search.Worthiness          (drawWorth, lossWorth)
 
 data TTEntry = TTEntry
     { entryHash  :: Int -- real hash, not moduloed
@@ -155,35 +147,22 @@ searchNega depth alpha beta game
     moved = mapMaybe
         (\m -> (m, ) <$> makeMove game m)
         (allMoves (game ^. hgGame))
--- TODO FLIP makemove args
 
 eval :: Game -> Int
-eval game = pawnWorth * pawnDiff
-    + knightWorth * knightDiff
-    + bishopWorth * bishopDiff
-    + rookWorth * rookDiff
-    + queenWorth * queenDiff
-    + pstEvalValue
+eval game = pstEvalValue
   where
     -- piece counting
     -- TODO merge with psqtables
     (Pieces pp pn pb pr pq pk) = game ^. gamePlaying
     (Pieces wp wn wb wr wq wk) = game ^. gameWaiting
-    pPawns = popCount pp
-    wPawns = popCount wp
-    pawnDiff = pPawns - wPawns
     pKnights = popCount pn
     wKnights = popCount wn
-    knightDiff = pKnights - wKnights
     pBishops = popCount pb
     wBishops = popCount wb
-    bishopDiff = pBishops - wBishops
     pRooks = popCount pr
     wRooks = popCount wr
-    rookDiff = pRooks - wRooks
     pQueens = popCount pq
     wQueens = popCount wq
-    queenDiff = pQueens - popCount wQueens
 
     -- psqtables part
     phase = pKnights + wKnights + pBishops + wBishops
