@@ -7,8 +7,6 @@ module Trout.Search.Worthiness
     , kingWorth
     , lossWorth
     , drawWorth
-    , egMaterial
-    , mgMaterial
     ) where
 
 -- based on centipawns; maybe go for 256 instead? more common
@@ -31,19 +29,3 @@ lossWorth = -kingWorth
 
 drawWorth :: Int
 drawWorth = 0
-
--- estimate of material remaining in the middlegame (EXTREMELY rough)
-mgMaterial :: Int
-mgMaterial = 16 * pawnWorth
-    + 4 * knightWorth
-    + 4 * bishopWorth
-    + 4 * rookWorth
-    + 2 * queenWorth
-    - 3 * knightWorth
-
--- same for endgame
-egMaterial :: Int
-egMaterial = 8 * pawnWorth
-    + 2 * rookWorth
-    + 2 * bishopWorth
-

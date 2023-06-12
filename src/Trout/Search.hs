@@ -47,10 +47,8 @@ import           Trout.Search.PieceSquareTables
 import           Trout.Search.Worthiness
     ( bishopWorth
     , drawWorth
-    , egMaterial
     , knightWorth
     , lossWorth
-    , mgMaterial
     , pawnWorth
     , queenWorth
     , rookWorth
@@ -187,6 +185,7 @@ eval game = pawnWorth * pawnDiff
     + pstEvalValue
   where
     -- piece counting
+    -- TODO merge with psqtables
     (Pieces pp pn pb pr pq pk) = game ^. gamePlaying
     (Pieces wp wn wb wr wq wk) = game ^. gameWaiting
     pPawns = popCount pp
@@ -206,27 +205,23 @@ eval game = pawnWorth * pawnDiff
     queenDiff = pQueens - popCount wQueens
 
     -- psqtables part
-    diff = mgMaterial - egMaterial
-    material = pawnWorth * (pPawns + wPawns)
-        + knightWorth * (pKnights + wKnights)
-        + bishopWorth * (pBishops + wBishops)
-        + rookWorth * (pRooks + wRooks)
-        + queenWorth * (pQueens + wQueens)
-    -- blend is 0-1; 0=all middlegame, 1=allendgame
-    --                                        v blend (fraction of total)
-    -- less egMaterial --------- material --------- mgMaterial more
-    blend = fromIntegral (mgMaterial - material)
-        / fromIntegral diff
+    phase = pKnights + wKnights + pBishops + wBishops
+        + 2 * (pRooks + wRooks)
+        + 4 * (pQueens + wQueens)
+    -- blend is 0-1; 0=all endgame, 1=all middlegame
+    -- 24 is starting position phase
+    blend = fromIntegral phase / 24
 
-    pstEvalValue = pstEval pp pawnMPST pawnEPST blend
-        - pstEval wp pawnMPST pawnEPST blend
-        + pstEval pn knightMPST knightEPST blend
-        - pstEval wn knightMPST knightEPST blend
-        + pstEval pb bishopMPST bishopEPST blend
-        - pstEval wb bishopMPST bishopEPST blend
-        - pstEval wr rookMPST rookEPST blend
-        + pstEval pr rookMPST rookEPST blend
-        + pstEval pq queenMPST queenEPST blend
-        - pstEval wq queenMPST queenEPST blend
-        + pstEval pk kingMPST kingEPST blend
-        - pstEval wk kingMPST kingEPST blend
+    color = game ^. gameTurn
+    pstEvalValue = pstEval pp pawnMPST pawnEPST blend color
+        - pstEval wp pawnMPST pawnEPST blend color
+        + pstEval pn knightMPST knightEPST blend color
+        - pstEval wn knightMPST knightEPST blend color
+        + pstEval pb bishopMPST bishopEPST blend color
+        - pstEval wb bishopMPST bishopEPST blend color
+        + pstEval pr rookMPST rookEPST blend color
+        - pstEval wr rookMPST rookEPST blend color
+        + pstEval pq queenMPST queenEPST blend color
+        - pstEval wq queenMPST queenEPST blend color
+        + pstEval pk kingMPST kingEPST blend color
+        - pstEval wk kingMPST kingEPST blend color
