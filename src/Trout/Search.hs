@@ -151,27 +151,18 @@ searchNega depth alpha beta game
 eval :: Game -> Int
 eval game = pstEvalValue
   where
-    -- piece counting
-    -- TODO merge with psqtables
     (Pieces pp pn pb pr pq pk) = game ^. gamePlaying
     (Pieces wp wn wb wr wq wk) = game ^. gameWaiting
-    pKnights = popCount pn
-    wKnights = popCount wn
-    pBishops = popCount pb
-    wBishops = popCount wb
-    pRooks = popCount pr
-    wRooks = popCount wr
-    pQueens = popCount pq
-    wQueens = popCount wq
 
-    -- psqtables part
-    phase = pKnights + wKnights + pBishops + wBishops
-        + 2 * (pRooks + wRooks)
-        + 4 * (pQueens + wQueens)
+    -- calculate game phase
+    -- pawns don't count, bishops and rooks count 1, rooks 2, queens 4
+    -- taken from pesto/ethereal/fruit
+    phase = popCount pn + popCount wn + popCount pb + popCount wb
+        + 2 * (popCount pr + popCount wr)
+        + 4 * (popCount pq + popCount wq)
     -- blend is 0-1; 0=all endgame, 1=all middlegame
     -- 24 is starting position phase
     blend = fromIntegral phase / 24
-
     color = game ^. gameTurn
     pstEvalValue = pstEval pp pawnMPST pawnEPST blend color
         - pstEval wp pawnMPST pawnEPST blend color
