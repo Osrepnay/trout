@@ -45,7 +45,7 @@ import Trout.Search.TranspositionTable
     ( TTEntry (..)
     , TranspositionTable
     , insertTT
-    , readTT
+    , readTT, NodeType (..)
     )
 import Trout.Search.Worthiness          (drawWorth, lossWorth)
 
@@ -100,8 +100,12 @@ searchNega depth alpha beta game
                     Nothing -> moved
                 Nothing -> moved
         (nAlpha, nMove) <- newAlpha (alpha, nullMove) movedWithTT
+        let nodeType
+                | nAlpha == beta  = CutNode -- failed high
+                | nAlpha == alpha = AllNode -- failed low
+                | otherwise       = ExactNode
         _ <- liftIO
-            $ insertTT game (TTEntry nAlpha depth nMove) table
+            $ insertTT game (TTEntry nAlpha nodeType depth nMove) table
         pure nAlpha
   where
     -- main search body
@@ -111,8 +115,14 @@ searchNega depth alpha beta game
         table <- ssTranspositions <$> get
         maybeEntry <- liftIO (readTT game table)
         let ttScore = maybeEntry
-                >>= \(TTEntry s d _) ->
+                >>= \(TTEntry s t d _) ->
                     if d >= depth
+                        -- failed low, i.e. we can't trust `s`
+                        -- because the "real" eval could be much lower
+                        -- so only accept if `s` is already lower than bound
+                        && (t /= AllNode || s <= a)
+                        -- failed high, "real" eval could be much higher
+                        && (t /= CutNode || s >= beta)
                     then pure s
                     else Nothing
         score <- case ttScore of

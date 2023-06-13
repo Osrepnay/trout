@@ -1,5 +1,6 @@
 module Trout.Search.TranspositionTable
-    ( TTEntry (..)
+    ( NodeType (..)
+    , TTEntry (..)
     , TTKey
     , TranspositionTable
     , insertTT
@@ -12,8 +13,15 @@ import qualified Data.Vector.Mutable as MV
 import           Trout.Game          (HGame)
 import           Trout.Game.Move     (Move)
 
+data NodeType
+    = ExactNode -- not fail high or fail low
+    | CutNode -- failed high/beta cutoff, move is "too good"
+    | AllNode -- failed low, move is "too bad"
+    deriving (Eq, Show)
+
 data TTEntry = TTEntry
     { entryEval  :: !Int
+    , entryType  :: !NodeType
     , entryDepth :: !Int
     , entryMove  :: !Move
     } deriving (Eq, Show)
