@@ -5,17 +5,14 @@ module Trout.Search
     , eval
     ) where
 
-import           Control.Monad.IO.Class           (liftIO)
-import           Control.Monad.Trans.State.Strict (StateT (..), get)
-import           Data.Bifunctor                   (first)
-import           Data.Function                    (on)
-import           Data.Hashable                    (hash)
-import           Data.Maybe                       (mapMaybe)
-import           Data.Vector.Mutable              (IOVector)
-import qualified Data.Vector.Mutable              as MV
-import           Lens.Micro                       ((^.))
-import           Trout.Bitboard                   (popCount)
-import           Trout.Game
+import Control.Monad.IO.Class           (liftIO)
+import Control.Monad.Trans.State.Strict (StateT (..), get)
+import Data.Bifunctor                   (first)
+import Data.Function                    (on)
+import Data.Maybe                       (mapMaybe)
+import Lens.Micro                       ((^.))
+import Trout.Bitboard                   (popCount)
+import Trout.Game
     ( Game (..)
     , HGame
     , Pieces (..)
@@ -27,9 +24,9 @@ import           Trout.Game
     , inCheck
     , makeMove
     )
-import           Trout.Game.Move                  (Move (..), nullMove)
-import           Trout.Piece                      (Color (..))
-import           Trout.Search.PieceSquareTables
+import Trout.Game.Move                  (Move (..), nullMove)
+import Trout.Piece                      (Color (..))
+import Trout.Search.PieceSquareTables
     ( bishopEPST
     , bishopMPST
     , kingEPST
@@ -44,23 +41,17 @@ import           Trout.Search.PieceSquareTables
     , rookEPST
     , rookMPST
     )
-import           Trout.Search.Worthiness          (drawWorth, lossWorth)
-
-data TTEntry = TTEntry
-    { entryHash  :: !Int -- real hash, not moduloed
-    , entryEval  :: !Int
-    , entryDepth :: !Int
-    , entryMove  :: !Move
-    } deriving (Eq, Show)
+import Trout.Search.TranspositionTable
+    ( TTEntry (..)
+    , TranspositionTable
+    , insertTT
+    , readTT
+    )
+import Trout.Search.Worthiness          (drawWorth, lossWorth)
 
 data SearchState = SearchState
-    { ssTranspositions :: IOVector (Maybe TTEntry)
+    { ssTranspositions :: TranspositionTable
     }
-
-hashToIdx :: Int -> Int -> Int
-hashToIdx h tableLen = fromIntegral
-    $ (fromIntegral h :: Word)
-    `rem` (fromIntegral tableLen :: Word)
 
 -- simple best move finder
 -- ReaderT works because of IO, for now
@@ -101,15 +92,7 @@ searchNega depth alpha beta game
         else drawWorth -- stalemate
     | otherwise = do
         (SearchState table) <- get
-        -- TODO abstract this
-        let gHash = hash game
-        let gIdx = hashToIdx gHash (MV.length table)
-        maybeEntry <- liftIO (MV.read table gIdx)
-        let ttMove = maybeEntry
-                >>= \(TTEntry h _ _ m) ->
-                    if h == gHash
-                    then pure m
-                    else Nothing
+        ttMove <- liftIO (fmap entryMove <$> readTT game table)
         -- if there is a tt move, make it first
         let movedWithTT = case ttMove of
                 Just m  -> case makeMove game m of
@@ -118,8 +101,7 @@ searchNega depth alpha beta game
                 Nothing -> moved
         (nAlpha, nMove) <- newAlpha (alpha, nullMove) movedWithTT
         _ <- liftIO
-            $ MV.write table gIdx
-            $ Just (TTEntry gHash nAlpha depth nMove)
+            $ insertTT game (TTEntry nAlpha depth nMove) table
         pure nAlpha
   where
     -- main search body
@@ -127,12 +109,10 @@ searchNega depth alpha beta game
     newAlpha (a, bm) ((m, g) : mgs) = do
         -- check transpositions
         table <- ssTranspositions <$> get
-        let gHash = hash g
-        let gIdx = hashToIdx gHash (MV.length table)
-        maybeEntry <- liftIO (MV.read table gIdx)
+        maybeEntry <- liftIO (readTT game table)
         let ttScore = maybeEntry
-                >>= \(TTEntry h s d _) ->
-                    if d >= depth && h == gHash
+                >>= \(TTEntry s d _) ->
+                    if d >= depth
                     then pure s
                     else Nothing
         score <- case ttScore of

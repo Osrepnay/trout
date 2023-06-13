@@ -37,6 +37,7 @@ library
       Trout.Piece
       Trout.Search
       Trout.Search.PieceSquareTables
+      Trout.Search.TranspositionTable
       Trout.Search.Worthiness
       Trout.Uci
       Trout.Uci.Parse
