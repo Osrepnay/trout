@@ -2,6 +2,7 @@ module Trout.Bitboard
     ( Bitboard
     , fromSqs
     , toSqs
+    , foldSqs
     , xyToSq
     , inBoard
     , showBitboard
@@ -28,6 +29,14 @@ toSqs bitboard = go bitboard []
     go bb acc = go (bb `clearBit` trailing) (trailing : acc)
       where trailing = countTrailingZeros bb
 {-# INLINE toSqs #-}
+
+foldSqs :: (a -> Int -> a) -> a -> Bitboard -> a
+foldSqs f accum bitboard = go bitboard accum
+  where
+    go 0 acc = acc
+    go bb !acc = go (bb `clearBit` trailing) (f acc trailing)
+      where trailing = countTrailingZeros bb
+{-# INLINE foldSqs #-}
 
 xyToSq :: Int -> Int -> Int
 xyToSq x y = y * 8 + x

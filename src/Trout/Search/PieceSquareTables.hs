@@ -7,10 +7,9 @@ module Trout.Search.PieceSquareTables
     , kingMPST, kingEPST, pstEval
     ) where
 
-import           Data.Foldable           (foldl')
 import           Data.Vector.Primitive   (Vector, unsafeIndex)
 import qualified Data.Vector.Primitive   as V
-import           Trout.Bitboard          (Bitboard, toSqs, xor)
+import           Trout.Bitboard          (Bitboard, foldSqs, xor)
 import           Trout.Piece             (Color (..))
 import           Trout.Search.Worthiness
     ( bishopWorth
@@ -166,7 +165,7 @@ kingEPST = V.fromList $ concat $ reverse
 
 -- blend 0 is endgame, 1 is middlegame
 pstEval :: Bitboard -> Vector Int -> Vector Int -> Double -> Color -> Int
-pstEval bb mg eg blend color = foldl'
+pstEval bb mg eg blend color = foldSqs
     (\score sqRaw ->
         let sq =
                 case color of
@@ -176,4 +175,4 @@ pstEval bb mg eg blend color = foldl'
             e = fromIntegral (eg `unsafeIndex` sq)
         in score + round (e + blend * (m - e)))
     0
-    (toSqs bb)
+    bb
