@@ -11,7 +11,6 @@ import Data.Bifunctor                   (first)
 import Data.Function                    (on)
 import Data.Maybe                       (mapMaybe)
 import Lens.Micro                       ((^.))
-import Trout.Bitboard                   (popCount)
 import Trout.Game
     ( Game (..)
     , HGame
@@ -42,10 +41,11 @@ import Trout.Search.PieceSquareTables
     , rookMPST
     )
 import Trout.Search.TranspositionTable
-    ( TTEntry (..)
+    ( NodeType (..)
+    , TTEntry (..)
     , TranspositionTable
     , insertTT
-    , readTT, NodeType (..)
+    , readTT
     )
 import Trout.Search.Worthiness          (drawWorth, lossWorth)
 
@@ -147,22 +147,25 @@ eval game = pstEvalValue
     -- calculate game phase
     -- pawns don't count, bishops and rooks count 1, rooks 2, queens 4
     -- taken from pesto/ethereal/fruit
-    phase = popCount pn + popCount wn + popCount pb + popCount wb
+    {- mgPhase = popCount pn + popCount wn + popCount pb + popCount wb
         + 2 * (popCount pr + popCount wr)
         + 4 * (popCount pq + popCount wq)
-    -- blend is 0-1; 0=all endgame, 1=all middlegame
-    -- 24 is starting position phase
-    blend = fromIntegral phase / 24
-    color = game ^. gameTurn
-    pstEvalValue = pstEval pp pawnMPST pawnEPST blend color
-        - pstEval wp pawnMPST pawnEPST blend color
-        + pstEval pn knightMPST knightEPST blend color
-        - pstEval wn knightMPST knightEPST blend color
-        + pstEval pb bishopMPST bishopEPST blend color
-        - pstEval wb bishopMPST bishopEPST blend color
-        + pstEval pr rookMPST rookEPST blend color
-        - pstEval wr rookMPST rookEPST blend color
-        + pstEval pq queenMPST queenEPST blend color
-        - pstEval wq queenMPST queenEPST blend color
-        + pstEval pk kingMPST kingEPST blend color
-        - pstEval wk kingMPST kingEPST blend color
+    egPhase = 24 - mgPhase -}
+    mgPhase = 24
+    egPhase = 0
+    mask = case game ^. gameTurn of
+        White -> 0
+        Black -> 56
+    pst bb mg eg = pstEval bb mg eg mgPhase egPhase mask
+    pstEvalValue = pst pp pawnMPST pawnEPST
+        - pst wp pawnMPST pawnEPST
+        + pst pn knightMPST knightEPST
+        - pst wn knightMPST knightEPST
+        + pst pb bishopMPST bishopEPST
+        - pst wb bishopMPST bishopEPST
+        + pst pr rookMPST rookEPST
+        - pst wr rookMPST rookEPST
+        + pst pq queenMPST queenEPST
+        - pst wq queenMPST queenEPST
+        + pst pk kingMPST kingEPST
+        - pst wk kingMPST kingEPST
