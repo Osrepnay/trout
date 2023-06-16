@@ -3,6 +3,8 @@ module Trout.Search.TranspositionTable
     , TTEntry (..)
     , TTKey
     , TranspositionTable
+    , newTT
+    , clearTT
     , insertTT
     , readTT
     ) where
@@ -28,6 +30,17 @@ data TTEntry = TTEntry
 
 type TTKey = HGame
 type TranspositionTable = IOVector (Maybe (Int, TTEntry))
+
+-- create a new empty transposition table of the given size
+newTT :: Int -> IO TranspositionTable
+newTT size = do
+    table <- MV.new size
+    MV.set table Nothing
+    pure table
+
+-- clear transposition table
+clearTT :: TranspositionTable -> IO ()
+clearTT table = MV.set table Nothing
 
 hashToIdx :: Int -> Int -> Int
 hashToIdx h tableLen = fromIntegral

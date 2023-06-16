@@ -6,14 +6,16 @@ module Trout.Game
     , sideWhite, sideBlack
     , Game (..)
     , gamePlaying, gameWaiting, gameCastling, gameEnPassant, gameTurn
-    , HGame (..)
-    , hgGame, hgHash
+    , startingGame
     , gamePieces
     , gameAsBoard
-    , startingGame
+    , HGame (..)
+    , hgGame, hgHash
+    , mkHGame
+    , startingHGame
     , allMoves
     , inCheck
-    , makeMove, mkHGame
+    , makeMove
     ) where
 
 import Data.Foldable                    (foldl')
@@ -166,6 +168,27 @@ instance Hashable Game where
 
     hashWithSalt salt game = hash game `xor` salt
 
+-- https://tearth.dev/bitboard-viewer/
+startingGame :: Game
+startingGame = Game
+    (Pieces
+        65280
+        66
+        36
+        129
+        8
+        16)
+    (Pieces
+        71776119061217280
+        4755801206503243776
+        2594073385365405696
+        9295429630892703744
+        576460752303423488
+        1152921504606846976)
+    15
+    Nothing
+    White
+
 -- lens for getting the side objectively (white/black) instead of based on
 -- current player (playing/waiting)
 gamePieces :: Lens Game Game (Sides Pieces) (Sides Pieces)
@@ -222,26 +245,8 @@ mkHGame :: Game -> HGame
 mkHGame game = HGame game (hash game)
 {-# INLINE mkHGame #-}
 
--- https://tearth.dev/bitboard-viewer/
-startingGame :: Game
-startingGame = Game
-    (Pieces
-        65280
-        66
-        36
-        129
-        8
-        16)
-    (Pieces
-        71776119061217280
-        4755801206503243776
-        2594073385365405696
-        9295429630892703744
-        576460752303423488
-        1152921504606846976)
-    15
-    Nothing
-    White
+startingHGame :: HGame
+startingHGame = mkHGame startingGame
 
 -- change current player
 -- also swaps playing and waiting

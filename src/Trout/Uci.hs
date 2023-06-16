@@ -1,6 +1,6 @@
 module Trout.Uci (doUci, UciState (..)) where
 
-import           Control.Concurrent
+import Control.Concurrent
     ( MVar
     , ThreadId
     , forkIO
@@ -11,21 +11,15 @@ import           Control.Concurrent
     , swapMVar
     , tryTakeMVar
     )
-import           Control.Exception                (evaluate)
-import           Control.Monad.Trans.State.Strict (StateT (..))
-import           Data.Foldable                    (foldl')
-import           Data.Maybe                       (fromMaybe)
-import qualified Data.Vector.Mutable              as MV
-import           Lens.Micro                       ((&), (.~), (^.))
-import           System.IO
-    ( hFlush
-    , hPutStrLn
-    , stderr
-    , stdout
-    )
-import           System.Timeout                   (timeout)
-import           Trout.Fen.Parse                  (fenToGame)
-import           Trout.Game
+import Control.Exception                (evaluate)
+import Control.Monad.Trans.State.Strict (StateT (..))
+import Data.Foldable                    (foldl')
+import Data.Maybe                       (fromMaybe)
+import Lens.Micro                       ((&), (.~), (^.))
+import System.IO                        (hFlush, hPutStrLn, stderr, stdout)
+import System.Timeout                   (timeout)
+import Trout.Fen.Parse                  (fenToGame)
+import Trout.Game
     ( HGame (..)
     , Sides
     , allMoves
@@ -36,15 +30,17 @@ import           Trout.Game
     , sideBlack
     , sideWhite
     , startingGame
+    , startingHGame
     )
-import           Trout.Game.Move
+import Trout.Game.Move
     ( Move (..)
     , SpecialMove (Promotion)
     , uciShowMove
     )
-import           Trout.Piece                      (Color (..))
-import           Trout.Search                     (SearchState (..), bestMove)
-import           Trout.Uci.Parse
+import Trout.Piece                      (Color (..))
+import Trout.Search                     (SearchState (..), bestMove)
+import Trout.Search.TranspositionTable  (newTT)
+import Trout.Uci.Parse
     ( CommGoArg (..)
     , CommPositionInit (..)
     , UciCommand (..)
@@ -135,7 +131,7 @@ doUci uciState = do
             doUci uciState
         Right (CommRegister _) -> doUci uciState
         Right CommUcinewgame -> doUci
-            $ uciState { uciGame = mkHGame startingGame }
+            $ uciState { uciGame = startingHGame }
         Right (CommPosition posInit moves) ->
             let ng = mkHGame $ case posInit of
                     PositionStartpos -> startingGame
@@ -153,8 +149,7 @@ doUci uciState = do
                 Just x  -> pure x
                 Nothing -> do
                     v <- newEmptyMVar
-                    tt <- MV.new 1000000
-                    _ <- MV.set tt Nothing
+                    tt <- newTT 1000000
                     _ <- putMVar v (SearchState tt)
                     pure v
             thread <- forkIO

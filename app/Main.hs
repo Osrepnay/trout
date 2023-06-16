@@ -1,6 +1,6 @@
 module Main (main) where
-import Trout.Game (mkHGame, startingGame)
+import Trout.Game (startingHGame)
 import Trout.Uci  (UciState (UciState), doUci)
 
 main :: IO ()
-main = doUci (UciState (mkHGame startingGame) False Nothing Nothing)
+main = doUci (UciState startingHGame False Nothing Nothing)
