@@ -11,6 +11,7 @@ import Data.Bifunctor                   (first)
 import Data.Function                    (on)
 import Data.Maybe                       (mapMaybe)
 import Lens.Micro                       ((^.))
+import Trout.Bitboard                   (popCount)
 import Trout.Game
     ( Game (..)
     , HGame
@@ -147,12 +148,10 @@ eval game = pstEvalValue
     -- calculate game phase
     -- pawns don't count, bishops and rooks count 1, rooks 2, queens 4
     -- taken from pesto/ethereal/fruit
-    {- mgPhase = popCount pn + popCount wn + popCount pb + popCount wb
+    mgPhase = popCount pn + popCount wn + popCount pb + popCount wb
         + 2 * (popCount pr + popCount wr)
         + 4 * (popCount pq + popCount wq)
-    egPhase = 24 - mgPhase -}
-    mgPhase = 24
-    egPhase = 0
+    egPhase = 24 - mgPhase
     mask = case game ^. gameTurn of
         White -> 0
         Black -> 56
