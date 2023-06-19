@@ -50,14 +50,11 @@ library
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints
   build-depends:
       base >=4.7 && <5
-    , containers
     , hashable
     , microlens
     , microlens-th
     , parsec
-    , split
     , transformers
-    , unordered-containers
     , vector
   default-language: GHC2021
 
@@ -72,15 +69,12 @@ executable trout-exe
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.7 && <5
-    , containers
     , hashable
     , microlens
     , microlens-th
     , parsec
-    , split
     , transformers
     , trout
-    , unordered-containers
     , vector
   default-language: GHC2021
 
@@ -100,7 +94,6 @@ test-suite trout-test
   build-depends:
       QuickCheck
     , base >=4.7 && <5
-    , containers
     , hashable
     , hspec
     , microlens
@@ -109,7 +102,6 @@ test-suite trout-test
     , split
     , transformers
     , trout
-    , unordered-containers
     , vector
   default-language: GHC2021
 
@@ -125,16 +117,13 @@ benchmark trout-bench
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.7 && <5
-    , containers
     , criterion
     , deepseq
     , hashable
     , microlens
     , microlens-th
     , parsec
-    , split
     , transformers
     , trout
-    , unordered-containers
     , vector
   default-language: GHC2021

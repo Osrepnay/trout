@@ -21,14 +21,11 @@ description:         Please see the README on GitHub at <https://github.com/gith
 
 dependencies:
 - base >= 4.7 && < 5
-- containers
 - hashable
 - microlens
 - microlens-th
 - parsec
-- split
 - transformers
-- unordered-containers
 - vector
 
 ghc-options:
@@ -73,6 +70,7 @@ tests:
     - trout
     - hspec
     - QuickCheck
+    - split
 
 benchmarks:
   trout-bench:
