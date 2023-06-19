@@ -5,7 +5,7 @@ module Trout.Game
     , Sides
     , sideWhite, sideBlack
     , Game (..)
-    , gamePlaying, gameWaiting, gameCastling, gameEnPassant, gameTurn
+    , HasGame (..)
     , startingGame
     , gamePieces
     , gameAsBoard
@@ -134,7 +134,33 @@ data Game = Game
     , _gameEnPassant :: !(Maybe Int)
     , _gameTurn      :: !Color
     } deriving (Eq, Show)
-makeLenses ''Game
+
+-- literally just makeClassy but change the name of game
+-- i don't want to rename all my variables
+class HasGame c where
+    intoGame :: Lens' c Game
+
+    gamePlaying :: Lens' c Pieces
+    gamePlaying = intoGame
+        . \afb g -> afb (_gamePlaying g) <&> \x -> g { _gamePlaying = x }
+
+    gameWaiting :: Lens' c Pieces
+    gameWaiting = intoGame
+        . \afb g -> afb (_gameWaiting g) <&> \x -> g { _gameWaiting = x }
+
+    gameCastling :: Lens' c Int
+    gameCastling = intoGame
+        . \afb g -> afb (_gameCastling g) <&> \x -> g { _gameCastling = x }
+
+    gameEnPassant :: Lens' c (Maybe Int)
+    gameEnPassant = intoGame
+        . \afb g -> afb (_gameEnPassant g) <&> \x -> g { _gameEnPassant = x }
+
+    gameTurn :: Lens' c Color
+    gameTurn = intoGame
+        . \afb g -> afb (_gameTurn g) <&> \x -> g { _gameTurn = x }
+
+instance HasGame Game where intoGame = id
 
 instance Hashable Game where
     hash (Game play wait castle enP turn) = turnHash
@@ -200,7 +226,7 @@ gamePieces afb game@(Game p w _ _ t) = case t of
 {-# INLINE gamePieces #-}
 
 -- bitboard of all occupied squares
-gameBlockers :: Game -> Bitboard
+gameBlockers :: HasGame a => a -> Bitboard
 gameBlockers game = piecesAll (game ^. gamePlaying)
     .|. piecesAll (game ^. gameWaiting)
 {-# INLINE gameBlockers #-}
@@ -236,6 +262,8 @@ data HGame = HGame
     } deriving (Eq, Show)
 makeLenses ''HGame
 
+instance HasGame HGame where intoGame = hgGame
+
 instance Hashable HGame where
     hash (HGame _ h) = h
     hashWithSalt salt game = hash game `xor` salt
@@ -262,36 +290,36 @@ flipTurn (HGame (Game p w c enP t) h) = HGame
 -- TODO CONSIDER -> MAYBE HGAME; NOTHING IF UNCHANGED
 setSqPlaying :: Piece -> Int -> HGame -> HGame
 setSqPlaying piece sq game = game
-    & hgGame . gamePlaying . byPiece piece %~ (`setBit` sq)
+    & gamePlaying . byPiece piece %~ (`setBit` sq)
     & hgHash %~ xor
-        (pieceZobrists (game ^. hgGame . gameTurn) piece `unsafeIndex` sq)
+        (pieceZobrists (game ^. gameTurn) piece `unsafeIndex` sq)
 {-# INLINE setSqPlaying #-}
 
 clearSqPlaying :: Piece -> Int -> HGame -> HGame
 clearSqPlaying piece sq game = game
-    & hgGame . gamePlaying . byPiece piece %~ (`clearBit` sq)
+    & gamePlaying . byPiece piece %~ (`clearBit` sq)
     & hgHash %~ xor
-        (pieceZobrists (game ^. hgGame . gameTurn) piece `unsafeIndex` sq)
+        (pieceZobrists (game ^. gameTurn) piece `unsafeIndex` sq)
 {-# INLINE clearSqPlaying #-}
 
 clearSqWaiting :: Piece -> Int -> HGame -> HGame
 clearSqWaiting piece sq game = game
-    & hgGame . gameWaiting . byPiece piece %~ (`clearBit` sq)
+    & gameWaiting . byPiece piece %~ (`clearBit` sq)
     & hgHash %~ xor
         (pieceZobrists
-            (other (game ^. hgGame . gameTurn))
+            (other (game ^. gameTurn))
             piece
             `unsafeIndex` sq)
 {-# INLINE clearSqWaiting #-}
 
 moveSqPlaying :: Piece -> Int -> Int -> HGame -> HGame
 moveSqPlaying piece from to game = game
-    & hgGame . gamePlaying . byPiece piece %~ (`setBit` to) . (`clearBit` from)
+    & gamePlaying . byPiece piece %~ (`setBit` to) . (`clearBit` from)
     & hgHash %~ xor
         (pieceZobrists color piece `unsafeIndex` from
             `xor` pieceZobrists color piece `unsafeIndex` to)
   where
-    color = game ^. hgGame . gameTurn
+    color = game ^. gameTurn
 {-# INLINE moveSqPlaying #-}
 
 -- returns possible moves at a position
@@ -299,7 +327,7 @@ moveSqPlaying piece from to game = game
 -- but I like having the hash separate because
 -- 1. it isn't necessary for move generation (here)
 -- 2. having a wrong hash for a game is... weird, hgame adds more separation
-allMoves :: Game -> [Move]
+allMoves :: HasGame a => a -> [Move]
 allMoves game =
     pawnsMoves
         (game ^. gameEnPassant)
@@ -327,9 +355,11 @@ allMoves game =
     block = myBlock .|. piecesAll (game ^. gameWaiting)
     myBlock = piecesAll turnPieces
     turnPieces@(Pieces p n b r q k) = game ^. gamePlaying
+{-# SPECIALIZE allMoves :: HGame -> [Move] #-}
+{-# SPECIALIZE allMoves :: Game -> [Move] #-}
 
 -- checks if a square is attacked by the opponent (waiting)
-squareAttacked :: Bitboard -> Int -> Game -> Bool
+squareAttacked :: HasGame a => Bitboard -> Int -> a -> Bool
 squareAttacked block sq game = knightTable `unsafeIndex` sq .&. n
     .|. bishoped .&. b
     .|. rooked .&. r
@@ -349,7 +379,7 @@ squareAttacked block sq game = knightTable `unsafeIndex` sq .&. n
     (Pieces p n b r q k) = game ^. gameWaiting
 
 -- simple wrapper around squareAttacked for the king's square
-inCheck :: Game -> Bool
+inCheck :: HasGame a => a -> Bool
 inCheck game
     | kingSq == 64 = True -- king gone!
     | otherwise    = squareAttacked (gameBlockers game) kingSq game
@@ -380,8 +410,8 @@ makeMove game (Move piece special from to) = do
     checkChecked <- nothingIfCheck afterSpecials
     pure (flipTurn checkChecked)
   where
-    playZs = pieceZobrists (game ^. hgGame . gameTurn)
-    waitZs = pieceZobrists (other (game ^. hgGame . gameTurn))
+    playZs = pieceZobrists (game ^. gameTurn)
+    waitZs = pieceZobrists (other (game ^. gameTurn))
     moverZs = playZs piece
     -- basic moving
     doMove !pcs =
@@ -418,7 +448,7 @@ makeMove game (Move piece special from to) = do
             (castleMask from
                 .|. castleMask to
                 .|. case piece of
-                    King -> case game ^. hgGame . gameTurn of
+                    King -> case game ^. gameTurn of
                         White -> 3
                         Black -> 12
                     _ -> 0)
@@ -434,7 +464,7 @@ makeMove game (Move piece special from to) = do
     specials g = case special of
         PawnDouble -> Just
             $ g
-            & hgGame . gameEnPassant ?~ to
+            & gameEnPassant ?~ to
             & hgHash %~ xor (enPassantZobrists `unsafeIndex` (to `rem` 8))
         EnPassant enPSq -> Just (clearSqWaiting Pawn enPSq g)
         Promotion promote -> Just
@@ -461,6 +491,6 @@ makeMove game (Move piece special from to) = do
       where block = gameBlockers g
     -- where the king starts on the board
     -- for castling things
-    kingOrigin = case game ^. hgGame . gameTurn of
+    kingOrigin = case game ^. gameTurn of
         White -> 4
         Black -> 60

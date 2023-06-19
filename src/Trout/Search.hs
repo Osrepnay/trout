@@ -13,8 +13,8 @@ import Data.Maybe                       (mapMaybe)
 import Lens.Micro                       ((^.))
 import Trout.Bitboard                   (popCount)
 import Trout.Game
-    ( Game (..)
-    , HGame
+    ( HGame
+    , HasGame (..)
     , Pieces (..)
     , allMoves
     , gamePlaying
@@ -58,18 +58,18 @@ data SearchState = SearchState
 -- ReaderT works because of IO, for now
 bestMove :: Int -> HGame -> StateT SearchState IO (Int, Move)
 bestMove 0 game = pure
-    ( eval (game ^. hgGame)
+    ( eval game
         * case game ^. hgGame . gameTurn of
             White -> 1
             Black -> -1
-    , head (allMoves (game ^. hgGame))
+    , head (allMoves game)
     )
 bestMove depth game = first
     -- if player is black, flip because negamax is relative
     (* case game ^. hgGame . gameTurn of
         White -> 1
         Black -> -1)
-    <$> go (alpha, nullMove) (allMoves (game ^. hgGame))
+    <$> go (alpha, nullMove) (allMoves game)
   where
     alpha = minBound + 1 -- so negate works!!!!!!!
     beta = maxBound
@@ -86,7 +86,7 @@ bestMove depth game = first
 
 searchNega :: Int -> Int -> Int -> HGame -> StateT SearchState IO Int
 searchNega depth alpha beta game
-    | depth <= 0 = pure (eval (game ^. hgGame))
+    | depth <= 0 = pure (eval game)
     | null moved = pure
         $ if inCheck (game ^. hgGame)
         then lossWorth -- checkmate
@@ -137,9 +137,9 @@ searchNega depth alpha beta game
     -- moves
     moved = mapMaybe
         (\m -> (m, ) <$> makeMove game m)
-        (allMoves (game ^. hgGame))
+        (allMoves game)
 
-eval :: Game -> Int
+eval :: HasGame a => a -> Int
 eval game = pstEvalValue
   where
     (Pieces pp pn pb pr pq pk) = game ^. gamePlaying
