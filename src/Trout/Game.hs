@@ -1,18 +1,22 @@
 {-# LANGUAGE TemplateHaskell #-}
 module Trout.Game
     ( Pieces (..)
-    , pawns, knights, bishops, rooks, queens, kings, byPiece
+    , pieceActive, pieceLimit, pieceDiag, pieceRoyal
+    , pawns, knights, bishops, rooks, queens, kings
+    , byPiece
+    , active, inactive
+    , flipPieces
     , Sides
     , sideWhite, sideBlack
     , Game (..)
     , HasGame (..)
     , startingGame
-    , gamePieces
     , gameAsBoard
     , HGame (..)
     , hgGame, hgHash
     , mkHGame
     , startingHGame
+    , flipTurn
     , allMoves
     , inCheck
     , makeMove
@@ -21,15 +25,7 @@ module Trout.Game
 import Data.Foldable                    (foldl')
 import Data.Hashable                    (Hashable (..))
 import Data.Vector.Primitive            (unsafeIndex)
-import Lens.Micro
-    ( Lens
-    , Lens'
-    , (%~)
-    , (&)
-    , (<&>)
-    , (?~)
-    , (^.)
-    )
+import Lens.Micro                       (Lens', (%~), (&), (<&>), (?~), (^.))
 import Lens.Micro.TH                    (makeLenses)
 import Trout.Bitboard
     ( Bitboard
@@ -85,20 +81,135 @@ import Trout.Game.Zobrists
     )
 import Trout.Piece                      (Color (..), Piece (..), other)
 
--- one player's pieces
--- maybe consider ekmett/barbarossa's approach: 14->4 bitboards
--- use bit twiddling to get pieces
+-- TODO maybe 1 more field for occupancy?
 data Pieces = Pieces
-    { _pawns   :: !Bitboard
-    , _knights :: !Bitboard
-    , _bishops :: !Bitboard
-    , _rooks   :: !Bitboard
-    , _queens  :: !Bitboard
-    , _kings   :: !Bitboard
+    { _pieceActive :: !Bitboard -- pieces of the current player
+    , _pieceLimit  :: !Bitboard -- pieces that don't have infinite range
+    , _pieceDiag   :: !Bitboard -- can piece move diagonally? (no knights!)
+    , _pieceRoyal  :: !Bitboard -- rooks, queens, kings
     } deriving (Eq, Show)
 makeLenses ''Pieces
 
--- lens by piece
+-- helper to generate a piece lens
+-- TODO slow because of bb difference calculation
+-- no easy solution though...
+genPiece :: Bool -> Bool -> Bool -> Lens' Pieces Bitboard
+genPiece slide diag royal afb pieces = afb pieceBB
+    <&> \newBB -> pieces
+        & pieceLimit %~ sfSet pieceBB newBB
+        & pieceDiag  %~ dfSet pieceBB newBB
+        & pieceRoyal %~ rfSet pieceBB newBB
+  where
+    {-
+    old new cur res
+     0   0   0   0
+     0   0   1   1
+     0   1   0   1
+     0   1   1   1
+     1   0   1   0
+     1   1   1   1
+     1   0   0   ? IMPOSSIBLE
+     1   1   0   ? IMPOSSIBLE
+    -}
+    tf old new x = x `xor` old .|. new
+    {-
+    old new cur res
+     0   0   0   0
+     0   0   1   1
+     0   1   0   0
+     0   1   1   0
+     1   0   0   0
+     1   1   0   0
+     1   0   1   ? IMPOSSIBLE
+     1   1   1   ? IMPOSSIBLE
+    -}
+    ff old new x = x .&. complement (old .|. new)
+    (sfGet, sfSet) = if slide then (id, tf) else (complement, ff)
+    (dfGet, dfSet) = if diag  then (id, tf) else (complement, ff)
+    (rfGet, rfSet) = if royal then (id, tf) else (complement, ff)
+    pieceBB = sfGet (pieces ^. pieceLimit)
+        .&. dfGet (pieces ^. pieceDiag)
+        .&. rfGet (pieces ^. pieceRoyal)
+{-# INLINE genPiece #-}
+
+-- remember: no piece can be all Falses! then it looks empty
+
+-- yes limit, yes diagonal, no royal
+pawns :: Lens' Pieces Bitboard
+pawns = genPiece True True False
+{-# INLINE pawns #-}
+
+-- yes limit, no diagonal, no royal
+knights :: Lens' Pieces Bitboard
+knights = genPiece True False False
+{-# INLINE knights #-}
+
+-- no limit, yes diagonal, no royal
+bishops :: Lens' Pieces Bitboard
+bishops = genPiece False True False
+{-# INLINE bishops #-}
+
+-- no limit, no diagonal, yes royal
+rooks :: Lens' Pieces Bitboard
+rooks = genPiece False False True
+{-# INLINE rooks #-}
+
+-- no limit, yes diagonal, yes royal
+queens :: Lens' Pieces Bitboard
+queens = genPiece False True True
+{-# INLINE queens #-}
+
+-- yes limit, yes diagonal, yes royal
+kings :: Lens' Pieces Bitboard
+kings = genPiece True True True
+{-# INLINE kings #-}
+
+-- getter for current active pieces
+active :: Lens' Pieces Pieces
+active afb (Pieces a l d r) = afb masked
+    -- new active not used, should not be changed from within current func
+    <&> \(Pieces _ nl nd nr) ->
+        let na = nl .|. nd .|. nr
+            na' = complement na
+        in Pieces
+            -- masking with active isnt necessary, already premasked
+            na
+            (nl .|. inl .&. na')
+            (nd .|. ind .&. na')
+            (nr .|. inr .&. na')
+  where
+    masked@(Pieces _ ml md mr) = Pieces a (l .&. a) (d .&. a) (r .&. a)
+    -- xor instead of & complement is safe; ml is strictly a subset of l
+    inl = ml `xor` l
+    ind = md `xor` d
+    inr = mr `xor` r
+{-# INLINE active #-}
+
+-- getter for current inactive pieces
+inactive :: Lens' Pieces Pieces
+inactive afb (Pieces a l d r) = afb masked
+    <&> \(Pieces _ nl nd nr) ->
+        let na = nl .|. nd .|. nr
+            na' = complement na
+        in Pieces
+            (na' .&. a)
+            (nl .|. al .&. na')
+            (nd .|. ad .&. na')
+            (nr .|. ar .&. na')
+  where
+    a' = complement a
+    masked@(Pieces _ ml md mr) = Pieces a (l .&. a') (d .&. a') (r .&. a')
+    al = ml `xor` l
+    ad = md `xor` d
+    ar = mr `xor` r
+{-# INLINE inactive #-}
+
+-- flip active side
+flipPieces :: Pieces -> Pieces
+flipPieces (Pieces a l d r) = Pieces (complement a .&. (l .|. d .|. r)) l d r
+{-# INLINE flipPieces #-}
+
+-- get the respective lens for the piece
 byPiece :: Piece -> Lens' Pieces Bitboard
 byPiece Pawn   = pawns
 byPiece Knight = knights
@@ -108,16 +219,17 @@ byPiece Queen  = queens
 byPiece King   = kings
 {-# INLINE byPiece #-}
 
--- all occupied squares for a side
+-- all occupied squares
 piecesAll :: Pieces -> Bitboard
-piecesAll (Pieces p n b r q k) = p .|. n .|. b .|. r .|. q .|. k
+piecesAll (Pieces _ l d r) = l .|. d .|. r
 {-# INLINE piecesAll #-}
+
+-- TODO kill this
 
 type Sides a = (a, a)
 
 sideWhite :: Lens' (Sides a) a
 sideWhite afb (a, b) = (, b) <$> afb a
-{-# INLINE sideWhite #-}
 
 sideBlack :: Lens' (Sides a) a
 sideBlack afb (a, b) = (a, ) <$> afb b
@@ -128,8 +240,7 @@ sideBlack afb (a, b) = (a, ) <$> afb b
 -- so no history, move counter, hash, etc
 -- is this good idea?
 data Game = Game
-    { _gamePlaying   :: Pieces
-    , _gameWaiting   :: Pieces
+    { _gamePieces    :: Pieces
     , _gameCastling  :: !Int
     , _gameEnPassant :: !(Maybe Int)
     , _gameTurn      :: !Color
@@ -140,13 +251,9 @@ data Game = Game
 class HasGame c where
     intoGame :: Lens' c Game
 
-    gamePlaying :: Lens' c Pieces
-    gamePlaying = intoGame
-        . \afb g -> afb (_gamePlaying g) <&> \x -> g { _gamePlaying = x }
-
-    gameWaiting :: Lens' c Pieces
-    gameWaiting = intoGame
-        . \afb g -> afb (_gameWaiting g) <&> \x -> g { _gameWaiting = x }
+    gamePieces :: Lens' c Pieces
+    gamePieces = intoGame
+        . \afb g -> afb (_gamePieces g) <&> \x -> g { _gamePieces = x }
 
     gameCastling :: Lens' c Int
     gameCastling = intoGame
@@ -163,7 +270,7 @@ class HasGame c where
 instance HasGame Game where intoGame = id
 
 instance Hashable Game where
-    hash (Game play wait castle enP turn) = turnHash
+    hash (Game pieces castle enP turn) = turnHash
         `xor` castleHash
         `xor` enPassantHash
         `xor` hashBitboard (white ^. pawns) whitePawnZobrists
@@ -184,8 +291,8 @@ instance Hashable Game where
             0
             (toSqs bb)
         (white, black, turnHash) = case turn of
-            White -> (play, wait, playingZobrist)
-            Black -> (wait, play, 0)
+            White -> (pieces ^. active, pieces ^. inactive, playingZobrist)
+            Black -> (pieces ^. inactive, pieces ^. active, 0)
         -- only first 4 bits of castle should be used
         castleHash = castleZobrists `unsafeIndex` castle
         enPassantHash = case enP of
@@ -198,61 +305,38 @@ instance Hashable Game where
 startingGame :: Game
 startingGame = Game
     (Pieces
-        65280
-        66
-        36
-        129
-        8
-        16)
-    (Pieces
-        71776119061217280
-        4755801206503243776
-        2594073385365405696
-        9295429630892703744
-        576460752303423488
-        1152921504606846976)
+        0xFFFF
+        0x52FF00000000FF52
+        0x3CFF00000000FF3C
+        0x9900000000000099)
     15
     Nothing
     White
-
--- lens for getting the side objectively (white/black) instead of based on
--- current player (playing/waiting)
-gamePieces :: Lens Game Game (Sides Pieces) (Sides Pieces)
-gamePieces afb game@(Game p w _ _ t) = case t of
-    White -> afb (p, w)
-        <&> \(p', w') -> game {_gamePlaying = p', _gameWaiting = w'}
-    Black -> afb (w, p)
-        <&> \(w', p') -> game {_gamePlaying = w', _gameWaiting = p'}
-{-# INLINE gamePieces #-}
-
--- bitboard of all occupied squares
-gameBlockers :: HasGame a => a -> Bitboard
-gameBlockers game = piecesAll (game ^. gamePlaying)
-    .|. piecesAll (game ^. gameWaiting)
-{-# INLINE gameBlockers #-}
 
 -- pretty human-readable board
 gameAsBoard :: Game -> String
 gameAsBoard game = unlines [[posChar x y | x <- [0..7]] | y <- [7, 6..0]]
   where
     posChar x y = fst $ head $ filter (\(_, b) -> b `testBit` sq)
-        [ ('P', whitePieces ^. pawns)
-        , ('N', whitePieces ^. knights)
-        , ('B', whitePieces ^. bishops)
-        , ('R', whitePieces ^. rooks)
-        , ('Q', whitePieces ^. queens)
-        , ('K', whitePieces ^. kings)
-        , ('p', blackPieces ^. pawns)
-        , ('n', blackPieces ^. knights)
-        , ('b', blackPieces ^. bishops)
-        , ('r', blackPieces ^. rooks)
-        , ('q', blackPieces ^. queens)
-        , ('k', blackPieces ^. kings)
+        [ ('P', white ^. pawns)
+        , ('N', white ^. knights)
+        , ('B', white ^. bishops)
+        , ('R', white ^. rooks)
+        , ('Q', white ^. queens)
+        , ('K', white ^. kings)
+        , ('p', black ^. pawns)
+        , ('n', black ^. knights)
+        , ('b', black ^. bishops)
+        , ('r', black ^. rooks)
+        , ('q', black ^. queens)
+        , ('k', black ^. kings)
         , ('.', complement zeroBits)
         ]
       where
-        whitePieces = game ^. gamePieces . sideWhite
-        blackPieces = game ^. gamePieces . sideBlack
+        (white, black) = case game ^. gameTurn of
+            White -> (pieces ^. active, pieces ^. inactive)
+            Black -> (pieces ^. inactive, pieces ^. active)
+        pieces = game ^. gamePieces
         sq = xyToSq x y
 
 -- incrementally hashed game
@@ -279,54 +363,42 @@ startingHGame = mkHGame startingGame
 -- change current player
 -- also swaps playing and waiting
 flipTurn :: HGame -> HGame
-flipTurn (HGame (Game p w c enP t) h) = HGame
-    (Game w p c enP (other t))
+flipTurn (HGame (Game pcs c enP t) h) = HGame
+    (Game
+        (flipPieces pcs)
+        c enP (other t))
     (h `xor` playingZobrist)
 {-# INLINE flipTurn #-}
 
 -- helpers for moving whole pieces around
--- do we really need this? there are a few missing ones (e.g. setSqWaiting)
--- and they're very bulky
 -- TODO CONSIDER -> MAYBE HGAME; NOTHING IF UNCHANGED
-setSqPlaying :: Piece -> Int -> HGame -> HGame
-setSqPlaying piece sq game = game
-    & gamePlaying . byPiece piece %~ (`setBit` sq)
+setSqActive :: Piece -> Int -> HGame -> HGame
+setSqActive piece sq game = game
+    & gamePieces . active . byPiece piece %~ (`setBit` sq)
     & hgHash %~ xor
         (pieceZobrists (game ^. gameTurn) piece `unsafeIndex` sq)
-{-# INLINE setSqPlaying #-}
+{-# INLINE setSqActive #-}
 
-clearSqPlaying :: Piece -> Int -> HGame -> HGame
-clearSqPlaying piece sq game = game
-    & gamePlaying . byPiece piece %~ (`clearBit` sq)
+-- works on both active an inactive
+clearSq :: Piece -> Int -> HGame -> HGame
+clearSq piece sq game = game
+    & gamePieces . pieceActive %~ (`clearBit` sq)
+    & gamePieces . byPiece piece %~ (`clearBit` sq)
     & hgHash %~ xor
         (pieceZobrists (game ^. gameTurn) piece `unsafeIndex` sq)
-{-# INLINE clearSqPlaying #-}
+{-# INLINE clearSq #-}
 
-clearSqWaiting :: Piece -> Int -> HGame -> HGame
-clearSqWaiting piece sq game = game
-    & gameWaiting . byPiece piece %~ (`clearBit` sq)
-    & hgHash %~ xor
-        (pieceZobrists
-            (other (game ^. gameTurn))
-            piece
-            `unsafeIndex` sq)
-{-# INLINE clearSqWaiting #-}
-
-moveSqPlaying :: Piece -> Int -> Int -> HGame -> HGame
-moveSqPlaying piece from to game = game
-    & gamePlaying . byPiece piece %~ (`setBit` to) . (`clearBit` from)
+moveSqActive :: Piece -> Int -> Int -> HGame -> HGame
+moveSqActive piece from to game = game
+    & gamePieces . active . byPiece piece %~ (`setBit` to) . (`clearBit` from)
     & hgHash %~ xor
         (pieceZobrists color piece `unsafeIndex` from
             `xor` pieceZobrists color piece `unsafeIndex` to)
   where
     color = game ^. gameTurn
-{-# INLINE moveSqPlaying #-}
+{-# INLINE moveSqActive #-}
 
 -- returns possible moves at a position
--- TODO having HGame and Game simultaneously is strange; merge into one?
--- but I like having the hash separate because
--- 1. it isn't necessary for move generation (here)
--- 2. having a wrong hash for a game is... weird, hgame adds more separation
 allMoves :: HasGame a => a -> [Move]
 allMoves game =
     pawnsMoves
@@ -334,13 +406,13 @@ allMoves game =
         (game ^. gameTurn)
         block
         myBlock
-        p
+        (actives ^. pawns)
     $ concatDL
-        (moveSqs knightMoves n
-            $ moveSqs bishopMoves b
-            $ moveSqs rookMoves r
-            $ moveSqs queenMoves q
-            $ moveSqs (kingMoves kingside queenside) k [])
+        (moveSqs knightMoves (actives ^. knights)
+            $ moveSqs bishopMoves (actives ^. bishops)
+            $ moveSqs rookMoves (actives ^. rooks)
+            $ moveSqs queenMoves (actives ^. queens)
+            $ moveSqs (kingMoves kingside queenside) (actives ^. kings) [])
         []
   where
     kingside = 0 /= 10 .&. thisCastling
@@ -352,20 +424,21 @@ allMoves game =
             Black -> 12
     -- gets and concats the move for a set of squares (for a piece)
     moveSqs mover = mapOnes (mover block myBlock)
-    block = myBlock .|. piecesAll (game ^. gameWaiting)
-    myBlock = piecesAll turnPieces
-    turnPieces@(Pieces p n b r q k) = game ^. gamePlaying
+    block = piecesAll (game ^. gamePieces)
+    myBlock = piecesAll actives
+    actives = game ^. gamePieces . active
 {-# SPECIALIZE allMoves :: HGame -> [Move] #-}
 {-# SPECIALIZE allMoves :: Game -> [Move] #-}
 
 -- checks if a square is attacked by the opponent (waiting)
 squareAttacked :: HasGame a => Bitboard -> Int -> a -> Bool
-squareAttacked block sq game = knightTable `unsafeIndex` sq .&. n
-    .|. bishoped .&. b
-    .|. rooked .&. r
-    .|. bishoped .&. q
-    .|. rooked .&. q
-    .|. kingTable `unsafeIndex` sq .&. k
+squareAttacked block sq game =
+    knightTable `unsafeIndex` sq .&. inactives ^. knights
+    .|. bishoped .&. inactives ^. bishops
+    .|. rooked .&. inactives ^. rooks
+    .|. bishoped .&. inactives ^. queens
+    .|. rooked .&. inactives ^. queens
+    .|. kingTable `unsafeIndex` sq .&. inactives ^. kings
     /= 0
     || pawnMask `testBit` sq
   where
@@ -376,32 +449,32 @@ squareAttacked block sq game = knightTable `unsafeIndex` sq .&. n
             .|. (p .&. complement fileH) !>>. 7
         Black -> (p .&. complement fileA) !<<. 7
             .|. (p .&. complement fileH) !<<. 9
-    (Pieces p n b r q k) = game ^. gameWaiting
+    p = inactives ^. pawns
+    inactives = game ^. gamePieces . inactive
 
 -- simple wrapper around squareAttacked for the king's square
 inCheck :: HasGame a => a -> Bool
 inCheck game
     | kingSq == 64 = True -- king gone!
-    | otherwise    = squareAttacked (gameBlockers game) kingSq game
+    | otherwise =
+        squareAttacked (piecesAll (game ^. gamePieces)) kingSq game
   where
-    kingSq = countTrailingZeros kingMask
-    kingMask = game ^. gamePlaying . kings
+    kingSq = countTrailingZeros (game ^.  gamePieces . active . kings)
 
 -- maybe rename game/g's to hgame/hg?
 makeMove :: HGame -> Move -> Maybe HGame
 makeMove game (Move piece special from to) = do
     let movedAndCleared = game
-            & \(HGame (Game playing waiting c enP t) h) ->
-                let (nPlaying, pz) = doMove playing
-                    (nWaiting, wz) = captureAll waiting
+            & \(HGame (Game pieces c enP t) h) ->
+                let (nPieces, pz) = doMove pieces
+                    wz = captureAll pieces
                     (nCastles, cz) = clearCastles c
                     ez = maybe 0
                             (unsafeIndex enPassantZobrists . (`rem` 8))
                             enP
                 in HGame
                     (Game
-                        nPlaying
-                        nWaiting
+                        nPieces
                         nCastles
                         Nothing
                         t)
@@ -415,28 +488,22 @@ makeMove game (Move piece special from to) = do
     moverZs = playZs piece
     -- basic moving
     doMove !pcs =
-        ( pcs & byPiece piece %~ (`clearBit` from) . (`setBit` to)
+        ( pcs & active . byPiece piece %~ (`clearBit` from) . (`setBit` to)
         , (moverZs `unsafeIndex` from) `xor` (moverZs `unsafeIndex` to)
         )
     -- capture opponent's piece if needed
-    captureAll (Pieces p n b r q k)
-        | p .&. toBit /= 0 =
-            (Pieces (p .&. clearMask) n b r q k, mkMask Pawn)
-        | n .&. toBit /= 0 =
-            (Pieces p (n .&. clearMask) b r q k, mkMask Knight)
-        | b .&. toBit /= 0 =
-            (Pieces p n (b .&. clearMask) r q k, mkMask Bishop)
-        | r .&. toBit /= 0 =
-            (Pieces p n b (r .&. clearMask) q k, mkMask Rook)
-        | q .&. toBit /= 0 =
-            (Pieces p n b r (q .&. clearMask) k, mkMask Queen)
-        | k .&. toBit /= 0 =
-            (Pieces p n r b q (k .&. clearMask), mkMask King)
-        | otherwise = (Pieces p n b r q k, 0)
+    captureAll pcs
+        | inactives ^. pawns   .&. toBit /= 0 = mkMask Pawn
+        | inactives ^. knights .&. toBit /= 0 = mkMask Knight
+        | inactives ^. bishops .&. toBit /= 0 = mkMask Bishop
+        | inactives ^. rooks   .&. toBit /= 0 = mkMask Rook
+        | inactives ^. queens  .&. toBit /= 0 = mkMask Queen
+        | inactives ^. kings   .&. toBit /= 0 = mkMask King
+        | otherwise = 0
       where
         toBit = bit to
-        clearMask = complement toBit
         mkMask pc = waitZs pc `unsafeIndex` to
+        inactives = pcs ^. inactive
     -- clears any castling rights if needed
     clearCastles c =
         ( newC
@@ -459,20 +526,20 @@ makeMove game (Move piece special from to) = do
             63 -> 8
             _  -> 0
     -- checks for check after moving
-    nothingIfCheck hg@(HGame g _) = if inCheck g then Nothing else Just hg
+    nothingIfCheck hg = if inCheck hg then Nothing else Just hg
     -- handle special cases
     specials g = case special of
         PawnDouble -> Just
             $ g
             & gameEnPassant ?~ to
             & hgHash %~ xor (enPassantZobrists `unsafeIndex` (to `rem` 8))
-        EnPassant enPSq -> Just (clearSqWaiting Pawn enPSq g)
+        EnPassant enPSq -> Just (clearSq Pawn enPSq g)
         Promotion promote -> Just
-            $ setSqPlaying promote to
-            $ clearSqPlaying Pawn to g
-        CastleKing -> moveSqPlaying Rook (kingOrigin + 3) (kingOrigin + 1)
+            $ setSqActive promote to
+            $ clearSq Pawn to g
+        CastleKing -> moveSqActive Rook (kingOrigin + 3) (kingOrigin + 1)
             <$> throughCheckKing g
-        CastleQueen -> moveSqPlaying Rook (kingOrigin - 4) (kingOrigin - 1)
+        CastleQueen -> moveSqActive Rook (kingOrigin - 4) (kingOrigin - 1)
             <$> throughCheckQueen g
         Normal -> Just g
     -- checks for castling through check
@@ -483,12 +550,12 @@ makeMove game (Move piece special from to) = do
         | squareAttacked block kingOrigin g = Nothing
         | squareAttacked block (kingOrigin + 1) g = Nothing
         | otherwise = Just hg
-      where block = gameBlockers g
+      where block = piecesAll (g ^. gamePieces)
     throughCheckQueen hg@(HGame g _)
         | squareAttacked block kingOrigin g = Nothing
         | squareAttacked block (kingOrigin - 1) g = Nothing
         | otherwise = Just hg
-      where block = gameBlockers g
+      where block = piecesAll (g ^. gamePieces)
     -- where the king starts on the board
     -- for castling things
     kingOrigin = case game ^. gameTurn of

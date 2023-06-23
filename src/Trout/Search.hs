@@ -15,14 +15,20 @@ import Trout.Bitboard                   (popCount)
 import Trout.Game
     ( HGame
     , HasGame (..)
-    , Pieces (..)
+    , active
     , allMoves
-    , gamePlaying
+    , bishops
+    , gamePieces
     , gameTurn
-    , gameWaiting
     , hgGame
     , inCheck
+    , inactive
+    , kings
+    , knights
     , makeMove
+    , pawns
+    , queens
+    , rooks
     )
 import Trout.Game.Move                  (Move (..), nullMove)
 import Trout.Piece                      (Color (..))
@@ -142,29 +148,41 @@ searchNega depth alpha beta game
 eval :: HasGame a => a -> Int
 eval game = pstEvalValue
   where
-    (Pieces pp pn pb pr pq pk) = game ^. gamePlaying
-    (Pieces wp wn wb wr wq wk) = game ^. gameWaiting
+    actives = game ^. gamePieces . active
+    inactives = game ^. gamePieces . inactive
+    ap = actives ^. pawns
+    an = actives ^. knights
+    ab = actives ^. bishops
+    ar = actives ^. rooks
+    aq = actives ^. queens
+    ak = actives ^. kings
+    np = inactives ^. pawns
+    nn = inactives ^. knights
+    nb = inactives ^. bishops
+    nr = inactives ^. rooks
+    nq = inactives ^. queens
+    nk = inactives ^. kings
 
     -- calculate game phase
     -- pawns don't count, bishops and rooks count 1, rooks 2, queens 4
     -- taken from pesto/ethereal/fruit
-    mgPhase = popCount pn + popCount wn + popCount pb + popCount wb
-        + 2 * (popCount pr + popCount wr)
-        + 4 * (popCount pq + popCount wq)
+    mgPhase = popCount an + popCount nn + popCount ab + popCount nb
+        + 2 * (popCount ar + popCount nr)
+        + 4 * (popCount aq + popCount nq)
     egPhase = 24 - mgPhase
     mask = case game ^. gameTurn of
         White -> 0
         Black -> 56
     pst bb mg eg = pstEval bb mg eg mgPhase egPhase mask
-    pstEvalValue = pst pp pawnMPST pawnEPST
-        - pst wp pawnMPST pawnEPST
-        + pst pn knightMPST knightEPST
-        - pst wn knightMPST knightEPST
-        + pst pb bishopMPST bishopEPST
-        - pst wb bishopMPST bishopEPST
-        + pst pr rookMPST rookEPST
-        - pst wr rookMPST rookEPST
-        + pst pq queenMPST queenEPST
-        - pst wq queenMPST queenEPST
-        + pst pk kingMPST kingEPST
-        - pst wk kingMPST kingEPST
+    pstEvalValue = pst ap pawnMPST pawnEPST
+        - pst np pawnMPST pawnEPST
+        + pst an knightMPST knightEPST
+        - pst nn knightMPST knightEPST
+        + pst ab bishopMPST bishopEPST
+        - pst nb bishopMPST bishopEPST
+        + pst ar rookMPST rookEPST
+        - pst nr rookMPST rookEPST
+        + pst aq queenMPST queenEPST
+        - pst nq queenMPST queenEPST
+        + pst ak kingMPST kingEPST
+        - pst nk kingMPST kingEPST

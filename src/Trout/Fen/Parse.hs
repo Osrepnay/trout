@@ -9,27 +9,32 @@ import Text.Parsec.Char       (digit)
 import Text.Parsec.Combinator (many1)
 import Text.Parsec.String     (Parser)
 import Trout.Bitboard         (fromSqs, (.|.))
-import Trout.Game             (Game (Game), Pieces (Pieces), Sides)
+import Trout.Game             (Game (Game), Pieces (Pieces), flipPieces)
 import Trout.Piece            (Color (Black, White))
 
-parsePieces :: Parser (Sides Pieces)
+-- TODO better fen handling; instead of 1 shot use setSq and friends
+
+-- returns white as active side
+parsePieces :: Parser Pieces
 parsePieces = fenRows
     <&> \pcs ->
-        ( Pieces
-            (genBitboard 'P' pcs)
-            (genBitboard 'N' pcs)
-            (genBitboard 'B' pcs)
-            (genBitboard 'R' pcs)
-            (genBitboard 'Q' pcs)
-            (genBitboard 'K' pcs)
-        , Pieces
-            (genBitboard 'p' pcs)
-            (genBitboard 'n' pcs)
-            (genBitboard 'b' pcs)
-            (genBitboard 'r' pcs)
-            (genBitboard 'q' pcs)
-            (genBitboard 'k' pcs)
-        )
+        let wp = genBitboard 'P' pcs
+            wn = genBitboard 'N' pcs
+            wb = genBitboard 'B' pcs
+            wr = genBitboard 'R' pcs
+            wq = genBitboard 'Q' pcs
+            wk = genBitboard 'K' pcs
+            bp = genBitboard 'p' pcs
+            bn = genBitboard 'n' pcs
+            bb = genBitboard 'b' pcs
+            br = genBitboard 'r' pcs
+            bq = genBitboard 'q' pcs
+            bk = genBitboard 'k' pcs
+        in Pieces
+            (wp .|. wn .|. wb .|. wr .|. wq .|. wk)
+            (wp .|. bp .|. wn .|. bn .|. wk .|. bk)
+            (wp .|. bp .|. wb .|. bb .|. wq .|. bq .|. wk .|. bk)
+            (wr .|. br .|. wq .|. bq .|. wk .|. bk)
   where
     expandRow _ [] = []
     expandRow i (x : xs)
@@ -83,7 +88,7 @@ parseEnPassant = char '-' $> Nothing
     <*> oneOf "12345678"
 
 data Fen = Fen
-    { fenPieces    :: Sides Pieces
+    { fenPieces    :: Pieces
     , fenTurn      :: Color
     , fenCastling  :: Int
     , fenEnPassant :: Maybe Int
@@ -106,11 +111,10 @@ readFen = first show . parse parseFen ""
 fenToGame :: Fen -> Game
 fenToGame fen =
     (case turn of
-        White -> Game w b
-        Black -> Game b w)
+        White -> Game (fenPieces fen)
+        Black -> Game (flipPieces (fenPieces fen)))
     (fenCastling fen)
     (fenEnPassant fen)
     turn
   where
-      (w, b) = fenPieces fen
       turn = fenTurn fen
