@@ -170,19 +170,19 @@ eval game = pstEvalValue
         + 2 * (popCount ar + popCount nr)
         + 4 * (popCount aq + popCount nq)
     egPhase = 24 - mgPhase
-    mask = case game ^. gameTurn of
-        White -> 0
-        Black -> 56
-    pst bb mg eg = pstEval bb mg eg mgPhase egPhase mask
-    pstEvalValue = pst ap pawnMPST pawnEPST
-        - pst np pawnMPST pawnEPST
-        + pst an knightMPST knightEPST
-        - pst nn knightMPST knightEPST
-        + pst ab bishopMPST bishopEPST
-        - pst nb bishopMPST bishopEPST
-        + pst ar rookMPST rookEPST
-        - pst nr rookMPST rookEPST
-        + pst aq queenMPST queenEPST
-        - pst nq queenMPST queenEPST
-        + pst ak kingMPST kingEPST
-        - pst nk kingMPST kingEPST
+    (aMask, nMask) = case game ^. gameTurn of
+        White -> (0, 56)
+        Black -> (56, 0)
+    pst bb mg eg = pstEval bb mg eg mgPhase egPhase
+    pstEvalValue = pst ap pawnMPST pawnEPST aMask
+        - pst np pawnMPST pawnEPST nMask
+        + pst an knightMPST knightEPST aMask
+        - pst nn knightMPST knightEPST nMask
+        + pst ab bishopMPST bishopEPST aMask
+        - pst nb bishopMPST bishopEPST nMask
+        + pst ar rookMPST rookEPST aMask
+        - pst nr rookMPST rookEPST nMask
+        + pst aq queenMPST queenEPST aMask
+        - pst nq queenMPST queenEPST nMask
+        + pst ak kingMPST kingEPST aMask
+        - pst nk kingMPST kingEPST nMask
