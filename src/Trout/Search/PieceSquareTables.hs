@@ -11,6 +11,7 @@ module Trout.Search.PieceSquareTables
 import           Data.Vector.Primitive   (Vector, unsafeIndex)
 import qualified Data.Vector.Primitive   as V
 import           Trout.Bitboard          (Bitboard, foldSqs, xor)
+import           Trout.Piece             (Piece (..))
 import           Trout.Search.Worthiness
     ( bishopWorth
     , knightWorth
@@ -163,8 +164,8 @@ kingEPST = V.fromList $ concat $ reverse
     , [   1,   3,   2,  -2,   0,  -1,   1,   2 ]
     ]
 
-pstEval :: Bitboard -> Vector Int -> Vector Int -> Int -> Int -> Int -> Int
-pstEval bb mg eg !mgPhase !egPhase !mask = foldSqs
+pstEval :: Bitboard -> Piece -> Int -> Int -> Int -> Int
+pstEval bb piece !mgPhase !egPhase !mask = foldSqs
     (\score sqRaw ->
         let sq = sqRaw `xor` mask
             m = mg `unsafeIndex` sq
@@ -172,4 +173,12 @@ pstEval bb mg eg !mgPhase !egPhase !mask = foldSqs
         in score + (m * mgPhase + e * egPhase) `quot` 24)
     0
     bb
+  where
+    (mg, eg) = case piece of
+        Pawn   -> (pawnMPST, pawnEPST)
+        Knight -> (knightMPST, knightEPST)
+        Bishop -> (bishopMPST, bishopEPST)
+        Rook   -> (rookMPST, rookEPST)
+        Queen  -> (queenMPST, queenEPST)
+        King   -> (kingMPST, kingMPST)
 {-# INLINE pstEval #-}

@@ -31,22 +31,8 @@ import Trout.Game
     , rooks
     )
 import Trout.Game.Move                  (Move (..), nullMove)
-import Trout.Piece                      (Color (..))
-import Trout.Search.PieceSquareTables
-    ( bishopEPST
-    , bishopMPST
-    , kingEPST
-    , kingMPST
-    , knightEPST
-    , knightMPST
-    , pawnEPST
-    , pawnMPST
-    , pstEval
-    , queenEPST
-    , queenMPST
-    , rookEPST
-    , rookMPST
-    )
+import Trout.Piece                      (Color (..), Piece (..))
+import Trout.Search.PieceSquareTables   (pstEval)
 import Trout.Search.TranspositionTable
     ( NodeType (..)
     , TTEntry (..)
@@ -148,41 +134,30 @@ searchNega depth alpha beta game
 eval :: HasGame a => a -> Int
 eval game = pstEvalValue
   where
-    actives = game ^. gamePieces . active
-    inactives = game ^. gamePieces . inactive
-    ap = actives ^. pawns
-    an = actives ^. knights
-    ab = actives ^. bishops
-    ar = actives ^. rooks
-    aq = actives ^. queens
-    ak = actives ^. kings
-    np = inactives ^. pawns
-    nn = inactives ^. knights
-    nb = inactives ^. bishops
-    nr = inactives ^. rooks
-    nq = inactives ^. queens
-    nk = inactives ^. kings
+    pieces = game ^. gamePieces
+    actives = pieces ^. active
+    inactives = pieces ^. inactive
 
     -- calculate game phase
     -- pawns don't count, bishops and rooks count 1, rooks 2, queens 4
     -- taken from pesto/ethereal/fruit
-    mgPhase = popCount an + popCount nn + popCount ab + popCount nb
-        + 2 * (popCount ar + popCount nr)
-        + 4 * (popCount aq + popCount nq)
+    mgPhase = popCount (pieces ^. knights) + popCount (pieces ^. bishops)
+        + 2 * popCount (pieces ^. rooks)
+        + 4 * popCount (pieces ^. queens)
     egPhase = 24 - mgPhase
     (aMask, nMask) = case game ^. gameTurn of
         White -> (0, 56)
         Black -> (56, 0)
-    pst bb mg eg = pstEval bb mg eg mgPhase egPhase
-    pstEvalValue = pst ap pawnMPST pawnEPST aMask
-        - pst np pawnMPST pawnEPST nMask
-        + pst an knightMPST knightEPST aMask
-        - pst nn knightMPST knightEPST nMask
-        + pst ab bishopMPST bishopEPST aMask
-        - pst nb bishopMPST bishopEPST nMask
-        + pst ar rookMPST rookEPST aMask
-        - pst nr rookMPST rookEPST nMask
-        + pst aq queenMPST queenEPST aMask
-        - pst nq queenMPST queenEPST nMask
-        + pst ak kingMPST kingEPST aMask
-        - pst nk kingMPST kingEPST nMask
+    pst bb p = pstEval bb p mgPhase egPhase
+    pstEvalValue = pst (actives ^. pawns) Pawn aMask
+        - pst (inactives ^. pawns) Pawn nMask
+        + pst (actives ^. knights) Knight aMask
+        - pst (inactives ^. knights) Knight nMask
+        + pst (actives ^. bishops) Bishop aMask
+        - pst (inactives ^. bishops) Bishop nMask
+        + pst (actives ^. rooks) Rook aMask
+        - pst (inactives ^. rooks) Rook nMask
+        + pst (actives ^. queens) Queen aMask
+        - pst (inactives ^. queens) Queen nMask
+        + pst (actives ^. kings) King aMask
+        - pst (inactives ^. kings) King nMask
