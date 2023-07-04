@@ -21,9 +21,11 @@ import Text.Parsec
     , oneOf
     , optionMaybe
     , parse
+    , skipMany1
     , space
     , spaces
     , string
+    , string'
     , try
     , (<|>)
     )
@@ -73,47 +75,56 @@ data UciCommand
     | CommQuit
     deriving (Eq, Show)
 
-wordBreak :: Parser ()
-wordBreak = (many1 space $> ()) <|> eof
+-- TODO a lot of this is kinda questionably correct, run through it fully sometime
+
+-- make sure there aren't any trailing bits
+commBreak :: Parser ()
+commBreak = (many1 space $> ()) <|> eof
+
+spaces1 :: Parser ()
+spaces1 = skipMany1 space
 
 -- simple commands without arguments
 parseArgless :: Parser UciCommand
-parseArgless = try (string "uci" *> wordBreak) $> CommUci -- TODO when switch to nightly or get newer parsec switch to string'
-    <|> try (string "Dont" *> wordBreak) $> CommDont
-    <|> try (string "isready" *> wordBreak) $> CommIsready
-    <|> try (string "ucinewgame" *> wordBreak) $> CommUcinewgame
-    <|> try (string "stop" *> wordBreak) $> CommStop
-    <|> try (string "ponderhit" *> wordBreak) $> CommPonderhit
-    <|> try (string "quit" *> wordBreak) $> CommQuit
+parseArgless = string' "uci" *> commBreak $> CommUci
+    <|> string' "Dont" *> commBreak $> CommDont
+    <|> string' "isready" *> commBreak $> CommIsready
+    <|> string' "ucinewgame" *> commBreak $> CommUcinewgame
+    <|> string' "stop" *> commBreak $> CommStop
+    <|> string' "ponderhit" *> commBreak $> CommPonderhit
+    <|> string' "quit" *> commBreak $> CommQuit
 
 parseDebug :: Parser UciCommand
-parseDebug = try (string "debug")
-    *> spaces
-    *> (string "on" $> True <|> string "off" $> False)
+parseDebug = string' "debug"
+    *> spaces1
+    *> (string' "on" $> True <|> string' "off" $> False)
+    <* commBreak
     <&> CommDebug
 
 parseSetoption :: Parser UciCommand
 parseSetoption = CommSetoption
-    <$> (try (string "setoption")
-        *> spaces
+    <$> (string' "setoption"
+        *> spaces1
         *> string "name"
-        *> manyTill anyChar (try (string "value")))
+        *> manyTill anyChar (string' "value"))
     <*> many anyChar
+    <* commBreak
 
 -- garbage command for normie engines!
 parseRegister :: Parser UciCommand
-parseRegister = CommRegister <$> (try (string "register") *> many anyChar)
+parseRegister = CommRegister <$> (string' "register" *> many anyChar)
 
 parsePosition :: Parser UciCommand
-parsePosition = try (string "position")
-    *> spaces
+parsePosition = string' "position"
+    *> spaces1
     $> CommPosition
-    <*> (string "startpos" $> PositionStartpos
-        <|> PositionFen <$> (string "fen" *> spaces *> parseFen))
-    <*> (spaces
+    <*> (string' "startpos" $> PositionStartpos
+        <|> PositionFen <$> (string' "fen" *> spaces1 *> parseFen))
+    <*> (spaces1
         *> string "moves"
         *> many parseUciMoves
-        <|> pure [])
+        <|> pure []) -- maybe should be more strict; reject if mangled here
+    <* commBreak
   where
     makeUciMove fromCol fromRow toCol toRow maybePromote = UciMove
         fromSq
@@ -136,18 +147,18 @@ parsePosition = try (string "position")
         <*> oneOf "abcdefgh"
         <*> oneOf "12345678"
         <*> optionMaybe (oneOf "nbrq")
-    parseUciMoves = spaces *> parseUciMove
+    parseUciMoves = spaces1 *> parseUciMove
 
 parseGo :: Parser UciCommand
-parseGo = try (string "go") *> many (try (spaces *> parseArg)) <&> CommGo
+parseGo = string' "go" *> many (spaces1 *> parseArg) <&> CommGo
   where
     parseIntArg :: String -> (Int -> CommGoArg) -> Parser CommGoArg
-    parseIntArg n c = try (string n) *> spaces *> (c . read <$> many1 digit)
+    parseIntArg n c = string' n *> spaces1 *> (c . read <$> many1 digit)
     parseArg =
-        (try (string "searchmoves")
+        (string' "searchmoves"
             *> many (try (spaces *> many alphaNum))
             <&> GoSearchMoves)
-        <|> try (string "ponder") $> GoPonder
+        <|> string' "ponder" $> GoPonder
         <|> parseIntArg "wtime" GoWtime
         <|> parseIntArg "winc" GoWinc
         <|> parseIntArg "btime" GoBtime
@@ -157,7 +168,7 @@ parseGo = try (string "go") *> many (try (spaces *> parseArg)) <&> CommGo
         <|> parseIntArg "nodes" GoNodes
         <|> parseIntArg "mate" GoMate
         <|> parseIntArg "movetime" GoMovetime
-        <|> try (string "infinite") $> GoInfinite
+        <|> string' "infinite" $> GoInfinite
 
 parseUciCommand :: Parser UciCommand
 parseUciCommand = parseArgless
