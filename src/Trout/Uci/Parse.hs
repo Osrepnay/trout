@@ -1,79 +1,81 @@
 module Trout.Uci.Parse
-    ( CommPositionInit (..)
-    , CommGoArg (..)
-    , UciCommand (..)
-    , UciMove (..)
-    , parseUciCommand
-    , readUciLine
-    ) where
+  ( CommPositionInit (..),
+    CommGoArg (..),
+    UciCommand (..),
+    UciMove (..),
+    parseUciCommand,
+    readUciLine,
+  )
+where
 
-import Data.Bifunctor     (Bifunctor (first))
-import Data.Char          (ord)
-import Data.Functor       (($>), (<&>))
+import Data.Bifunctor (Bifunctor (first))
+import Data.Char (ord)
+import Data.Functor (($>), (<&>))
 import Text.Parsec
-    ( alphaNum
-    , anyChar
-    , digit
-    , eof
-    , many
-    , many1
-    , manyTill
-    , oneOf
-    , optionMaybe
-    , parse
-    , skipMany1
-    , space
-    , spaces
-    , string
-    , string'
-    , try
-    , (<|>)
-    )
+  ( alphaNum,
+    anyChar,
+    digit,
+    eof,
+    many,
+    many1,
+    manyTill,
+    oneOf,
+    optionMaybe,
+    parse,
+    skipMany1,
+    space,
+    spaces,
+    string,
+    string',
+    try,
+    (<|>),
+  )
 import Text.Parsec.String (Parser)
-import Trout.Fen.Parse    (Fen, parseFen)
-import Trout.Piece        (Piece (..))
+import Trout.Fen.Parse (Fen, parseFen)
+import Trout.Piece (Piece (..))
 
 data CommPositionInit
-    = PositionStartpos
-    | PositionFen Fen
-    deriving (Eq, Show)
+  = PositionStartpos
+  | PositionFen Fen
+  deriving (Eq, Show)
 
 -- has less info than trout move
 data UciMove = UciMove
-    { uciMoveFrom    :: Int
-    , uciMoveTo      :: Int
-    , uciMovePromote :: Maybe Piece
-    } deriving (Eq, Show)
+  { uciMoveFrom :: Int,
+    uciMoveTo :: Int,
+    uciMovePromote :: Maybe Piece
+  }
+  deriving (Eq, Show)
 
 data CommGoArg
-    = GoSearchMoves [String]
-    | GoPonder
-    | GoWtime Int
-    | GoWinc Int
-    | GoBtime Int
-    | GoBinc Int
-    | GoMovestogo Int
-    | GoDepth Int
-    | GoNodes Int
-    | GoMate Int
-    | GoMovetime Int
-    | GoInfinite
-    deriving (Eq, Show)
+  = GoSearchMoves [String]
+  | GoPonder
+  | GoWtime Int
+  | GoWinc Int
+  | GoBtime Int
+  | GoBinc Int
+  | GoMovestogo Int
+  | GoDepth Int
+  | GoNodes Int
+  | GoMate Int
+  | GoMovetime Int
+  | GoInfinite
+  deriving (Eq, Show)
 
 data UciCommand
-    = CommUci
-    | CommDebug Bool
-    | CommDont
-    | CommIsready
-    | CommSetoption String String
-    | CommRegister String -- not actual type, but we dont need register
-    | CommUcinewgame
-    | CommPosition CommPositionInit [UciMove]
-    | CommGo [CommGoArg]
-    | CommStop
-    | CommPonderhit
-    | CommQuit
-    deriving (Eq, Show)
+  = CommUci
+  | CommDebug Bool
+  | CommDont
+  | CommIsready
+  | CommSetoption String String
+  | CommRegister String -- not actual type, but we dont need register
+  | CommUcinewgame
+  | CommPosition CommPositionInit [UciMove]
+  | CommGo [CommGoArg]
+  | CommStop
+  | CommPonderhit
+  | CommQuit
+  deriving (Eq, Show)
 
 -- TODO a lot of this is kinda questionably correct, run through it fully sometime
 
@@ -86,7 +88,8 @@ spaces1 = skipMany1 space
 
 -- simple commands without arguments
 parseArgless :: Parser UciCommand
-parseArgless = string' "uci" *> commBreak $> CommUci
+parseArgless =
+  string' "uci" *> commBreak $> CommUci
     <|> string' "Dont" *> commBreak $> CommDont
     <|> string' "isready" *> commBreak $> CommIsready
     <|> string' "ucinewgame" *> commBreak $> CommUcinewgame
@@ -95,18 +98,21 @@ parseArgless = string' "uci" *> commBreak $> CommUci
     <|> string' "quit" *> commBreak $> CommQuit
 
 parseDebug :: Parser UciCommand
-parseDebug = string' "debug"
+parseDebug =
+  string' "debug"
     *> spaces1
     *> (string' "on" $> True <|> string' "off" $> False)
     <* commBreak
     <&> CommDebug
 
 parseSetoption :: Parser UciCommand
-parseSetoption = CommSetoption
-    <$> (string' "setoption"
-        *> spaces1
-        *> string "name"
-        *> manyTill anyChar (string' "value"))
+parseSetoption =
+  CommSetoption
+    <$> ( string' "setoption"
+            *> spaces1
+            *> string "name"
+            *> manyTill anyChar (string' "value")
+        )
     <*> many anyChar
     <* commBreak
 
@@ -115,33 +121,39 @@ parseRegister :: Parser UciCommand
 parseRegister = CommRegister <$> (string' "register" *> many anyChar)
 
 parsePosition :: Parser UciCommand
-parsePosition = string' "position"
+parsePosition =
+  string' "position"
     *> spaces1
     $> CommPosition
-    <*> (string' "startpos" $> PositionStartpos
-        <|> PositionFen <$> (string' "fen" *> spaces1 *> parseFen))
-    <*> (spaces1
-        *> string "moves"
-        *> many parseUciMoves
-        <|> pure []) -- maybe should be more strict; reject if mangled here
+    <*> ( string' "startpos" $> PositionStartpos
+            <|> PositionFen <$> (string' "fen" *> spaces1 *> parseFen)
+        )
+    <*> ( spaces1
+            *> string "moves"
+            *> many parseUciMoves
+            <|> pure [] -- maybe should be more strict; reject if mangled here
+        )
     <* commBreak
   where
-    makeUciMove fromCol fromRow toCol toRow maybePromote = UciMove
+    makeUciMove fromCol fromRow toCol toRow maybePromote =
+      UciMove
         fromSq
         toSq
         maybePromotePiece
       where
         fromSq = (ord fromRow - ord '1') * 8 + ord fromCol - ord 'a'
         toSq = (ord toRow - ord '1') * 8 + ord toCol - ord 'a'
-        maybePromotePiece = maybePromote
+        maybePromotePiece =
+          maybePromote
             >>= \p -> case p of
-                'n' -> Just Knight
-                'b' -> Just Bishop
-                'r' -> Just Rook
-                'q' -> Just Queen
-                _   -> Nothing
+              'n' -> Just Knight
+              'b' -> Just Bishop
+              'r' -> Just Rook
+              'q' -> Just Queen
+              _ -> Nothing
     parseUciMove :: Parser UciMove
-    parseUciMove = makeUciMove
+    parseUciMove =
+      makeUciMove
         <$> oneOf "abcdefgh"
         <*> oneOf "12345678"
         <*> oneOf "abcdefgh"
@@ -155,9 +167,10 @@ parseGo = string' "go" *> many (spaces1 *> parseArg) <&> CommGo
     parseIntArg :: String -> (Int -> CommGoArg) -> Parser CommGoArg
     parseIntArg n c = string' n *> spaces1 *> (c . read <$> many1 digit)
     parseArg =
-        (string' "searchmoves"
-            *> many (try (spaces *> many alphaNum))
-            <&> GoSearchMoves)
+      ( string' "searchmoves"
+          *> many (try (spaces *> many alphaNum))
+          <&> GoSearchMoves
+      )
         <|> string' "ponder" $> GoPonder
         <|> parseIntArg "wtime" GoWtime
         <|> parseIntArg "winc" GoWinc
@@ -171,7 +184,8 @@ parseGo = string' "go" *> many (spaces1 *> parseArg) <&> CommGo
         <|> string' "infinite" $> GoInfinite
 
 parseUciCommand :: Parser UciCommand
-parseUciCommand = parseArgless
+parseUciCommand =
+  parseArgless
     <|> parseDebug
     <|> parseSetoption
     <|> parseRegister

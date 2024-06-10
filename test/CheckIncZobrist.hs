@@ -1,24 +1,26 @@
 module CheckIncZobrist
-    ( incZobristSpec
-    ) where
-import Test.Hspec (Spec, describe, context)
-import Test.Hspec.QuickCheck (prop)
-import Test.QuickCheck (forAll, listOf, chooseInt)
-import Trout.Game (makeMove, hgGame, allMoves, startingGame, mkHGame, hgHash)
-import Lens.Micro ((^.))
+  ( incZobristSpec,
+  )
+where
+
 import Data.Hashable (hash)
+import Lens.Micro ((^.))
+import Test.Hspec (Spec, context, describe)
+import Test.Hspec.QuickCheck (prop)
+import Test.QuickCheck (chooseInt, forAll, listOf)
+import Trout.Game (allMoves, hgGame, hgHash, makeMove, mkHGame, startingGame)
 
 incZobristSpec :: Spec
-incZobristSpec = describe "makeMove"
-    $ context "for random series of moves"
-    $ prop "should have the correct hash"
-    $ forAll (listOf (chooseInt (0, maxBound)))
-    $ \nums -> doInts nums (mkHGame startingGame)
+incZobristSpec = describe "makeMove" $
+  context "for random series of moves" $
+    prop "should have the correct hash" $
+      forAll (listOf (chooseInt (0, maxBound))) $
+        \nums -> doInts nums (mkHGame startingGame)
   where
     -- uses ints as moves
     doInts (m : ms) hgame = case moved of
-        Just hg -> doInts ms hg
-        Nothing -> doInts [] hgame
+      Just hg -> doInts ms hg
+      Nothing -> doInts [] hgame
       where
         moved = makeMove hgame (moves !! (m `rem` length moves))
         moves = allMoves (hgame ^. hgGame)
