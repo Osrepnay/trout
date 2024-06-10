@@ -19,7 +19,7 @@ module Trout.Game.Zobrists
 
 import           Control.Monad                    (replicateM)
 import           Control.Monad.Trans.State.Strict (State, evalState, state)
-import           Data.Bits                        (shiftL, shiftR, xor)
+import           Data.Bits                        ((!<<.), (!>>.), (.^.))
 import           Data.Vector.Primitive            (Vector, (!))
 import qualified Data.Vector.Primitive            as V
 import           Trout.Piece                      (Color (..), Piece (..))
@@ -29,9 +29,9 @@ import           Trout.Piece                      (Color (..), Piece (..))
 xorshiftState :: State Int Int
 xorshiftState = state
     $ \s0 ->
-        let s1 = s0 `xor` (s0 `shiftL` 13)
-            s2 = s1 `xor` (s1 `shiftR` 7)
-            s3 = s2 `xor` (s2 `shiftL` 17)
+        let s1 = s0 .^. (s0 !<<. 13)
+            s2 = s1 .^. (s1 !>>. 7)
+            s3 = s2 .^. (s2 !<<. 17)
         in (s3, s3)
 
 -- all of the zobrists, cut it up later

@@ -10,7 +10,7 @@ module Trout.Search.PieceSquareTables
 
 import           Data.Vector.Primitive   (Vector, unsafeIndex)
 import qualified Data.Vector.Primitive   as V
-import           Trout.Bitboard          (Bitboard, foldSqs, xor)
+import           Trout.Bitboard          (Bitboard, foldSqs, (.^.))
 import           Trout.Piece             (Piece (..))
 import           Trout.Search.Worthiness
     ( bishopWorth
@@ -167,7 +167,7 @@ kingEPST = V.fromList $ concat $ reverse
 pstEval :: Bitboard -> Piece -> Int -> Int -> Int -> Int
 pstEval bb piece !mgPhase !egPhase !mask = foldSqs
     (\score sqRaw ->
-        let sq = sqRaw `xor` mask
+        let sq = sqRaw .^. mask
             m = mg `unsafeIndex` sq
             e = eg `unsafeIndex` sq
         in score + (m * mgPhase + e * egPhase) `quot` 24)

@@ -44,6 +44,7 @@ import Trout.Bitboard
     , (!<<.)
     , (!>>.)
     , (.&.)
+    , (.^.)
     , (.|.)
     )
 import Trout.Game.MoveGen
@@ -111,7 +112,7 @@ genPiece slide diag royal afb pieces = afb pieceBB
      1   0   0   ? IMPOSSIBLE
      1   1   0   ? IMPOSSIBLE
     -}
-    tf old new x = x `xor` old .|. new
+    tf old new x = x .^. old .|. new
     {-
     old new cur res
      0   0   0   0
@@ -180,9 +181,9 @@ active afb (Pieces a l d r) = afb masked
   where
     masked@(Pieces _ ml md mr) = Pieces a (l .&. a) (d .&. a) (r .&. a)
     -- xor instead of & complement is safe; ml is strictly a subset of l
-    inl = ml `xor` l
-    ind = md `xor` d
-    inr = mr `xor` r
+    inl = ml .^. l
+    ind = md .^. d
+    inr = mr .^. r
 {-# INLINE active #-}
 
 -- getter for current inactive pieces
@@ -199,9 +200,9 @@ inactive afb (Pieces a l d r) = afb masked
   where
     a' = complement a
     masked@(Pieces _ ml md mr) = Pieces a (l .&. a') (d .&. a') (r .&. a')
-    al = ml `xor` l
-    ad = md `xor` d
-    ar = mr `xor` r
+    al = ml .^. l
+    ad = md .^. d
+    ar = mr .^. r
 {-# INLINE inactive #-}
 
 -- flip active side
@@ -271,23 +272,23 @@ instance HasGame Game where intoGame = id
 
 instance Hashable Game where
     hash (Game pieces castle enP turn) = turnHash
-        `xor` castleHash
-        `xor` enPassantHash
-        `xor` hashBitboard (white ^. pawns) whitePawnZobrists
-        `xor` hashBitboard (black ^. pawns) blackPawnZobrists
-        `xor` hashBitboard (white ^. knights) whiteKnightZobrists
-        `xor` hashBitboard (black ^. knights) blackKnightZobrists
-        `xor` hashBitboard (white ^. bishops) whiteBishopZobrists
-        `xor` hashBitboard (black ^. bishops) blackBishopZobrists
-        `xor` hashBitboard (white ^. rooks) whiteRookZobrists
-        `xor` hashBitboard (black ^. rooks) blackRookZobrists
-        `xor` hashBitboard (white ^. queens) whiteQueenZobrists
-        `xor` hashBitboard (black ^. queens) blackQueenZobrists
-        `xor` hashBitboard (white ^. kings) whiteKingZobrists
-        `xor` hashBitboard (black ^. kings) blackKingZobrists
+        .^. castleHash
+        .^. enPassantHash
+        .^. hashBitboard (white ^. pawns) whitePawnZobrists
+        .^. hashBitboard (black ^. pawns) blackPawnZobrists
+        .^. hashBitboard (white ^. knights) whiteKnightZobrists
+        .^. hashBitboard (black ^. knights) blackKnightZobrists
+        .^. hashBitboard (white ^. bishops) whiteBishopZobrists
+        .^. hashBitboard (black ^. bishops) blackBishopZobrists
+        .^. hashBitboard (white ^. rooks) whiteRookZobrists
+        .^. hashBitboard (black ^. rooks) blackRookZobrists
+        .^. hashBitboard (white ^. queens) whiteQueenZobrists
+        .^. hashBitboard (black ^. queens) blackQueenZobrists
+        .^. hashBitboard (white ^. kings) whiteKingZobrists
+        .^. hashBitboard (black ^. kings) blackKingZobrists
       where
         hashBitboard bb table = foldl'
-            (\b a -> table `unsafeIndex` a `xor` b)
+            (\b a -> table `unsafeIndex` a .^. b)
             0
             (toSqs bb)
         (white, black, turnHash) = case turn of
@@ -299,7 +300,7 @@ instance Hashable Game where
             Just sq -> enPassantZobrists `unsafeIndex` (sq `rem` 8)
             Nothing -> 0
 
-    hashWithSalt salt game = hash game `xor` salt
+    hashWithSalt salt game = hash game .^. salt
 
 -- https://tearth.dev/bitboard-viewer/
 startingGame :: Game
@@ -350,7 +351,7 @@ instance HasGame HGame where intoGame = hgGame
 
 instance Hashable HGame where
     hash (HGame _ h) = h
-    hashWithSalt salt game = hash game `xor` salt
+    hashWithSalt salt game = hash game .^. salt
 
 -- create a HGame (hashed game) from a Game
 mkHGame :: Game -> HGame
@@ -367,7 +368,7 @@ flipTurn (HGame (Game pcs c enP t) h) = HGame
     (Game
         (flipPieces pcs)
         c enP (other t))
-    (h `xor` playingZobrist)
+    (h .^. playingZobrist)
 {-# INLINE flipTurn #-}
 
 -- helpers for moving whole pieces around
@@ -393,7 +394,7 @@ moveSqActive piece from to game = game
     & gamePieces . active . byPiece piece %~ (`setBit` to) . (`clearBit` from)
     & hgHash %~ xor
         (pieceZobrists color piece `unsafeIndex` from
-            `xor` pieceZobrists color piece `unsafeIndex` to)
+            .^. pieceZobrists color piece `unsafeIndex` to)
   where
     color = game ^. gameTurn
 {-# INLINE moveSqActive #-}
@@ -478,7 +479,7 @@ makeMove game (Move piece special from to) = do
                         nCastles
                         Nothing
                         t)
-                    (h `xor` pz `xor` wz `xor` cz `xor` ez)
+                    (h .^. pz .^. wz .^. cz .^. ez)
     afterSpecials <- specials movedAndCleared
     checkChecked <- nothingIfCheck afterSpecials
     pure (flipTurn checkChecked)
@@ -489,7 +490,7 @@ makeMove game (Move piece special from to) = do
     -- basic moving
     doMove !pcs =
         ( pcs & active . byPiece piece %~ (`clearBit` from) . (`setBit` to)
-        , (moverZs `unsafeIndex` from) `xor` (moverZs `unsafeIndex` to)
+        , (moverZs `unsafeIndex` from) .^. (moverZs `unsafeIndex` to)
         )
     -- capture opponent's piece if needed
     captureAll pcs
@@ -508,7 +509,7 @@ makeMove game (Move piece special from to) = do
     clearCastles c =
         ( newC
         , castleZobrists `unsafeIndex` c
-            `xor` castleZobrists `unsafeIndex` newC
+            .^. castleZobrists `unsafeIndex` newC
         )
       where
         newC = c .&. complement
