@@ -1,6 +1,6 @@
 module Trout.Piece
   ( Color (..),
-    Piece (..),
+    PieceType (..),
     other,
   )
 where
@@ -12,5 +12,5 @@ other :: Color -> Color
 other White = Black
 other Black = White
 
-data Piece = Pawn | Knight | Bishop | Rook | Queen | King
+data PieceType = Pawn | Knight | Bishop | Rook | Queen | King
   deriving (Eq, Show)

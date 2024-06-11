@@ -93,7 +93,7 @@ import Trout.Game.Zobrists
     whiteQueenZobrists,
     whiteRookZobrists,
   )
-import Trout.Piece (Color (..), Piece (..), other)
+import Trout.Piece (Color (..), PieceType (..), other)
 
 -- TODO maybe 1 more field for occupancy?
 data Pieces = Pieces
@@ -231,7 +231,7 @@ flipPieces (Pieces a l d r) = Pieces (complement a .&. (l .|. d .|. r)) l d r
 {-# INLINE flipPieces #-}
 
 -- get the respective lens for the piece
-byPiece :: Piece -> Lens' Pieces Bitboard
+byPiece :: PieceType -> Lens' Pieces Bitboard
 byPiece Pawn = pawns
 byPiece Knight = knights
 byPiece Bishop = bishops
@@ -412,7 +412,7 @@ flipTurn (HGame (Game pcs c enP t) h) =
 
 -- helpers for moving whole pieces around
 -- TODO CONSIDER -> MAYBE HGAME; NOTHING IF UNCHANGED
-setSqActive :: Piece -> Int -> HGame -> HGame
+setSqActive :: PieceType -> Int -> HGame -> HGame
 setSqActive piece sq game =
   game
     & gamePieces . active . byPiece piece %~ (`setBit` sq)
@@ -422,7 +422,7 @@ setSqActive piece sq game =
 {-# INLINE setSqActive #-}
 
 -- works on both active an inactive
-clearSq :: Piece -> Int -> HGame -> HGame
+clearSq :: PieceType -> Int -> HGame -> HGame
 clearSq piece sq game =
   game
     & gamePieces . pieceActive %~ (`clearBit` sq)
@@ -432,7 +432,7 @@ clearSq piece sq game =
         (pieceZobrists (game ^. gameTurn) piece `unsafeIndex` sq)
 {-# INLINE clearSq #-}
 
-moveSqActive :: Piece -> Int -> Int -> HGame -> HGame
+moveSqActive :: PieceType -> Int -> Int -> HGame -> HGame
 moveSqActive piece from to game =
   game
     & gamePieces . active . byPiece piece %~ (`setBit` to) . (`clearBit` from)

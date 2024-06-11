@@ -18,7 +18,7 @@ where
 import Data.Vector.Primitive (Vector, unsafeIndex)
 import Data.Vector.Primitive qualified as V
 import Trout.Bitboard (Bitboard, foldSqs, (.^.))
-import Trout.Piece (Piece (..))
+import Trout.Piece (PieceType (..))
 import Trout.Search.Worthiness
   ( bishopWorth,
     knightWorth,
@@ -217,7 +217,7 @@ kingEPST =
           [1, 3, 2, -2, 0, -1, 1, 2]
         ]
 
-pstEval :: Bitboard -> Piece -> Int -> Int -> Int -> Int
+pstEval :: Bitboard -> PieceType -> Int -> Int -> Int -> Int
 pstEval bb piece !mgPhase !egPhase !mask =
   foldSqs
     ( \score sqRaw ->

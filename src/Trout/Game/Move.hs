@@ -7,7 +7,7 @@ module Trout.Game.Move
 where
 
 import Data.Char (chr, ord)
-import Trout.Piece (Piece (..))
+import Trout.Piece (PieceType (..))
 
 -- moves that dont fit normal piece things
 data SpecialMove
@@ -16,12 +16,12 @@ data SpecialMove
   | CastleKing
   | CastleQueen
   | EnPassant Int -- en passant pawn squaree
-  | Promotion Piece -- promote piece
+  | Promotion PieceType -- promote piece
   deriving (Eq, Show)
 
 -- TODO consider moveIsCapture :: Bool
 data Move = Move
-  { movePiece :: !Piece,
+  { movePiece :: !PieceType,
     moveSpecial :: !SpecialMove,
     moveFrom :: !Int,
     moveTo :: !Int

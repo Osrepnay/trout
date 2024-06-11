@@ -32,7 +32,7 @@ import Text.Parsec
   )
 import Text.Parsec.String (Parser)
 import Trout.Fen.Parse (Fen, parseFen)
-import Trout.Piece (Piece (..))
+import Trout.Piece (PieceType (..))
 
 data CommPositionInit
   = PositionStartpos
@@ -43,7 +43,7 @@ data CommPositionInit
 data UciMove = UciMove
   { uciMoveFrom :: Int,
     uciMoveTo :: Int,
-    uciMovePromote :: Maybe Piece
+    uciMovePromote :: Maybe PieceType
   }
   deriving (Eq, Show)
 

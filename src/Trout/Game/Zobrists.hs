@@ -23,7 +23,7 @@ import Control.Monad.Trans.State.Strict (State, evalState, state)
 import Data.Bits ((!<<.), (!>>.), (.^.))
 import Data.Vector.Primitive (Vector, (!))
 import Data.Vector.Primitive qualified as V
-import Trout.Piece (Color (..), Piece (..))
+import Trout.Piece (Color (..), PieceType (..))
 
 -- NEED 64 BIT INT!!! (probably) FOR GOOD RESULTS!!!!!
 
@@ -90,7 +90,7 @@ playingZobrist = allOfThem ! (12 * 64 + 16)
 enPassantZobrists :: Vector Int
 enPassantZobrists = V.slice (12 * 64 + 16 + 1) 8 allOfThem
 
-pieceZobrists :: Color -> Piece -> Vector Int
+pieceZobrists :: Color -> PieceType -> Vector Int
 pieceZobrists White Pawn = whitePawnZobrists
 pieceZobrists Black Pawn = blackPawnZobrists
 pieceZobrists White Knight = whiteKnightZobrists

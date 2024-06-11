@@ -44,7 +44,7 @@ import Trout.Game.MoveGen.Sliding.Magic
   ( bishopMovesMagic,
     rookMovesMagic,
   )
-import Trout.Piece (Color (..), Piece (..))
+import Trout.Piece (Color (..), PieceType (..))
 
 type DList a = [a] -> [a]
 
@@ -77,7 +77,7 @@ tableGen ds = V.generate 64 $
               nSqY < 8
           ]
 
-promos :: [Piece]
+promos :: [PieceType]
 promos = [Knight, Bishop, Rook, Queen]
 
 -- batched!

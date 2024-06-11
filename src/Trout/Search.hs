@@ -32,7 +32,7 @@ import Trout.Game
     rooks,
   )
 import Trout.Game.Move (Move (..), nullMove)
-import Trout.Piece (Color (..), Piece (..))
+import Trout.Piece (Color (..), PieceType (..))
 import Trout.Search.PieceSquareTables (pstEval)
 import Trout.Search.TranspositionTable
   ( NodeType (..),
