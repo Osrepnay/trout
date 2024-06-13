@@ -15,7 +15,7 @@ module Trout.Search.PieceSquareTables
   )
 where
 
-import Data.Vector.Primitive (Vector, unsafeIndex)
+import Data.Vector.Primitive (Vector, (!))
 import Data.Vector.Primitive qualified as V
 import Trout.Bitboard (Bitboard, foldSqs, (.^.))
 import Trout.Piece (PieceType (..))
@@ -222,8 +222,8 @@ pstEval bb piece !mgPhase !egPhase !mask =
   foldSqs
     ( \score sqRaw ->
         let sq = sqRaw .^. mask
-            m = mg `unsafeIndex` sq
-            e = eg `unsafeIndex` sq
+            m = mg ! sq
+            e = eg ! sq
          in score + (m * mgPhase + e * egPhase) `quot` 24
     )
     0

@@ -3,39 +3,40 @@ module Trout.Fen.Parse (parseFen, readFen, Fen (..), fenToGame) where
 import Control.Applicative ((<|>))
 import Data.Bifunctor (first)
 import Data.Char (digitToInt, isDigit, ord)
+import Data.Foldable (Foldable (foldl'))
 import Data.Functor (($>), (<&>))
 import Text.Parsec (char, oneOf, parse, spaces)
 import Text.Parsec.Char (digit)
 import Text.Parsec.Combinator (many1)
 import Text.Parsec.String (Parser)
-import Trout.Bitboard (fromSqs, (.|.))
-import Trout.Game (Game (Game), Pieces (Pieces), flipPieces)
-import Trout.Piece (Color (Black, White))
+import Trout.Bitboard ((.|.))
+import Trout.Game (Castling (..), Game, Pieces, addPiece, emptyPieces, mkGame)
+import Trout.Piece (Color (Black, White), Piece (..), PieceType (..))
 
 -- TODO better fen handling; instead of 1 shot use setSq and friends
+-- TODO error out properly with parsec if e.g. invalid fen
 
 -- returns white as active side
 parsePieces :: Parser Pieces
 parsePieces =
   fenRows
-    <&> \pcs ->
-      let wp = genBitboard 'P' pcs
-          wn = genBitboard 'N' pcs
-          wb = genBitboard 'B' pcs
-          wr = genBitboard 'R' pcs
-          wq = genBitboard 'Q' pcs
-          wk = genBitboard 'K' pcs
-          bp = genBitboard 'p' pcs
-          bn = genBitboard 'n' pcs
-          bb = genBitboard 'b' pcs
-          br = genBitboard 'r' pcs
-          bq = genBitboard 'q' pcs
-          bk = genBitboard 'k' pcs
-       in Pieces
-            (wp .|. wn .|. wb .|. wr .|. wq .|. wk)
-            (wp .|. bp .|. wn .|. bn .|. wk .|. bk)
-            (wp .|. bp .|. wb .|. bb .|. wq .|. bq .|. wk .|. bk)
-            (wr .|. br .|. wq .|. bq .|. wk .|. bk)
+    <&> foldl'
+      ( \b (sq, piece) -> case piece of
+          'P' -> addPiece (Piece White Pawn) sq b
+          'N' -> addPiece (Piece White Knight) sq b
+          'B' -> addPiece (Piece White Bishop) sq b
+          'R' -> addPiece (Piece White Rook) sq b
+          'Q' -> addPiece (Piece White Queen) sq b
+          'K' -> addPiece (Piece White King) sq b
+          'p' -> addPiece (Piece Black Pawn) sq b
+          'n' -> addPiece (Piece Black Knight) sq b
+          'b' -> addPiece (Piece Black Bishop) sq b
+          'r' -> addPiece (Piece Black Rook) sq b
+          'q' -> addPiece (Piece Black Queen) sq b
+          'k' -> addPiece (Piece Black King) sq b
+          _ -> error "invalid piece (impossible?)"
+      )
+      emptyPieces
   where
     expandRow _ [] = []
     expandRow i (x : xs)
@@ -57,38 +58,33 @@ parsePieces =
             fenRow 1 <* char '/',
             fenRow 0
           ]
-    genBitboard c pcs =
-      fromSqs
-        [ sq
-          | sq <- [0 .. 63],
-            Just c == lookup sq pcs
-        ]
 
 parseTurn :: Parser Color
 parseTurn =
   char 'w' $> White
     <|> char 'b' $> Black
 
-parseCastling :: Parser Int
+parseCastling :: Parser Castling
 parseCastling =
   many1 (oneOf "kqKQ-")
     <&> \c ->
-      ( if 'K' `elem` c
-          then 2
-          else 0
-      )
-        .|. ( if 'Q' `elem` c
-                then 1
-                else 0
-            )
-        .|. ( if 'k' `elem` c
-                then 8
-                else 0
-            )
-        .|. ( if 'q' `elem` c
-                then 4
-                else 0
-            )
+      Castling $
+        ( if 'K' `elem` c
+            then 2
+            else 0
+        )
+          .|. ( if 'Q' `elem` c
+                  then 1
+                  else 0
+              )
+          .|. ( if 'k' `elem` c
+                  then 8
+                  else 0
+              )
+          .|. ( if 'q' `elem` c
+                  then 4
+                  else 0
+              )
 
 parseEnPassant :: Parser (Maybe Int)
 parseEnPassant =
@@ -100,7 +96,7 @@ parseEnPassant =
 data Fen = Fen
   { fenPieces :: Pieces,
     fenTurn :: Color,
-    fenCastling :: Int,
+    fenCastling :: Castling,
     fenEnPassant :: Maybe Int,
     fenHalfmove :: Int,
     fenFullmove :: Int
@@ -122,10 +118,8 @@ readFen = first show . parse parseFen ""
 
 fenToGame :: Fen -> Game
 fenToGame fen =
-  ( case turn of
-      White -> Game (fenPieces fen)
-      Black -> Game (flipPieces (fenPieces fen))
-  )
+  mkGame
+    (fenPieces fen)
     (fenCastling fen)
     (fenEnPassant fen)
     turn

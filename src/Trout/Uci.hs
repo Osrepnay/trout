@@ -15,22 +15,15 @@ import Control.Exception (evaluate)
 import Control.Monad.Trans.State.Strict (StateT (..))
 import Data.Foldable (foldl')
 import Data.Maybe (fromMaybe)
-import Lens.Micro ((&), (.~), (^.))
 import System.IO (hFlush, hPutStrLn, stderr, stdout)
 import System.Timeout (timeout)
 import Trout.Fen.Parse (fenToGame)
 import Trout.Game
-  ( HGame (..),
-    Sides,
+  ( Game (..),
     allMoves,
     gameTurn,
-    hgGame,
     makeMove,
-    mkHGame,
-    sideBlack,
-    sideWhite,
     startingGame,
-    startingHGame,
   )
 import Trout.Game.Move
   ( Move (..),
@@ -47,18 +40,26 @@ import Trout.Uci.Parse
     UciMove (..),
     readUciLine,
   )
+import Data.Bifunctor (first, second)
+import Data.Function ((&))
 
 data UciState = UciState
-  { uciGame :: HGame,
+  { uciGame :: Game,
     uciIsDebug :: Bool,
     uciSearch :: Maybe (ThreadId, MVar Move),
     uciSearchState :: Maybe (MVar SearchState)
   }
 
+data PlayerTime = PlayerTime
+  { playerTime :: Int,
+    playerInc :: Int
+  }
+  deriving (Eq, Show)
+
 data GoSettings = GoSettings
   { goMovetime :: Maybe Int,
-    goTimes :: Sides Int,
-    goIncs :: Sides Int,
+    goTimes :: (Int, Int),
+    goIncs :: (Int, Int),
     goMaxDepth :: Int
   }
   deriving (Show)
@@ -82,7 +83,7 @@ reportMove moveVar = do
   putStrLn ("bestmove " ++ move)
   hFlush stdout
 
-launchGo :: MVar Move -> MVar SearchState -> HGame -> GoSettings -> IO ()
+launchGo :: MVar Move -> MVar SearchState -> Game -> GoSettings -> IO ()
 launchGo moveVar ssVar game (GoSettings movetime times _incs maxDepth) = do
   _ <- timeout (time * 1000) (searches 0)
   reportMove moveVar
@@ -104,7 +105,7 @@ launchGo moveVar ssVar game (GoSettings movetime times _incs maxDepth) = do
       | otherwise = pure ()
     time = flip fromMaybe movetime $
       flip quot 20 $
-        case game ^. hgGame . gameTurn of
+        case gameTurn game of
           White -> fst times
           Black -> snd times
 
@@ -135,9 +136,9 @@ doUci uciState = do
     Right (CommRegister _) -> doUci uciState
     Right CommUcinewgame ->
       doUci $
-        uciState {uciGame = startingHGame}
+        uciState {uciGame = startingGame}
     Right (CommPosition posInit moves) ->
-      let ng = mkHGame $ case posInit of
+      let ng = case posInit of
             PositionStartpos -> startingGame
             PositionFen fen -> fenToGame fen
        in case playMoves ng moves of
@@ -193,14 +194,14 @@ doUci uciState = do
             && f == from
             && t == to
         moveMatches (Move _ _ f t) = f == from && t == to
-        gMoves = filter moveMatches (allMoves (g ^. hgGame))
+        gMoves = filter moveMatches (allMoves g)
     doGoArg arg gs@(GoSettings mt ts is depth) = case arg of
       GoSearchMoves _ -> gs
       GoPonder -> gs
-      GoWtime t -> GoSettings mt (ts & sideWhite .~ t) is depth
-      GoWinc i -> GoSettings mt ts (is & sideWhite .~ i) depth
-      GoBtime t -> GoSettings mt (ts & sideBlack .~ t) is depth
-      GoBinc i -> GoSettings mt ts (is & sideBlack .~ i) depth
+      GoWtime t -> GoSettings mt (first (const t) ts) is depth
+      GoWinc i -> GoSettings mt ts (first (const i) is) depth
+      GoBtime t -> GoSettings mt (second (const t) ts) is depth
+      GoBinc i -> GoSettings mt ts (second (const i) is) depth
       GoMovestogo _ -> gs
       GoDepth d -> GoSettings mt ts is d
       GoNodes _ -> gs

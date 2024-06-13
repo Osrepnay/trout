@@ -13,7 +13,7 @@ where
 import Data.Hashable (hash)
 import Data.Vector.Mutable (IOVector)
 import Data.Vector.Mutable qualified as MV
-import Trout.Game (HGame)
+import Trout.Game (Game)
 import Trout.Game.Move (Move)
 
 data NodeType
@@ -30,7 +30,7 @@ data TTEntry = TTEntry
   }
   deriving (Eq, Show)
 
-type TTKey = HGame
+type TTKey = Game
 
 type TranspositionTable = IOVector (Maybe (Int, TTEntry))
 

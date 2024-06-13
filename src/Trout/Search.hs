@@ -9,30 +9,22 @@ where
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.State.Strict (StateT (..), get)
 import Data.Bifunctor (first)
-import Data.Function (on)
+import Data.Function (on, (&))
 import Data.Maybe (mapMaybe)
-import Lens.Micro ((^.))
+import Data.Tuple (swap)
 import Trout.Bitboard (popCount)
+import Trout.Game.Move (Move (..), nullMove)
 import Trout.Game
-  ( HGame,
-    HasGame (..),
-    active,
+  ( Game,
     allMoves,
-    bishops,
     gamePieces,
     gameTurn,
-    hgGame,
     inCheck,
-    inactive,
-    kings,
-    knights,
     makeMove,
-    pawns,
-    queens,
-    rooks,
+    pieceBitboard,
+    pieceTypeBitboard,
   )
-import Trout.Game.Move (Move (..), nullMove)
-import Trout.Piece (Color (..), PieceType (..))
+import Trout.Piece (Color (..), Piece (..), PieceType (..))
 import Trout.Search.PieceSquareTables (pstEval)
 import Trout.Search.TranspositionTable
   ( NodeType (..),
@@ -49,11 +41,11 @@ data SearchState = SearchState
 
 -- simple best move finder
 -- ReaderT works because of IO, for now
-bestMove :: Int -> HGame -> StateT SearchState IO (Int, Move)
+bestMove :: Int -> Game -> StateT SearchState IO (Int, Move)
 bestMove 0 game =
   pure
     ( eval game
-        * case game ^. hgGame . gameTurn of
+        * case gameTurn game of
           White -> 1
           Black -> -1,
       head (allMoves game)
@@ -62,7 +54,7 @@ bestMove depth game =
   first
     -- if player is black, flip because negamax is relative
     ( *
-        case game ^. hgGame . gameTurn of
+        case gameTurn game of
           White -> 1
           Black -> -1
     )
@@ -81,12 +73,12 @@ bestMove depth game =
         go (maxByPreferFst (compare `on` fst) best (score, m)) ms
       Nothing -> go best ms
 
-searchNega :: Int -> Int -> Int -> HGame -> StateT SearchState IO Int
+searchNega :: Int -> Int -> Int -> Game -> StateT SearchState IO Int
 searchNega depth alpha beta game
   | depth <= 0 = pure (eval game)
   | null moved =
       pure $
-        if inCheck (game ^. hgGame)
+        if inCheck (gameTurn game) (gamePieces game)
           then lossWorth -- checkmate
           else drawWorth -- stalemate
   | otherwise = do
@@ -140,36 +132,39 @@ searchNega depth alpha beta game
         (\m -> (m,) <$> makeMove game m)
         (allMoves game)
 
-eval :: (HasGame a) => a -> Int
+eval :: Game -> Int
 eval game = pstEvalValue
   where
-    pieces = game ^. gamePieces
-    actives = pieces ^. active
-    inactives = pieces ^. inactive
-
+    (playerBB, oppBB) =
+      ( ($ gamePieces game) . pieceBitboard . Piece White,
+        ($ gamePieces game) . pieceBitboard . Piece Black
+      )
+        & case gameTurn game of
+          White -> id
+          Black -> swap
     -- calculate game phase
     -- pawns don't count, bishops and rooks count 1, rooks 2, queens 4
     -- taken from pesto/ethereal/fruit
     mgPhase =
-      popCount (pieces ^. knights)
-        + popCount (pieces ^. bishops)
-        + 2 * popCount (pieces ^. rooks)
-        + 4 * popCount (pieces ^. queens)
+      popCount (pieceTypeBitboard Knight (gamePieces game))
+        + popCount (pieceTypeBitboard Bishop (gamePieces game))
+        + 2 * popCount (pieceTypeBitboard Rook (gamePieces game))
+        + 4 * popCount (pieceTypeBitboard Queen (gamePieces game))
     egPhase = 24 - mgPhase
-    (aMask, nMask) = case game ^. gameTurn of
+    (aMask, nMask) = case gameTurn game of
       White -> (0, 56)
       Black -> (56, 0)
     pst bb p = pstEval bb p mgPhase egPhase
     pstEvalValue =
-      pst (actives ^. pawns) Pawn aMask
-        - pst (inactives ^. pawns) Pawn nMask
-        + pst (actives ^. knights) Knight aMask
-        - pst (inactives ^. knights) Knight nMask
-        + pst (actives ^. bishops) Bishop aMask
-        - pst (inactives ^. bishops) Bishop nMask
-        + pst (actives ^. rooks) Rook aMask
-        - pst (inactives ^. rooks) Rook nMask
-        + pst (actives ^. queens) Queen aMask
-        - pst (inactives ^. queens) Queen nMask
-        + pst (actives ^. kings) King aMask
-        - pst (inactives ^. kings) King nMask
+      pst (playerBB Pawn) Pawn aMask
+        - pst (oppBB Pawn) Pawn nMask
+        + pst (playerBB Knight) Knight aMask
+        - pst (oppBB Knight) Knight nMask
+        + pst (playerBB Bishop) Bishop aMask
+        - pst (oppBB Bishop) Bishop nMask
+        + pst (playerBB Rook) Rook aMask
+        - pst (oppBB Rook) Rook nMask
+        + pst (playerBB Queen) Queen aMask
+        - pst (oppBB Queen) Queen nMask
+        + pst (playerBB King) King aMask
+        - pst (oppBB King) King nMask

@@ -1,69 +1,47 @@
-{-# LANGUAGE TemplateHaskell #-}
-
 module Trout.Game
-  ( Pieces (..),
-    pieceActive,
-    pieceLimit,
-    pieceDiag,
-    pieceRoyal,
-    pawns,
-    knights,
-    bishops,
-    rooks,
-    queens,
-    kings,
-    byPiece,
-    active,
-    inactive,
-    flipPieces,
-    Sides,
-    sideWhite,
-    sideBlack,
+  ( Pieces,
+    emptyPieces,
+    addPiece,
+    removePiece,
+    getPiece,
+    pieceTypeBitboard,
+    pieceBitboard,
+    occupancy,
+    colorOccupancy,
+    Castling (..),
+    clearColorRights,
+    clearRights,
+    canCastle,
     Game (..),
-    HasGame (..),
+    mkGame,
     startingGame,
-    gameAsBoard,
-    HGame (..),
-    hgGame,
-    hgHash,
-    mkHGame,
-    startingHGame,
-    flipTurn,
     allMoves,
     inCheck,
     makeMove,
   )
 where
 
+import Data.Bits (Bits)
+import Data.Bool (bool)
 import Data.Foldable (foldl')
 import Data.Hashable (Hashable (..))
-import Data.Vector.Primitive (unsafeIndex)
-import Lens.Micro (Lens', (%~), (&), (<&>), (?~), (^.))
-import Lens.Micro.TH (makeLenses)
+import Data.Vector.Primitive ((!))
 import Trout.Bitboard
   ( Bitboard,
-    bit,
-    clearBit,
     complement,
     countTrailingZeros,
     fileA,
     fileH,
-    setBit,
-    testBit,
     toSqs,
-    xor,
-    xyToSq,
-    zeroBits,
     (!<<.),
     (!>>.),
     (.&.),
     (.^.),
     (.|.),
   )
+import Trout.Game.Move (Move (..), SpecialMove (..))
 import Trout.Game.MoveGen
-  ( Move (..),
-    SpecialMove (..),
-    bishopMoves,
+  ( bishopMoves,
     concatDL,
     kingMoves,
     kingTable,
@@ -76,573 +54,295 @@ import Trout.Game.MoveGen
   )
 import Trout.Game.MoveGen.Sliding.Magic (bishopMovesMagic, rookMovesMagic)
 import Trout.Game.Zobrists
-  ( blackBishopZobrists,
-    blackKingZobrists,
-    blackKnightZobrists,
-    blackPawnZobrists,
-    blackQueenZobrists,
-    blackRookZobrists,
-    castleZobrists,
+  ( castleZobrists,
     enPassantZobrists,
     pieceZobrists,
     playingZobrist,
-    whiteBishopZobrists,
-    whiteKingZobrists,
-    whiteKnightZobrists,
-    whitePawnZobrists,
-    whiteQueenZobrists,
-    whiteRookZobrists,
   )
-import Trout.Piece (Color (..), PieceType (..), other)
+import Trout.Piece
+  ( Color (..),
+    Piece (..),
+    PieceType (..),
+    other,
+  )
 
--- TODO maybe 1 more field for occupancy?
 data Pieces = Pieces
-  { _pieceActive :: !Bitboard, -- pieces of the current player
-    _pieceLimit :: !Bitboard, -- pieces that don't have infinite range
-    _pieceDiag :: !Bitboard, -- can piece move diagonally? (no knights!)
-    _pieceRoyal :: !Bitboard -- rooks, queens, kings
+  { piecesWhite :: !Bitboard,
+    piecesPiece0 :: !Bitboard,
+    piecesPiece1 :: !Bitboard,
+    piecesPiece2 :: !Bitboard
   }
   deriving (Eq, Show)
 
-makeLenses ''Pieces
+emptyPieces :: Pieces
+emptyPieces = Pieces 0 0 0 0
 
--- helper to generate a piece lens
--- TODO slow because of bb difference calculation
--- no easy solution though...
-genPiece :: Bool -> Bool -> Bool -> Lens' Pieces Bitboard
-genPiece slide diag royal afb pieces =
-  afb pieceBB
-    <&> \newBB ->
-      pieces
-        & pieceLimit %~ sfSet pieceBB newBB
-        & pieceDiag %~ dfSet pieceBB newBB
-        & pieceRoyal %~ rfSet pieceBB newBB
+type PieceMapping = (Bool, Bool, Bool)
+
+mappingToPieceType :: PieceMapping -> Maybe PieceType
+mappingToPieceType (True, False, False) = Just Pawn
+mappingToPieceType (False, True, False) = Just Knight
+mappingToPieceType (True, True, False) = Just Bishop
+mappingToPieceType (False, False, True) = Just Rook
+mappingToPieceType (True, False, True) = Just Queen
+mappingToPieceType (False, True, True) = Just King
+mappingToPieceType _ = Nothing
+
+pieceTypeToMapping :: PieceType -> PieceMapping
+pieceTypeToMapping Pawn = (True, False, False)
+pieceTypeToMapping Knight = (False, True, False)
+pieceTypeToMapping Bishop = (True, True, False)
+pieceTypeToMapping Rook = (False, False, True)
+pieceTypeToMapping Queen = (True, False, True)
+pieceTypeToMapping King = (False, True, True)
+
+addPiece :: Piece -> Int -> Pieces -> Pieces
+addPiece (Piece c p) sq (Pieces pw p0 p1 p2) = Pieces (colorOp pw) (p0Op p0) (p1Op p1) (p2Op p2)
   where
-    {-
-    old new cur res
-     0   0   0   0
-     0   0   1   1
-     0   1   0   1
-     0   1   1   1
-     1   0   1   0
-     1   1   1   1
-     1   0   0   ? IMPOSSIBLE
-     1   1   0   ? IMPOSSIBLE
-    -}
-    tf old new x = x .^. old .|. new
-    {-
-    old new cur res
-     0   0   0   0
-     0   0   1   1
-     0   1   0   0
-     0   1   1   0
-     1   0   0   0
-     1   1   0   0
-     1   0   1   ? IMPOSSIBLE
-     1   1   1   ? IMPOSSIBLE
-    -}
-    ff old new x = x .&. complement (old .|. new)
-    (sfGet, sfSet) = if slide then (id, tf) else (complement, ff)
-    (dfGet, dfSet) = if diag then (id, tf) else (complement, ff)
-    (rfGet, rfSet) = if royal then (id, tf) else (complement, ff)
-    pieceBB =
-      sfGet (pieces ^. pieceLimit)
-        .&. dfGet (pieces ^. pieceDiag)
-        .&. rfGet (pieces ^. pieceRoyal)
-{-# INLINE genPiece #-}
+    sqBB = 1 !<<. sq
+    unSqBB = complement sqBB
+    genOp = bool (.&. unSqBB) (.|. sqBB)
+    (p0Bit, p1Bit, p2Bit) = pieceTypeToMapping p
+    p0Op = genOp p0Bit
+    p1Op = genOp p1Bit
+    p2Op = genOp p2Bit
+    colorOp =
+      case c of
+        White -> (.|. sqBB)
+        Black -> (.&. unSqBB)
 
--- remember: no piece can be all Falses! then it looks empty
-
--- yes limit, yes diagonal, no royal
-pawns :: Lens' Pieces Bitboard
-pawns = genPiece True True False
-{-# INLINE pawns #-}
-
--- yes limit, no diagonal, no royal
-knights :: Lens' Pieces Bitboard
-knights = genPiece True False False
-{-# INLINE knights #-}
-
--- no limit, yes diagonal, no royal
-bishops :: Lens' Pieces Bitboard
-bishops = genPiece False True False
-{-# INLINE bishops #-}
-
--- no limit, no diagonal, yes royal
-rooks :: Lens' Pieces Bitboard
-rooks = genPiece False False True
-{-# INLINE rooks #-}
-
--- no limit, yes diagonal, yes royal
-queens :: Lens' Pieces Bitboard
-queens = genPiece False True True
-{-# INLINE queens #-}
-
--- yes limit, yes diagonal, yes royal
-kings :: Lens' Pieces Bitboard
-kings = genPiece True True True
-{-# INLINE kings #-}
-
--- getter for current active pieces
-active :: Lens' Pieces Pieces
-active afb (Pieces a l d r) =
-  afb masked
-    -- new active not used, should not be changed from within current func
-    <&> \(Pieces _ nl nd nr) ->
-      let na = nl .|. nd .|. nr
-          na' = complement na
-       in Pieces
-            -- masking with active isnt necessary, already premasked
-            na
-            (nl .|. inl .&. na')
-            (nd .|. ind .&. na')
-            (nr .|. inr .&. na')
+removePiece :: Int -> Pieces -> Pieces
+removePiece sq (Pieces pw p0 p1 p2) = Pieces (pw .&. unSqBB) (p0 .&. unSqBB) (p1 .&. unSqBB) (p2 .&. unSqBB)
   where
-    masked@(Pieces _ ml md mr) = Pieces a (l .&. a) (d .&. a) (r .&. a)
-    -- xor instead of & complement is safe; ml is strictly a subset of l
-    inl = ml .^. l
-    ind = md .^. d
-    inr = mr .^. r
-{-# INLINE active #-}
+    unSqBB = complement (1 !<<. sq)
 
--- getter for current inactive pieces
-inactive :: Lens' Pieces Pieces
-inactive afb (Pieces a l d r) =
-  afb masked
-    <&> \(Pieces _ nl nd nr) ->
-      let na = nl .|. nd .|. nr
-          na' = complement na
-       in Pieces
-            (na' .&. a)
-            (nl .|. al .&. na')
-            (nd .|. ad .&. na')
-            (nr .|. ar .&. na')
+getPiece :: Int -> Pieces -> Maybe Piece
+getPiece sq (Pieces pw p0 p1 p2) =
+  Piece (if pw .&. sqBB == 0 then Black else White)
+    <$> mappingToPieceType (p0 .&. sqBB /= 0, p1 .&. sqBB /= 0, p2 .&. sqBB /= 0)
   where
-    a' = complement a
-    masked@(Pieces _ ml md mr) = Pieces a (l .&. a') (d .&. a') (r .&. a')
-    al = ml .^. l
-    ad = md .^. d
-    ar = mr .^. r
-{-# INLINE inactive #-}
+    sqBB = 1 !<<. sq
 
--- flip active side
-flipPieces :: Pieces -> Pieces
-flipPieces (Pieces a l d r) = Pieces (complement a .&. (l .|. d .|. r)) l d r
-{-# INLINE flipPieces #-}
+pieceTypeBitboard :: PieceType -> Pieces -> Bitboard
+pieceTypeBitboard pieceType (Pieces _pw p0 p1 p2) =
+  genMask p0Bit p0
+    .&. genMask p1Bit p1
+    .&. genMask p2Bit p2
+  where
+    (p0Bit, p1Bit, p2Bit) = pieceTypeToMapping pieceType
+    genMask = bool complement id
 
--- get the respective lens for the piece
-byPiece :: PieceType -> Lens' Pieces Bitboard
-byPiece Pawn = pawns
-byPiece Knight = knights
-byPiece Bishop = bishops
-byPiece Rook = rooks
-byPiece Queen = queens
-byPiece King = kings
-{-# INLINE byPiece #-}
+pieceBitboard :: Piece -> Pieces -> Bitboard
+pieceBitboard (Piece c pieceType) pieces =
+  pieceTypeBitboard pieceType pieces
+    .&. case c of
+      White -> piecesWhite pieces
+      Black -> complement (piecesWhite pieces)
 
--- all occupied squares
-piecesAll :: Pieces -> Bitboard
-piecesAll (Pieces _ l d r) = l .|. d .|. r
-{-# INLINE piecesAll #-}
+occupancy :: Pieces -> Bitboard
+occupancy (Pieces _pw p0 p1 p2) = p0 .|. p1 .|. p2
 
--- TODO kill this
+colorOccupancy :: Color -> Pieces -> Bitboard
+colorOccupancy White (Pieces pw p0 p1 p2) = pw .&. (p0 .|. p1 .|. p2)
+colorOccupancy Black (Pieces pw p0 p1 p2) = complement pw .&. (p0 .|. p1 .|. p2)
 
-type Sides a = (a, a)
+newtype Castling = Castling {unCastling :: Int} deriving (Bits, Eq, Show)
 
-sideWhite :: Lens' (Sides a) a
-sideWhite afb (a, b) = (,b) <$> afb a
+clearColorRights :: Color -> Castling -> Castling
+clearColorRights White (Castling castle) = Castling (castle .&. 12)
+clearColorRights Black (Castling castle) = Castling (castle .&. 3)
 
-sideBlack :: Lens' (Sides a) a
-sideBlack afb (a, b) = (a,) <$> afb b
-{-# INLINE sideBlack #-}
+clearRights :: Color -> Bool -> Castling -> Castling
+clearRights color kingside (Castling castle) =
+  Castling $
+    castle
+      .&. complement
+        ( 1 !<<. case color of
+            White -> if kingside then 1 else 0
+            Black -> if kingside then 3 else 2
+        )
 
--- base game
--- current rules are this should be all the data needed for move generation
--- so no history, move counter, hash, etc
--- is this good idea?
+-- TODO check if this is slow
+canCastle :: Color -> Bool -> Castling -> Bool
+canCastle color kingside castling = clearRights color kingside castling /= castling
+
 data Game = Game
-  { _gamePieces :: Pieces,
-    _gameCastling :: !Int,
-    _gameEnPassant :: !(Maybe Int),
-    _gameTurn :: !Color
+  { gamePieces :: !Pieces,
+    gameCastling :: !Castling,
+    gameEnPassant :: !(Maybe Int),
+    gameTurn :: !Color,
+    gameHash :: !Int
   }
   deriving (Eq, Show)
-
--- literally just makeClassy but change the name of game
--- i don't want to rename all my variables
-class HasGame c where
-  intoGame :: Lens' c Game
-
-  gamePieces :: Lens' c Pieces
-  gamePieces =
-    intoGame
-      . \afb g -> afb (_gamePieces g) <&> \x -> g {_gamePieces = x}
-
-  gameCastling :: Lens' c Int
-  gameCastling =
-    intoGame
-      . \afb g -> afb (_gameCastling g) <&> \x -> g {_gameCastling = x}
-
-  gameEnPassant :: Lens' c (Maybe Int)
-  gameEnPassant =
-    intoGame
-      . \afb g -> afb (_gameEnPassant g) <&> \x -> g {_gameEnPassant = x}
-
-  gameTurn :: Lens' c Color
-  gameTurn =
-    intoGame
-      . \afb g -> afb (_gameTurn g) <&> \x -> g {_gameTurn = x}
-
-instance HasGame Game where intoGame = id
 
 instance Hashable Game where
-  hash (Game pieces castle enP turn) =
-    turnHash
-      .^. castleHash
-      .^. enPassantHash
-      .^. hashBitboard (white ^. pawns) whitePawnZobrists
-      .^. hashBitboard (black ^. pawns) blackPawnZobrists
-      .^. hashBitboard (white ^. knights) whiteKnightZobrists
-      .^. hashBitboard (black ^. knights) blackKnightZobrists
-      .^. hashBitboard (white ^. bishops) whiteBishopZobrists
-      .^. hashBitboard (black ^. bishops) blackBishopZobrists
-      .^. hashBitboard (white ^. rooks) whiteRookZobrists
-      .^. hashBitboard (black ^. rooks) blackRookZobrists
-      .^. hashBitboard (white ^. queens) whiteQueenZobrists
-      .^. hashBitboard (black ^. queens) blackQueenZobrists
-      .^. hashBitboard (white ^. kings) whiteKingZobrists
-      .^. hashBitboard (black ^. kings) blackKingZobrists
-    where
-      hashBitboard bb table =
-        foldl'
-          (\b a -> table `unsafeIndex` a .^. b)
-          0
-          (toSqs bb)
-      (white, black, turnHash) = case turn of
-        White -> (pieces ^. active, pieces ^. inactive, playingZobrist)
-        Black -> (pieces ^. inactive, pieces ^. active, 0)
-      -- only first 4 bits of castle should be used
-      castleHash = castleZobrists `unsafeIndex` castle
-      enPassantHash = case enP of
-        Just sq -> enPassantZobrists `unsafeIndex` (sq `rem` 8)
-        Nothing -> 0
-
+  hash = gameHash
   hashWithSalt salt game = hash game .^. salt
+
+mkGame :: Pieces -> Castling -> Maybe Int -> Color -> Game
+mkGame pieces castling enPassant turn =
+  Game pieces castling enPassant turn $
+    (if turn == White then playingZobrist else 0)
+      .^. (castleZobrists ! unCastling castling)
+      .^. maybe 0 (\sq -> enPassantZobrists ! (sq `rem` 8)) enPassant
+      .^. foldl'
+        (.^.)
+        0
+        [ hashBitboard (pieceBitboard (Piece color pieceType) pieces) (pieceZobrists color pieceType)
+          | color <- [White, Black],
+            pieceType <- [Pawn, Knight, Bishop, Rook, Queen, King]
+        ]
+  where
+    hashBitboard bb table = foldl' (\b a -> table ! a .^. b) 0 (toSqs bb)
 
 -- https://tearth.dev/bitboard-viewer/
 startingGame :: Game
 startingGame =
-  Game
+  mkGame
     ( Pieces
         0xFFFF
-        0x52FF00000000FF52
-        0x3CFF00000000FF3C
+        0x2CFF00000000FF2C
+        0x7600000000000076
         0x9900000000000099
     )
-    15
+    (Castling 15)
     Nothing
     White
 
--- pretty human-readable board
-gameAsBoard :: Game -> String
-gameAsBoard game = unlines [[posChar x y | x <- [0 .. 7]] | y <- [7, 6 .. 0]]
-  where
-    posChar x y =
-      fst $
-        head $
-          filter
-            (\(_, b) -> b `testBit` sq)
-            [ ('P', white ^. pawns),
-              ('N', white ^. knights),
-              ('B', white ^. bishops),
-              ('R', white ^. rooks),
-              ('Q', white ^. queens),
-              ('K', white ^. kings),
-              ('p', black ^. pawns),
-              ('n', black ^. knights),
-              ('b', black ^. bishops),
-              ('r', black ^. rooks),
-              ('q', black ^. queens),
-              ('k', black ^. kings),
-              ('.', complement zeroBits)
-            ]
-      where
-        (white, black) = case game ^. gameTurn of
-          White -> (pieces ^. active, pieces ^. inactive)
-          Black -> (pieces ^. inactive, pieces ^. active)
-        pieces = game ^. gamePieces
-        sq = xyToSq x y
-
--- incrementally hashed game
-data HGame = HGame
-  { _hgGame :: {-# UNPACK #-} !Game,
-    _hgHash :: !Int
-  }
-  deriving (Eq, Show)
-
-makeLenses ''HGame
-
-instance HasGame HGame where intoGame = hgGame
-
-instance Hashable HGame where
-  hash (HGame _ h) = h
-  hashWithSalt salt game = hash game .^. salt
-
--- create a HGame (hashed game) from a Game
-mkHGame :: Game -> HGame
-mkHGame game = HGame game (hash game)
-{-# INLINE mkHGame #-}
-
-startingHGame :: HGame
-startingHGame = mkHGame startingGame
-
--- change current player
--- also swaps playing and waiting
-flipTurn :: HGame -> HGame
-flipTurn (HGame (Game pcs c enP t) h) =
-  HGame
-    ( Game
-        (flipPieces pcs)
-        c
-        enP
-        (other t)
-    )
-    (h .^. playingZobrist)
-{-# INLINE flipTurn #-}
-
--- helpers for moving whole pieces around
--- TODO CONSIDER -> MAYBE HGAME; NOTHING IF UNCHANGED
-setSqActive :: PieceType -> Int -> HGame -> HGame
-setSqActive piece sq game =
-  game
-    & gamePieces . active . byPiece piece %~ (`setBit` sq)
-    & hgHash
-      %~ xor
-        (pieceZobrists (game ^. gameTurn) piece `unsafeIndex` sq)
-{-# INLINE setSqActive #-}
-
--- works on both active an inactive
-clearSq :: PieceType -> Int -> HGame -> HGame
-clearSq piece sq game =
-  game
-    & gamePieces . pieceActive %~ (`clearBit` sq)
-    & gamePieces . byPiece piece %~ (`clearBit` sq)
-    & hgHash
-      %~ xor
-        (pieceZobrists (game ^. gameTurn) piece `unsafeIndex` sq)
-{-# INLINE clearSq #-}
-
-moveSqActive :: PieceType -> Int -> Int -> HGame -> HGame
-moveSqActive piece from to game =
-  game
-    & gamePieces . active . byPiece piece %~ (`setBit` to) . (`clearBit` from)
-    & hgHash
-      %~ xor
-        ( pieceZobrists color piece
-            `unsafeIndex` from
-            .^. pieceZobrists color piece
-            `unsafeIndex` to
-        )
-  where
-    color = game ^. gameTurn
-{-# INLINE moveSqActive #-}
-
--- returns possible moves at a position
-allMoves :: (HasGame a) => a -> [Move]
-allMoves game =
-  pawnsMoves
-    (game ^. gameEnPassant)
-    (game ^. gameTurn)
-    block
-    myBlock
-    (actives ^. pawns)
-    $ concatDL
-      ( moveSqs knightMoves (actives ^. knights) $
-          moveSqs bishopMoves (actives ^. bishops) $
-            moveSqs rookMoves (actives ^. rooks) $
-              moveSqs queenMoves (actives ^. queens) $
-                moveSqs (kingMoves kingside queenside) (actives ^. kings) []
+allMoves :: Game -> [Move]
+allMoves (Game pieces castling enPassant turn _) =
+  pawnsMoves enPassant turn block myBlock (pieceBB Pawn) $
+    concatDL
+      ( moveSqs knightMoves (pieceBB Knight) $
+          moveSqs bishopMoves (pieceBB Bishop) $
+            moveSqs rookMoves (pieceBB Rook) $
+              moveSqs queenMoves (pieceBB Queen) $
+                moveSqs (kingMoves (canCastle turn True castling) (canCastle turn False castling)) (pieceBB King) []
       )
       []
   where
-    kingside = 0 /= 10 .&. thisCastling
-    queenside = 0 /= 5 .&. thisCastling
-    -- only having 1 switch on turn is important. apparently.
-    thisCastling =
-      game
-        ^. gameCastling
-          .&. case game ^. gameTurn of
-            White -> 3
-            Black -> 12
-    -- gets and concats the move for a set of squares (for a piece)
+    block = occupancy pieces
+    myBlock = colorOccupancy turn pieces
+    pieceBB = ($ pieces) . pieceBitboard . Piece turn
     moveSqs mover = mapOnes (mover block myBlock)
-    block = piecesAll (game ^. gamePieces)
-    myBlock = piecesAll actives
-    actives = game ^. gamePieces . active
-{-# SPECIALIZE allMoves :: HGame -> [Move] #-}
-{-# SPECIALIZE allMoves :: Game -> [Move] #-}
 
--- checks if a square is attacked by the opponent (waiting)
-squareAttacked :: (HasGame a) => Bitboard -> Int -> a -> Bool
-squareAttacked block sq game =
-  knightTable `unsafeIndex` sq .&. inactives
-    ^. knights
-      .|. bishoped
-      .&. inactives
-    ^. bishops
-      .|. rooked
-      .&. inactives
-    ^. rooks
-      .|. bishoped
-      .&. inactives
-    ^. queens
-      .|. rooked
-      .&. inactives
-    ^. queens
-      .|. kingTable
-      `unsafeIndex` sq
-      .&. inactives
-    ^. kings
-    /= 0
-    || pawnMask `testBit` sq
+inCheck :: Color -> Pieces -> Bool
+inCheck color pieces =
+  (bishopAttackers /= 0)
+    .|. (rookAttackers /= 0)
+    .|. (queenAttackers /= 0)
+    .|. (knightAttackers /= 0)
+    .|. (pawnAttackers /= 0)
+    .|. (kingAttackers /= 0)
   where
-    bishoped = bishopMovesMagic block sq
-    rooked = rookMovesMagic block sq
-    pawnMask = case game ^. gameTurn of
-      White ->
-        (p .&. complement fileA)
-          !>>. 9
-          .|. (p .&. complement fileH)
-          !>>. 7
-      Black ->
-        (p .&. complement fileA)
-          !<<. 7
-          .|. (p .&. complement fileH)
-          !<<. 9
-    p = inactives ^. pawns
-    inactives = game ^. gamePieces . inactive
+    oppColor = other color
+    king = pieceBitboard (Piece color King) pieces
+    kingSq = countTrailingZeros king
+    getOppPieces = ($ pieces) . pieceBitboard . Piece oppColor
 
--- simple wrapper around squareAttacked for the king's square
-inCheck :: (HasGame a) => a -> Bool
-inCheck game
-  | kingSq == 64 = True -- king gone!
-  | otherwise =
-      squareAttacked (piecesAll (game ^. gamePieces)) kingSq game
-  where
-    kingSq = countTrailingZeros (game ^. gamePieces . active . kings)
+    pawnAttackers =
+      getOppPieces Pawn
+        .&. case oppColor of
+          White ->
+            (king .&. complement fileA)
+              !>>. 9
+              .|. (king .&. complement fileH)
+              !>>. 7
+          Black ->
+            (king .&. complement fileA)
+              !<<. 7
+              .|. (king .&. complement fileH)
+              !<<. 9
+    knightAttackers = knightTable ! kingSq .&. getOppPieces Knight
+    blockers = occupancy pieces
+    bishopSqs = bishopMovesMagic blockers kingSq
+    bishopAttackers = bishopSqs .&. getOppPieces Bishop
+    rookSqs = rookMovesMagic blockers kingSq
+    rookAttackers = rookSqs .&. getOppPieces Rook
+    queenAttackers = (bishopSqs .|. rookSqs) .&. getOppPieces Queen
+    kingAttackers = kingTable ! kingSq .&. getOppPieces King
 
--- maybe rename game/g's to hgame/hg?
-makeMove :: HGame -> Move -> Maybe HGame
-makeMove game (Move piece special from to) = do
-  let movedAndCleared =
-        game
-          & \(HGame (Game pieces c enP t) h) ->
-            let (nPieces, pz) = doMove pieces
-                wz = captureAll pieces
-                (nCastles, cz) = clearCastles c
-                ez =
-                  maybe
-                    0
-                    (unsafeIndex enPassantZobrists . (`rem` 8))
-                    enP
-             in HGame
-                  ( Game
-                      nPieces
-                      nCastles
-                      Nothing
-                      t
-                  )
-                  (h .^. pz .^. wz .^. cz .^. ez)
-  afterSpecials <- specials movedAndCleared
-  checkChecked <- nothingIfCheck afterSpecials
-  pure (flipTurn checkChecked)
+makeMove :: Game -> Move -> Maybe Game
+makeMove (Game pieces castling enPassant turn hashed) (Move pieceType special from to) =
+  case special of
+    Normal -> checkInCheck $ Game movedPieces movedCastling Nothing opp movedHash
+    PawnDouble ->
+      checkInCheck $
+        Game
+          movedPieces
+          movedCastling
+          (Just to)
+          opp
+          (movedHash .^. enPassantZobrists ! (to `rem` 8))
+    CastleKing -> do
+      toMaybe (inCheck turn pieces)
+      toMaybe (inCheck turn movedPieces)
+      let oneRight = addPiece (Piece turn King) (from + 1) $ removePiece from pieces
+      toMaybe (inCheck turn oneRight)
+      let rookMoved = addPiece (Piece turn Rook) (to - 1) $ removePiece (from + 3) movedPieces
+      checkInCheck
+        ( Game
+            rookMoved
+            movedCastling
+            Nothing
+            opp
+            (movedHash .^. pieceZobrists turn Rook ! (from + 3) .^. pieceZobrists turn Rook ! (to - 1))
+        )
+    CastleQueen -> do
+      toMaybe (inCheck turn pieces)
+      toMaybe (inCheck turn movedPieces)
+      let oneLeft = addPiece (Piece turn King) (from - 1) $ removePiece from pieces
+      toMaybe (inCheck turn oneLeft)
+      let rookMoved = addPiece (Piece turn Rook) (to + 1) $ removePiece (from - 4) movedPieces
+      checkInCheck
+        ( Game
+            rookMoved
+            movedCastling
+            Nothing
+            opp
+            (movedHash .^. pieceZobrists turn Rook ! (from - 4) .^. pieceZobrists turn Rook ! (to + 1))
+        )
+    EnPassant sq ->
+      checkInCheck $
+        Game
+          (removePiece sq movedPieces)
+          movedCastling
+          Nothing
+          opp
+          (movedHash .^. pieceZobrists opp Pawn ! sq)
+    Promotion promote ->
+      checkInCheck $
+        Game
+          (addPiece (Piece turn promote) to $ removePiece from pieces)
+          movedCastling
+          Nothing
+          opp
+          (movedHash .^. pieceZobrists turn Pawn ! to .^. pieceZobrists turn promote ! to)
   where
-    playZs = pieceZobrists (game ^. gameTurn)
-    waitZs = pieceZobrists (other (game ^. gameTurn))
-    moverZs = playZs piece
-    -- basic moving
-    doMove !pcs =
-      ( pcs & active . byPiece piece %~ (`clearBit` from) . (`setBit` to),
-        (moverZs `unsafeIndex` from) .^. (moverZs `unsafeIndex` to)
-      )
-    -- capture opponent's piece if needed
-    captureAll pcs
-      | inactives ^. pawns .&. toBit /= 0 = mkMask Pawn
-      | inactives ^. knights .&. toBit /= 0 = mkMask Knight
-      | inactives ^. bishops .&. toBit /= 0 = mkMask Bishop
-      | inactives ^. rooks .&. toBit /= 0 = mkMask Rook
-      | inactives ^. queens .&. toBit /= 0 = mkMask Queen
-      | inactives ^. kings .&. toBit /= 0 = mkMask King
-      | otherwise = 0
-      where
-        toBit = bit to
-        mkMask pc = waitZs pc `unsafeIndex` to
-        inactives = pcs ^. inactive
-    -- clears any castling rights if needed
-    clearCastles c =
-      ( newC,
-        castleZobrists
-          `unsafeIndex` c
-          .^. castleZobrists
-          `unsafeIndex` newC
-      )
-      where
-        newC =
-          c
-            .&. complement
-              ( castleMask from
-                  .|. castleMask to
-                  .|. case piece of
-                    King -> case game ^. gameTurn of
-                      White -> 3
-                      Black -> 12
-                    _ -> 0
-              )
-        castleMask sq = case sq of
-          0 -> 1
-          7 -> 2
-          56 -> 4
-          63 -> 8
-          _ -> 0
-    -- checks for check after moving
-    nothingIfCheck hg = if inCheck hg then Nothing else Just hg
-    -- handle special cases
-    specials g = case special of
-      PawnDouble ->
-        Just $
-          g
-            & gameEnPassant ?~ to
-            & hgHash %~ xor (enPassantZobrists `unsafeIndex` (to `rem` 8))
-      EnPassant enPSq -> Just (clearSq Pawn enPSq g)
-      Promotion promote ->
-        Just $
-          setSqActive promote to $
-            clearSq Pawn to g
-      CastleKing ->
-        moveSqActive Rook (kingOrigin + 3) (kingOrigin + 1)
-          <$> throughCheckKing g
-      CastleQueen ->
-        moveSqActive Rook (kingOrigin - 4) (kingOrigin - 1)
-          <$> throughCheckQueen g
-      Normal -> Just g
-    -- checks for castling through check
-    -- assumes king is moved, rook is not
-    -- originally it cleared the original king square from blockers
-    -- doesnt matter because if kingOrigin +- 1 is prevented from check by blocker then kingOrigin has to be in check too
-    throughCheckKing hg@(HGame g _)
-      | squareAttacked block kingOrigin g = Nothing
-      | squareAttacked block (kingOrigin + 1) g = Nothing
-      | otherwise = Just hg
-      where
-        block = piecesAll (g ^. gamePieces)
-    throughCheckQueen hg@(HGame g _)
-      | squareAttacked block kingOrigin g = Nothing
-      | squareAttacked block (kingOrigin - 1) g = Nothing
-      | otherwise = Just hg
-      where
-        block = piecesAll (g ^. gamePieces)
-    -- where the king starts on the board
-    -- for castling things
-    kingOrigin = case game ^. gameTurn of
-      White -> 4
-      Black -> 60
+    checkInCheck game = if inCheck turn (gamePieces game) then Nothing else Just game
+    toMaybe = bool (Just ()) Nothing
+    movedPieces = addPiece (Piece turn pieceType) to $ removePiece from pieces
+
+    clearCorners White 0 = clearRights White False
+    clearCorners White 7 = clearRights White True
+    clearCorners Black 56 = clearRights Black False
+    clearCorners Black 63 = clearRights Black True
+    clearCorners _ _ = id
+
+    movedCastling = clearCorners opp to $
+      case pieceType of
+        King -> clearColorRights turn castling
+        Rook -> clearCorners turn from castling
+        _ -> castling
+
+    movedHash =
+      hashed
+        .^. (pieceZobrists turn pieceType ! from)
+        .^. (pieceZobrists turn pieceType ! to)
+        .^. (castleZobrists ! unCastling movedCastling)
+        .^. (castleZobrists ! unCastling castling)
+        .^. maybe 0 (\(Piece c p) -> pieceZobrists c p ! to) capturePiece
+        .^. maybe 0 (pieceZobrists turn Pawn !) enPassant
+
+    capturePiece = getPiece to pieces
+    opp = other turn
