@@ -51,8 +51,6 @@ library
   build-depends:
       base >=4.7 && <5
     , hashable
-    , microlens
-    , microlens-th
     , parsec
     , transformers
     , vector
@@ -70,8 +68,6 @@ executable trout-exe
   build-depends:
       base >=4.7 && <5
     , hashable
-    , microlens
-    , microlens-th
     , parsec
     , transformers
     , trout
@@ -96,8 +92,6 @@ test-suite trout-test
     , base >=4.7 && <5
     , hashable
     , hspec
-    , microlens
-    , microlens-th
     , parsec
     , split
     , transformers
@@ -120,8 +114,6 @@ benchmark trout-bench
     , criterion
     , deepseq
     , hashable
-    , microlens
-    , microlens-th
     , parsec
     , transformers
     , trout
