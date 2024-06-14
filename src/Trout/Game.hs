@@ -26,19 +26,7 @@ import Data.Bool (bool)
 import Data.Foldable (foldl')
 import Data.Hashable (Hashable (..))
 import Data.Vector.Primitive ((!))
-import Trout.Bitboard
-  ( Bitboard,
-    complement,
-    countTrailingZeros,
-    fileA,
-    fileH,
-    toSqs,
-    (!<<.),
-    (!>>.),
-    (.&.),
-    (.^.),
-    (.|.),
-  )
+import Trout.Bitboard (Bitboard, clearBit, complement, countTrailingZeros, fileA, fileH, toSqs, (!<<.), (!>>.), (.&.), (.^.), (.|.))
 import Trout.Game.Move (Move (..), SpecialMove (..))
 import Trout.Game.MoveGen
   ( bishopMoves,
@@ -156,11 +144,10 @@ clearRights :: Color -> Bool -> Castling -> Castling
 clearRights color kingside (Castling castle) =
   Castling $
     castle
-      .&. complement
-        ( 1 !<<. case color of
-            White -> if kingside then 1 else 0
-            Black -> if kingside then 3 else 2
-        )
+      `clearBit` ( case color of
+                     White -> if kingside then 1 else 0
+                     Black -> if kingside then 3 else 2
+                 )
 
 -- TODO check if this is slow
 canCastle :: Color -> Bool -> Castling -> Bool
