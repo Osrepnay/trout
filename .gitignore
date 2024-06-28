@@ -3,3 +3,4 @@
 *.prof
 dist-newstyle/
 *.vim
+build/
