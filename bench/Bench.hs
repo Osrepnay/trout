@@ -3,23 +3,21 @@ import Criterion.Main
 import Data.Maybe
 import Trout.Game
 import Trout.Search
-import Trout.Search.TranspositionTable
+import Trout.Search.TranspositionTable (HashMapTT)
+import Trout.Search.TranspositionTable qualified as TT
 
 main :: IO ()
 main = do
   -- probably better way to do this (env), cba read docs
-  table <- newTT 1000000
+  let table = TT.new
   defaultMain
     [ bench "perft(5)" $ whnf (perft 5) startingGame,
       bench "bestMove depth 5" $
-        whnfIO (bestMoveWrapper 5 startingGame table)
+        whnf (bestMoveWrapper 5 startingGame) table
     ]
 
-bestMoveWrapper :: Int -> Game -> TranspositionTable -> IO Int
-bestMoveWrapper depth game table = do
-  res <- evalStateT (bestMove depth game) (SearchState table)
-  clearTT table
-  pure (fst res)
+bestMoveWrapper :: Int -> Game -> HashMapTT -> Int
+bestMoveWrapper depth game = fst . evalState (bestMove depth game)
 
 perft :: Int -> Game -> Int
 perft 0 _ = 1

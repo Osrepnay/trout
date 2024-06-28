@@ -1,73 +1,30 @@
-module Trout.Search.TranspositionTable
-  ( NodeType (..),
-    TTEntry (..),
-    TTKey,
-    TranspositionTable,
-    newTT,
-    clearTT,
-    insertTT,
-    readTT,
-  )
-where
+module Trout.Search.TranspositionTable (TTEntry, HashMapTT, new, clear, insert, get) where
 
-import Data.Hashable (hash)
-import Data.Vector.Mutable (IOVector)
-import Data.Vector.Mutable qualified as MV
+import Control.Monad.Trans.State.Strict (State)
+import Control.Monad.Trans.State.Strict qualified as S
+import Data.HashMap.Strict (HashMap)
+import Data.HashMap.Strict qualified as M
 import Trout.Game (Game)
-import Trout.Game.Move (Move)
-
-data NodeType
-  = ExactNode -- not fail high or fail low
-  | CutNode -- failed high/beta cutoff, move is "too good"
-  | AllNode -- failed low, move is "too bad"
-  deriving (Eq, Show)
+import Trout.Search.Node (NodeResult)
 
 data TTEntry = TTEntry
-  { entryEval :: !Int,
-    entryType :: !NodeType,
-    entryDepth :: !Int,
-    entryMove :: !Move
+  { entryNode :: !NodeResult,
+    entryDepth :: !Int
   }
   deriving (Eq, Show)
 
-type TTKey = Game
+-- TODO limit size
 
-type TranspositionTable = IOVector (Maybe (Int, TTEntry))
+type HashMapTT = HashMap Game TTEntry
 
--- create a new empty transposition table of the given size
-newTT :: Int -> IO TranspositionTable
-newTT size = do
-  table <- MV.new size
-  MV.set table Nothing
-  pure table
+new :: HashMapTT
+new = M.empty
 
--- clear transposition table
-clearTT :: TranspositionTable -> IO ()
-clearTT table = MV.set table Nothing
+clear :: State HashMapTT ()
+clear = S.put new
 
-hashToIdx :: Int -> Int -> Int
-hashToIdx h tableLen =
-  fromIntegral $
-    (fromIntegral h :: Word)
-      `rem` (fromIntegral tableLen :: Word)
-{-# INLINE hashToIdx #-}
+insert :: Game -> TTEntry -> State HashMapTT ()
+insert game entry = S.modify (M.insert game entry)
 
-insertTT :: TTKey -> TTEntry -> TranspositionTable -> IO ()
-insertTT hgame entry table = do
-  let hgHash = hash hgame
-  let hgIdx = hashToIdx hgHash (MV.length table)
-  MV.write table hgIdx (Just (hgHash, entry))
-{-# INLINE insertTT #-}
-
-readTT :: TTKey -> TranspositionTable -> IO (Maybe TTEntry)
-readTT hgame table = do
-  let hgHash = hash hgame
-  let hgIdx = hashToIdx hgHash (MV.length table)
-  maybeRes <- MV.read table hgIdx
-  pure $
-    maybeRes
-      >>= \(fullHash, entry) ->
-        if fullHash == hgHash
-          then Just entry
-          else Nothing
-{-# INLINE readTT #-}
+get :: Game -> State HashMapTT (Maybe TTEntry)
+get game = M.lookup game <$> S.get

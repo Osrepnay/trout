@@ -24,6 +24,7 @@ dependencies:
 - hashable
 - parsec
 - transformers
+- unordered-containers
 - vector
 
 ghc-options:

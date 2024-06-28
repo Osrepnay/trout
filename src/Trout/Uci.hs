@@ -12,8 +12,10 @@ import Control.Concurrent
     tryTakeMVar,
   )
 import Control.Exception (evaluate)
-import Control.Monad.Trans.State.Strict (StateT (..))
+import Control.Monad.Trans.State.Strict (runState)
+import Data.Bifunctor (first, second)
 import Data.Foldable (foldl')
+import Data.Function ((&))
 import Data.Maybe (fromMaybe)
 import System.IO (hFlush, hPutStrLn, stderr, stdout)
 import System.Timeout (timeout)
@@ -31,8 +33,9 @@ import Trout.Game.Move
     uciShowMove,
   )
 import Trout.Piece (Color (..))
-import Trout.Search (SearchState (..), bestMove)
-import Trout.Search.TranspositionTable (newTT)
+import Trout.Search (bestMove)
+import Trout.Search.TranspositionTable (HashMapTT)
+import Trout.Search.TranspositionTable qualified as TT
 import Trout.Uci.Parse
   ( CommGoArg (..),
     CommPositionInit (..),
@@ -40,8 +43,9 @@ import Trout.Uci.Parse
     UciMove (..),
     readUciLine,
   )
-import Data.Bifunctor (first, second)
-import Data.Function ((&))
+
+-- TODO hack
+type SearchState = HashMapTT
 
 data UciState = UciState
   { uciGame :: Game,
@@ -91,10 +95,10 @@ launchGo moveVar ssVar game (GoSettings movetime times _incs maxDepth) = do
     searches depth
       | depth <= maxDepth = do
           st0 <- readMVar ssVar
-          ((score, move), st1) <-
-            runStateT
-              (bestMove depth game)
-              st0
+          let ((score, move), st1) =
+                runState
+                  (bestMove depth game)
+                  st0
           _ <- evaluate score
           _ <- tryTakeMVar moveVar
           putMVar moveVar move
@@ -154,8 +158,8 @@ doUci uciState = do
         Just x -> pure x
         Nothing -> do
           v <- newEmptyMVar
-          tt <- newTT 1000000
-          _ <- putMVar v (SearchState tt)
+          let tt = TT.new
+          _ <- putMVar v tt
           pure v
       thread <-
         forkIO $

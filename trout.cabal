@@ -36,6 +36,7 @@ library
       Trout.Game.Zobrists
       Trout.Piece
       Trout.Search
+      Trout.Search.Node
       Trout.Search.PieceSquareTables
       Trout.Search.TranspositionTable
       Trout.Search.Worthiness
@@ -53,6 +54,7 @@ library
     , hashable
     , parsec
     , transformers
+    , unordered-containers
     , vector
   default-language: GHC2021
 
@@ -71,6 +73,7 @@ executable trout-exe
     , parsec
     , transformers
     , trout
+    , unordered-containers
     , vector
   default-language: GHC2021
 
@@ -96,6 +99,7 @@ test-suite trout-test
     , split
     , transformers
     , trout
+    , unordered-containers
     , vector
   default-language: GHC2021
 
@@ -117,5 +121,6 @@ benchmark trout-bench
     , parsec
     , transformers
     , trout
+    , unordered-containers
     , vector
   default-language: GHC2021
