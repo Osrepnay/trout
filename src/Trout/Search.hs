@@ -56,14 +56,14 @@ bestMove depth game =
     go best@(bestScore, _) (move : moves) = case makeMove game move of
       Nothing -> go best moves
       Just moveMade -> do
-        (NodeResult otherScore _) <- searchNega (depth - 1) (-beta) (-max alpha bestScore) moveMade
+        otherScore <- searchNega (depth - 1) (-beta) (-max alpha bestScore) moveMade
         let nodeScore = -otherScore
         if nodeScore > bestScore
           then go (nodeScore, move) moves
           else go best moves
 
-searchNega :: Int -> Int -> Int -> Game -> State HashMapTT NodeResult
-searchNega 0 !_ !_ !game = TT.insert game (TTEntry result nullMove 0) $> result
+searchNega :: Int -> Int -> Int -> Game -> State HashMapTT Int
+searchNega 0 !_ !_ !game = TT.insert game (TTEntry result nullMove 0) $> nodeResScore result
   where
     result = NodeResult (eval game) ExactNode
 searchNega depth !alpha !beta !game = do
@@ -81,7 +81,7 @@ searchNega depth !alpha !beta !game = do
             else (0,) <$> gameMoves
   (bResult, bMove) <- go Nothing scoredMoves
   TT.insert game (TTEntry bResult bMove depth)
-  pure bResult
+  pure (nodeResScore bResult)
   where
     go :: Maybe (Int, Move) -> [(Int, Move)] -> State HashMapTT (NodeResult, Move)
     -- no valid moves
@@ -103,7 +103,7 @@ searchNega depth !alpha !beta !game = do
     go best moves = case makeMove game move of
       Nothing -> go best movesRest
       Just moveMade -> do
-        (NodeResult otherScore nodeType) <-
+        otherScore <-
           searchNega
             (depth - 1)
             (-beta)
