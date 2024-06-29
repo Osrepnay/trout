@@ -7,7 +7,9 @@ where
 
 import Control.Monad.Trans.State.Strict (State)
 import Data.Bifunctor (first)
+import Data.Foldable (foldl')
 import Data.Function ((&))
+import Data.Functor (($>))
 import Data.Tuple (swap)
 import Trout.Bitboard (popCount)
 import Trout.Game
@@ -24,7 +26,8 @@ import Trout.Game.Move (Move (..), nullMove)
 import Trout.Piece (Color (..), Piece (..), PieceType (..))
 import Trout.Search.Node (NodeResult (..), NodeType (..))
 import Trout.Search.PieceSquareTables (pstEval)
-import Trout.Search.TranspositionTable (HashMapTT)
+import Trout.Search.TranspositionTable (HashMapTT, TTEntry (..))
+import Trout.Search.TranspositionTable qualified as TT
 import Trout.Search.Worthiness (drawWorth, lossWorth)
 
 -- TODO this kinda sucks
@@ -60,17 +63,32 @@ bestMove depth game =
           else go best moves
 
 searchNega :: Int -> Int -> Int -> Game -> State HashMapTT NodeResult
-searchNega 0 !_ !_ !game = pure (NodeResult (eval game) ExactNode)
-searchNega depth !alpha !beta game = go Nothing (allMoves game)
+searchNega 0 !_ !_ !game = TT.insert game (TTEntry result nullMove 0) $> result
   where
-    -- max, but first argument can be maybe
-    maybeMax Nothing b = b
-    maybeMax (Just a) b = max a b
+    result = NodeResult (eval game) ExactNode
+searchNega depth !alpha !beta game = do
+  let gameMoves = allMoves game
+  maybeEntry <- TT.get game
+  let scoredMoves = case maybeEntry of
+        Nothing -> (0,) <$> gameMoves
+        Just (TTEntry {entryMove}) ->
+          -- make sure move has a chance of being in the movelist
+          -- intended for speed, it's correct either way
+          if entryMove /= nullMove
+            then
+              (1, entryMove)
+                : ((0,) <$> filter (/= entryMove) gameMoves)
+            else (0,) <$> gameMoves
+  (bResult, bMove) <- go Nothing scoredMoves
+  TT.insert game (TTEntry bResult bMove depth)
+  pure bResult
+  where
+    go :: Maybe (Int, Move) -> [(Int, Move)] -> State HashMapTT (NodeResult, Move)
     -- no valid moves
     -- bestScore is nothing if all moves are illegal
     go Nothing []
-      | inCheck (gameTurn game) (gamePieces game) = pure (NodeResult lossWorth ExactNode)
-      | otherwise = pure (NodeResult drawWorth ExactNode)
+      | inCheck (gameTurn game) (gamePieces game) = pure (NodeResult lossWorth ExactNode, nullMove)
+      | otherwise = pure (NodeResult drawWorth ExactNode, nullMove)
     -- bestScore tracks the best score among moves, but separate from real alpha
     -- this way we keep track of realer score and not alpha cutoff (fail-soft)
     -- <----------|---------------|--------->
@@ -78,19 +96,41 @@ searchNega depth !alpha !beta game = go Nothing (allMoves game)
     -- bestScore can be anywhere on the number line left of beta
     -- ExactNode is inclusive on alpha, because bestScore is exact even if it touches alpha
     -- TODO make sure that fail-soft behavior doesn't fiddle with bestScore too weirdly
-    go (Just bestScore) []
+    go (Just (bestScore, bMove)) []
       -- normally alpha is set if bestScore > alpha, but technically the score is exact
-      | bestScore >= alpha = pure (NodeResult bestScore ExactNode)
-      | otherwise = pure (NodeResult bestScore AllNode)
-    go bestScore (move : moves) = case makeMove game move of
-      Nothing -> go bestScore moves
+      | bestScore >= alpha = pure (NodeResult bestScore ExactNode, bMove)
+      | otherwise = pure (NodeResult bestScore AllNode, bMove)
+    go best moves = case makeMove game move of
+      Nothing -> go best movesRest
       Just moveMade -> do
-        (NodeResult otherScore nodeType) <- searchNega (depth - 1) (-beta) (-maybeMax bestScore alpha) moveMade
+        (NodeResult otherScore nodeType) <-
+          searchNega
+            (depth - 1)
+            (-beta)
+            (-maybe alpha (max alpha . fst) best)
+            moveMade
         let nodeScore = -otherScore
         -- fail-high, move is too good - parent node shouldn't play this move
         if nodeScore >= beta
-          then pure (NodeResult nodeScore CutNode)
-          else go (Just (maybeMax bestScore nodeScore)) moves
+          then pure (NodeResult nodeScore CutNode, move)
+          else flip go movesRest $
+            case best of
+              Just (bScore, _) ->
+                if bScore < nodeScore
+                  then Just (nodeScore, move)
+                  else best
+              Nothing -> Just (nodeScore, move)
+      where
+        -- filter out move with best score and get filtered list in one pass
+        (movesRest, _, move) =
+          foldl'
+            ( \(ms, sb, mb) (s, m) ->
+                if s > sb
+                  then (ms, s, m)
+                  else ((s, m) : ms, sb, mb)
+            )
+            ([], minBound, nullMove)
+            moves
 
 eval :: Game -> Int
 eval game = pstEvalValue
