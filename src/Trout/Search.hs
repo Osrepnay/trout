@@ -66,7 +66,7 @@ searchNega :: Int -> Int -> Int -> Game -> State HashMapTT NodeResult
 searchNega 0 !_ !_ !game = TT.insert game (TTEntry result nullMove 0) $> result
   where
     result = NodeResult (eval game) ExactNode
-searchNega depth !alpha !beta game = do
+searchNega depth !alpha !beta !game = do
   let gameMoves = allMoves game
   maybeEntry <- TT.get game
   let scoredMoves = case maybeEntry of
