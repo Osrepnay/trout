@@ -8,7 +8,7 @@ where
 
 import Data.Foldable (foldl')
 import Data.Functor ((<&>))
-import Data.Vector.Primitive (Vector, (!), (//))
+import Data.Vector.Primitive (Vector, unsafeIndex, (//))
 import Data.Vector.Primitive qualified as V
 import Data.Word (Word64)
 import Trout.Bitboard
@@ -47,7 +47,7 @@ bishopMasks =
     ( (complement (rank1 .|. rank8 .|. fileA .|. fileH) .&.)
         . foldl' (.|.) 0
         . (<$> bishopRays)
-        . flip (!)
+        . flip unsafeIndex
     )
 
 rookMasks :: Vector Bitboard
@@ -65,7 +65,7 @@ rookMasks =
                   ]
           )
         . (<$> rookRays)
-        . flip (!)
+        . flip unsafeIndex
     )
 
 -- maps an index to a mask
@@ -91,10 +91,10 @@ bishopMagicTable =
       <&> \sq ->
         flip bishopMovesClassic sq
           `V.map` allMapped
-            (bishopMagics ! sq)
-            (bishopBits ! sq)
+            (bishopMagics `unsafeIndex` sq)
+            (bishopBits `unsafeIndex` sq)
             1024
-            (bishopMasks ! sq)
+            (bishopMasks `unsafeIndex` sq)
 
 rookMagicTable :: Vector Bitboard
 rookMagicTable =
@@ -103,28 +103,28 @@ rookMagicTable =
       <&> \sq ->
         flip rookMovesClassic sq
           `V.map` allMapped
-            (rookMagics ! sq)
-            (rookBits ! sq)
+            (rookMagics `unsafeIndex` sq)
+            (rookBits `unsafeIndex` sq)
             4096
-            (rookMasks ! sq)
+            (rookMasks `unsafeIndex` sq)
 
 bishopMovesMagic :: Bitboard -> Int -> Bitboard
 bishopMovesMagic block sq =
-  (bishopMagicTable !) $
+  (bishopMagicTable `unsafeIndex`) $
     sq * 1024
       + genKey
         masked
-        (bishopMagics ! sq)
-        (bishopBits ! sq)
+        (bishopMagics `unsafeIndex` sq)
+        (bishopBits `unsafeIndex` sq)
   where
-    masked = block .&. (bishopMasks ! sq)
+    masked = block .&. (bishopMasks `unsafeIndex` sq)
 {-# INLINE bishopMovesMagic #-}
 
 rookMovesMagic :: Bitboard -> Int -> Bitboard
 rookMovesMagic block sq =
-  (rookMagicTable !) $
+  (rookMagicTable `unsafeIndex`) $
     sq * 4096
-      + genKey masked (rookMagics ! sq) (rookBits ! sq)
+      + genKey masked (rookMagics `unsafeIndex` sq) (rookBits `unsafeIndex` sq)
   where
-    masked = block .&. (rookMasks ! sq)
+    masked = block .&. (rookMasks `unsafeIndex` sq)
 {-# INLINE rookMovesMagic #-}

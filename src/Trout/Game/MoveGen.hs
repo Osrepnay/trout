@@ -16,7 +16,7 @@ module Trout.Game.MoveGen
 where
 
 import Data.Functor ((<&>))
-import Data.Vector.Primitive (Vector, (!))
+import Data.Vector.Primitive (Vector, unsafeIndex)
 import Data.Vector.Primitive qualified as V
 import Trout.Bitboard
   ( Bitboard,
@@ -193,7 +193,7 @@ knightMoves :: Bitboard -> Bitboard -> Int -> DList Move
 knightMoves _ myBlock sq =
   mapOnes
     (Move Knight Normal sq)
-    (knightTable ! sq .&. complement myBlock)
+    (knightTable `unsafeIndex` sq .&. complement myBlock)
 {-# INLINE knightMoves #-}
 
 bishopMoves :: Bitboard -> Bitboard -> Int -> DList Move
@@ -238,7 +238,7 @@ kingMoves kAllowed qAllowed block myBlock sq =
     . ([Move King CastleQueen sq (sq - 2) | castleQ] ++)
     . mapOnes
       (Move King Normal sq)
-      (kingTable ! sq .&. complement myBlock)
+      (kingTable `unsafeIndex` sq .&. complement myBlock)
   where
     castleK = kAllowed && block .&. (3 !<<. (sq + 1)) == 0
     castleQ = qAllowed && block .&. (7 !<<. (sq - 3)) == 0
