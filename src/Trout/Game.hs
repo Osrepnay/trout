@@ -33,6 +33,7 @@ import Trout.Bitboard
     countTrailingZeros,
     fileA,
     fileH,
+    testBit,
     toSqs,
     (!<<.),
     (!>>.),
@@ -78,39 +79,18 @@ data Pieces = Pieces
 emptyPieces :: Pieces
 emptyPieces = Pieces 0 0 0 0
 
-type PieceMapping = (Bool, Bool, Bool)
-
-mappingToPieceType :: PieceMapping -> Maybe PieceType
-mappingToPieceType (True, False, False) = Just Pawn
-mappingToPieceType (False, True, False) = Just Knight
-mappingToPieceType (True, True, False) = Just Bishop
-mappingToPieceType (False, False, True) = Just Rook
-mappingToPieceType (True, False, True) = Just Queen
-mappingToPieceType (False, True, True) = Just King
-mappingToPieceType _ = Nothing
-
-pieceTypeToMapping :: PieceType -> PieceMapping
-pieceTypeToMapping Pawn = (True, False, False)
-pieceTypeToMapping Knight = (False, True, False)
-pieceTypeToMapping Bishop = (True, True, False)
-pieceTypeToMapping Rook = (False, False, True)
-pieceTypeToMapping Queen = (True, False, True)
-pieceTypeToMapping King = (False, True, True)
-
 addPiece :: Piece -> Int -> Pieces -> Pieces
-addPiece (Piece c p) sq (Pieces pw p0 p1 p2) = Pieces (colorOp pw) (p0Op p0) (p1Op p1) (p2Op p2)
+addPiece (Piece c p) sq (Pieces pw p0 p1 p2) =
+  Pieces
+    (branchlessSet (fromEnum c .^. 1) pw)
+    (branchlessSet (pieceInt .&. 1) p0)
+    (branchlessSet (pieceInt !>>. 1 .&. 1) p1)
+    (branchlessSet (pieceInt !>>. 2 .&. 1) p2)
   where
     sqBB = 1 !<<. sq
-    unSqBB = complement sqBB
-    genOp = bool (.&. unSqBB) (.|. sqBB)
-    (p0Bit, p1Bit, p2Bit) = pieceTypeToMapping p
-    p0Op = genOp p0Bit
-    p1Op = genOp p1Bit
-    p2Op = genOp p2Bit
-    colorOp =
-      case c of
-        White -> (.|. sqBB)
-        Black -> (.&. unSqBB)
+    -- https://graphics.stanford.edu/~seander/bithacks.html#ConditionalSetOrClearBitsWithoutBranching
+    branchlessSet clear bb = (fromIntegral (-clear) .^. bb) .&. sqBB .^. bb
+    pieceInt = fromEnum p + 1
 
 removePiece :: Int -> Pieces -> Pieces
 removePiece sq (Pieces pw p0 p1 p2) = Pieces (pw .&. unSqBB) (p0 .&. unSqBB) (p1 .&. unSqBB) (p2 .&. unSqBB)
@@ -118,27 +98,34 @@ removePiece sq (Pieces pw p0 p1 p2) = Pieces (pw .&. unSqBB) (p0 .&. unSqBB) (p1
     unSqBB = complement (1 !<<. sq)
 
 getPiece :: Int -> Pieces -> Maybe Piece
-getPiece sq (Pieces pw p0 p1 p2) =
-  Piece (if pw .&. sqBB == 0 then Black else White)
-    <$> mappingToPieceType (p0 .&. sqBB /= 0, p1 .&. sqBB /= 0, p2 .&. sqBB /= 0)
-  where
-    sqBB = 1 !<<. sq
+getPiece sq (Pieces pw p0 p1 p2)
+  | testBit (pw .|. p0 .|. p1 .|. p2) sq =
+      Just $
+        Piece
+          (toEnum (fromIntegral (pw !>>. sq .&. 1 .^. 1)))
+          ( toEnum
+              ( fromIntegral
+                  ( p0 !>>. sq .&. 1
+                      + p1 !>>. sq .&. 1 * 2
+                      + p2 !>>. sq .&. 1 * 4
+                  )
+              )
+          )
+  | otherwise = Nothing
 
 pieceTypeBitboard :: PieceType -> Pieces -> Bitboard
 pieceTypeBitboard pieceType (Pieces _pw p0 p1 p2) =
-  genMask p0Bit p0
-    .&. genMask p1Bit p1
-    .&. genMask p2Bit p2
+  flipIfNotSet (pieceInt .&. 1) p0
+    .&. flipIfNotSet (pieceInt !>>. 1 .&. 1) p1
+    .&. flipIfNotSet (pieceInt !>>. 2 .&. 1) p2
   where
-    (p0Bit, p1Bit, p2Bit) = pieceTypeToMapping pieceType
-    genMask = bool complement id
+    flipIfNotSet bit = ((fromIntegral bit - 1) .^.)
+    pieceInt = fromEnum pieceType + 1
 
 pieceBitboard :: Piece -> Pieces -> Bitboard
 pieceBitboard (Piece c pieceType) pieces =
   pieceTypeBitboard pieceType pieces
-    .&. case c of
-      White -> piecesWhite pieces
-      Black -> complement (piecesWhite pieces)
+    .&. (piecesWhite pieces .^. fromIntegral (negate (fromEnum c)))
 
 occupancy :: Pieces -> Bitboard
 occupancy (Pieces _pw p0 p1 p2) = p0 .|. p1 .|. p2
@@ -229,11 +216,11 @@ allMoves (Game pieces castling enPassant turn _) =
 inCheck :: Color -> Pieces -> Bool
 inCheck color pieces =
   (bishopAttackers /= 0)
-    .|. (rookAttackers /= 0)
-    .|. (queenAttackers /= 0)
-    .|. (knightAttackers /= 0)
-    .|. (pawnAttackers /= 0)
-    .|. (kingAttackers /= 0)
+    || (rookAttackers /= 0)
+    || (queenAttackers /= 0)
+    || (knightAttackers /= 0)
+    || (pawnAttackers /= 0)
+    || (kingAttackers /= 0)
   where
     oppColor = other color
     king = pieceBitboard (Piece color King) pieces

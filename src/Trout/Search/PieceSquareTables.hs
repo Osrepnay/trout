@@ -15,7 +15,7 @@ module Trout.Search.PieceSquareTables
   )
 where
 
-import Data.Vector.Primitive (Vector, (!))
+import Data.Vector.Primitive (Vector)
 import Data.Vector.Primitive qualified as V
 import Trout.Bitboard (Bitboard, foldSqs, (.^.))
 import Trout.Piece (PieceType (..))
@@ -217,23 +217,23 @@ kingEPST =
           [1, 3, 2, -2, 0, -1, 1, 2]
         ]
 
+mpsts :: Vector Int
+mpsts = V.concat [pawnMPST, knightMPST, bishopMPST, rookMPST, queenMPST, kingMPST]
+
+epsts :: Vector Int
+epsts = V.concat [pawnEPST, knightEPST, bishopEPST, rookEPST, queenEPST, kingEPST]
+
 pstEval :: Bitboard -> PieceType -> Int -> Int -> Int -> Int
 pstEval bb piece !mgPhase !egPhase !mask =
   foldSqs
     ( \score sqRaw ->
         let sq = sqRaw .^. mask
-            m = mg ! sq
-            e = eg ! sq
+            m = mpsts `V.unsafeIndex` (pieceOffset + sq)
+            e = epsts `V.unsafeIndex` (pieceOffset + sq)
          in score + (m * mgPhase + e * egPhase) `quot` 24
     )
     0
     bb
   where
-    (mg, eg) = case piece of
-      Pawn -> (pawnMPST, pawnEPST)
-      Knight -> (knightMPST, knightEPST)
-      Bishop -> (bishopMPST, bishopEPST)
-      Rook -> (rookMPST, rookEPST)
-      Queen -> (queenMPST, queenEPST)
-      King -> (kingMPST, kingMPST)
+    pieceOffset = fromEnum piece * 64
 {-# INLINE pstEval #-}

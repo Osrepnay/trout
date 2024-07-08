@@ -1,17 +1,5 @@
 module Trout.Game.Zobrists
-  ( whitePawnZobrists,
-    blackPawnZobrists,
-    whiteKnightZobrists,
-    blackKnightZobrists,
-    whiteBishopZobrists,
-    blackBishopZobrists,
-    whiteRookZobrists,
-    blackRookZobrists,
-    whiteQueenZobrists,
-    blackQueenZobrists,
-    whiteKingZobrists,
-    blackKingZobrists,
-    castleZobrists,
+  ( castleZobrists,
     enPassantZobrists,
     pieceZobrists,
     playingZobrist,
@@ -44,41 +32,8 @@ allOfThem =
       (replicateM (12 * 64 + 16 + 1 + 8) xorshiftState)
       69420
 
-whitePawnZobrists :: Vector Int
-blackPawnZobrists :: Vector Int
-whiteKnightZobrists :: Vector Int
-blackKnightZobrists :: Vector Int
-whiteBishopZobrists :: Vector Int
-blackBishopZobrists :: Vector Int
-whiteRookZobrists :: Vector Int
-blackRookZobrists :: Vector Int
-whiteQueenZobrists :: Vector Int
-blackQueenZobrists :: Vector Int
-whiteKingZobrists :: Vector Int
-blackKingZobrists :: Vector Int
-whitePawnZobrists = V.slice (0 * 64) 64 allOfThem
-
-blackPawnZobrists = V.slice (1 * 64) 64 allOfThem
-
-whiteKnightZobrists = V.slice (2 * 64) 64 allOfThem
-
-blackKnightZobrists = V.slice (3 * 64) 64 allOfThem
-
-whiteBishopZobrists = V.slice (4 * 64) 64 allOfThem
-
-blackBishopZobrists = V.slice (5 * 64) 64 allOfThem
-
-whiteRookZobrists = V.slice (6 * 64) 64 allOfThem
-
-blackRookZobrists = V.slice (7 * 64) 64 allOfThem
-
-whiteQueenZobrists = V.slice (8 * 64) 64 allOfThem
-
-blackQueenZobrists = V.slice (9 * 64) 64 allOfThem
-
-whiteKingZobrists = V.slice (10 * 64) 64 allOfThem
-
-blackKingZobrists = V.slice (11 * 64) 64 allOfThem
+allPieceZobrists :: Vector Int
+allPieceZobrists = V.slice 0 (2 * 6 * 64) allOfThem
 
 castleZobrists :: Vector Int
 castleZobrists = V.slice (12 * 64) 16 allOfThem
@@ -91,15 +46,4 @@ enPassantZobrists :: Vector Int
 enPassantZobrists = V.slice (12 * 64 + 16 + 1) 8 allOfThem
 
 pieceZobrists :: Color -> PieceType -> Vector Int
-pieceZobrists White Pawn = whitePawnZobrists
-pieceZobrists Black Pawn = blackPawnZobrists
-pieceZobrists White Knight = whiteKnightZobrists
-pieceZobrists Black Knight = blackKnightZobrists
-pieceZobrists White Bishop = whiteBishopZobrists
-pieceZobrists Black Bishop = blackBishopZobrists
-pieceZobrists White Rook = whiteRookZobrists
-pieceZobrists Black Rook = blackRookZobrists
-pieceZobrists White Queen = whiteQueenZobrists
-pieceZobrists Black Queen = blackQueenZobrists
-pieceZobrists White King = whiteKingZobrists
-pieceZobrists Black King = blackKingZobrists
+pieceZobrists color pieceType = V.slice ((fromEnum color + fromEnum pieceType * 2) * 64) 64 allPieceZobrists

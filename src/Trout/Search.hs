@@ -8,9 +8,7 @@ where
 import Control.Monad.Trans.State.Strict (State)
 import Data.Bifunctor (first)
 import Data.Foldable (foldl')
-import Data.Function ((&))
 import Data.Functor (($>))
-import Data.Tuple (swap)
 import Trout.Bitboard (popCount)
 import Trout.Game
   ( Game,
@@ -23,7 +21,7 @@ import Trout.Game
     pieceTypeBitboard,
   )
 import Trout.Game.Move (Move (..), nullMove)
-import Trout.Piece (Color (..), Piece (..), PieceType (..))
+import Trout.Piece (Color (..), Piece (..), PieceType (..), colorSign)
 import Trout.Search.Node (NodeResult (..), NodeType (..))
 import Trout.Search.PieceSquareTables (pstEval)
 import Trout.Search.TranspositionTable (HashMapTT, TTEntry (..))
@@ -36,18 +34,13 @@ import Trout.Search.Worthiness (drawWorth, lossWorth)
 bestMove :: Int -> Game -> State HashMapTT (Int, Move)
 bestMove 0 game =
   pure
-    ( case gameTurn game of
-        White -> eval game
-        Black -> -eval game,
+    ( colorSign (gameTurn game) * eval game,
       head (allMoves game)
     )
 bestMove depth game =
   first
     -- if player is black, flip because negamax is relative
-    ( case gameTurn game of
-        White -> id
-        Black -> negate
-    )
+    (* colorSign (gameTurn game))
     <$> go (alpha, nullMove) (allMoves game)
   where
     alpha = minBound + 1 -- so negate works!!!!!!!
@@ -69,19 +62,24 @@ searchNega 0 !_ !_ !game = TT.insert game (TTEntry result nullMove 0) $> nodeRes
 searchNega depth !alpha !beta !game = do
   let gameMoves = allMoves game
   maybeEntry <- TT.get game
-  let scoredMoves = case maybeEntry of
-        Nothing -> (0,) <$> gameMoves
-        Just (TTEntry {entryMove}) ->
-          -- make sure move has a chance of being in the movelist
-          -- intended for speed, it's correct either way
-          if entryMove /= nullMove
-            then
-              (1, entryMove)
-                : ((0,) <$> filter (/= entryMove) gameMoves)
-            else (0,) <$> gameMoves
-  (bResult, bMove) <- go Nothing scoredMoves
-  TT.insert game (TTEntry bResult bMove depth)
-  pure (nodeResScore bResult)
+  case maybeEntry of
+    Nothing -> do
+      (bResult, bMove) <- go Nothing ((0,) <$> gameMoves)
+      TT.insert game (TTEntry bResult bMove depth)
+      pure (nodeResScore bResult)
+    Just (TTEntry {entryNode, entryMove, entryDepth}) ->
+      if entryDepth >= depth && nodeResType entryNode == ExactNode
+        then pure (nodeResScore entryNode)
+        else
+          let scoredMoves =
+                if entryMove /= nullMove
+                  then
+                    (1, entryMove) : ((0,) <$> filter (/= entryMove) gameMoves)
+                  else (0,) <$> gameMoves
+           in do
+                (bResult, bMove) <- go Nothing scoredMoves
+                TT.insert game (TTEntry bResult bMove depth)
+                pure (nodeResScore bResult)
   where
     go :: Maybe (Int, Move) -> [(Int, Move)] -> State HashMapTT (NodeResult, Move)
     -- no valid moves
@@ -133,15 +131,9 @@ searchNega depth !alpha !beta !game = do
             moves
 
 eval :: Game -> Int
-eval game = pstEvalValue
+eval game = colorSign (gameTurn game) * pstEvalValue
   where
-    (playerBB, oppBB) =
-      ( ($ gamePieces game) . pieceBitboard . Piece White,
-        ($ gamePieces game) . pieceBitboard . Piece Black
-      )
-        & case gameTurn game of
-          White -> id
-          Black -> swap
+    getBB color = ($ gamePieces game) . pieceBitboard . Piece color
     -- calculate game phase
     -- pawns don't count, bishops and rooks count 1, rooks 2, queens 4
     -- taken from pesto/ethereal/fruit
@@ -151,20 +143,17 @@ eval game = pstEvalValue
         + 2 * popCount (pieceTypeBitboard Rook (gamePieces game))
         + 4 * popCount (pieceTypeBitboard Queen (gamePieces game))
     egPhase = 24 - mgPhase
-    (aMask, nMask) = case gameTurn game of
-      White -> (0, 56)
-      Black -> (56, 0)
     pst bb p = pstEval bb p mgPhase egPhase
     pstEvalValue =
-      pst (playerBB Pawn) Pawn aMask
-        - pst (oppBB Pawn) Pawn nMask
-        + pst (playerBB Knight) Knight aMask
-        - pst (oppBB Knight) Knight nMask
-        + pst (playerBB Bishop) Bishop aMask
-        - pst (oppBB Bishop) Bishop nMask
-        + pst (playerBB Rook) Rook aMask
-        - pst (oppBB Rook) Rook nMask
-        + pst (playerBB Queen) Queen aMask
-        - pst (oppBB Queen) Queen nMask
-        + pst (playerBB King) King aMask
-        - pst (oppBB King) King nMask
+      pst (getBB White Pawn) Pawn 0
+        - pst (getBB Black Pawn) Pawn 56
+        + pst (getBB White Knight) Knight 0
+        - pst (getBB Black Knight) Knight 56
+        + pst (getBB White Bishop) Bishop 0
+        - pst (getBB Black Bishop) Bishop 56
+        + pst (getBB White Rook) Rook 0
+        - pst (getBB Black Rook) Rook 56
+        + pst (getBB White Queen) Queen 0
+        - pst (getBB Black Queen) Queen 56
+        + pst (getBB White King) King 0
+        - pst (getBB Black King) King 56
