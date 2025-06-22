@@ -5,7 +5,6 @@ module Trout.Search
   )
 where
 
-import Control.Monad.Trans.State.Strict (State)
 import Data.Bifunctor (first)
 import Data.Foldable (foldl')
 import Data.Functor (($>))
@@ -24,14 +23,14 @@ import Trout.Game.Move (Move (..), nullMove)
 import Trout.Piece (Color (..), Piece (..), PieceType (..), colorSign)
 import Trout.Search.Node (NodeResult (..), NodeType (..))
 import Trout.Search.PieceSquareTables (pstEval)
-import Trout.Search.TranspositionTable (HashMapTT, TTEntry (..))
+import Trout.Search.TranspositionTable (TTEntry (..), TTType)
 import Trout.Search.TranspositionTable qualified as TT
 import Trout.Search.Worthiness (drawWorth, lossWorth)
 
 -- TODO this kinda sucks
 -- get rid of nullMove weirdness too
 -- fails horribly when there are no moves
-bestMove :: Int -> Game -> State HashMapTT (Int, Move)
+bestMove :: (Monad m, TTType m) => Int -> Game -> m (Int, Move)
 bestMove 0 game =
   pure
     ( colorSign (gameTurn game) * eval game,
@@ -55,17 +54,17 @@ bestMove depth game =
           then go (nodeScore, move) moves
           else go best moves
 
-searchNega :: Int -> Int -> Int -> Game -> State HashMapTT Int
-searchNega 0 !_ !_ !game = TT.insert game (TTEntry result nullMove 0) $> nodeResScore result
+searchNega :: (Monad m, TTType m) => Int -> Int -> Int -> Game -> m Int
+searchNega 0 !_ !_ !game = TT.tttypeInsert game (TTEntry result nullMove 0) $> nodeResScore result
   where
     result = NodeResult (eval game) ExactNode
 searchNega depth !alpha !beta !game = do
   let gameMoves = allMoves game
-  maybeEntry <- TT.get game
+  maybeEntry <- TT.tttypeLookup game
   case maybeEntry of
     Nothing -> do
       (bResult, bMove) <- go Nothing ((0,) <$> gameMoves)
-      TT.insert game (TTEntry bResult bMove depth)
+      TT.tttypeInsert game (TTEntry bResult bMove depth)
       pure (nodeResScore bResult)
     Just (TTEntry {entryNode, entryMove, entryDepth}) ->
       if entryDepth >= depth && nodeResType entryNode == ExactNode
@@ -78,10 +77,10 @@ searchNega depth !alpha !beta !game = do
                   else (0,) <$> gameMoves
            in do
                 (bResult, bMove) <- go Nothing scoredMoves
-                TT.insert game (TTEntry bResult bMove depth)
+                TT.tttypeInsert game (TTEntry bResult bMove depth)
                 pure (nodeResScore bResult)
   where
-    go :: Maybe (Int, Move) -> [(Int, Move)] -> State HashMapTT (NodeResult, Move)
+    go :: (Monad m, TTType m) => Maybe (Int, Move) -> [(Int, Move)] -> m (NodeResult, Move)
     -- no valid moves
     -- bestScore is nothing if all moves are illegal
     go Nothing []

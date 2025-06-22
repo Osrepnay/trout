@@ -2,5 +2,5 @@
 *~
 *.prof
 dist-newstyle/
-*.vim
+Session.vim
 build/

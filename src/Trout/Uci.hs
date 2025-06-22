@@ -34,7 +34,7 @@ import Trout.Game.Move
   )
 import Trout.Piece (Color (..))
 import Trout.Search (bestMove)
-import Trout.Search.TranspositionTable (HashMapTT)
+import Trout.Search.TranspositionTable (SizedHashMapTT)
 import Trout.Search.TranspositionTable qualified as TT
 import Trout.Uci.Parse
   ( CommGoArg (..),
@@ -45,7 +45,7 @@ import Trout.Uci.Parse
   )
 
 -- TODO hack
-type SearchState = HashMapTT
+type SearchState = SizedHashMapTT
 
 data UciState = UciState
   { uciGame :: Game,
@@ -158,7 +158,7 @@ doUci uciState = do
         Just x -> pure x
         Nothing -> do
           v <- newEmptyMVar
-          let tt = TT.new
+          let tt = TT.sizedHMEmpty 1000000
           _ <- putMVar v tt
           pure v
       thread <-
