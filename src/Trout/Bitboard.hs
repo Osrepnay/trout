@@ -69,10 +69,10 @@ showBitboard bb =
       [ [ if testBit bb (r * 8 + c)
             then '#'
             else '*'
-          | c <- [0 .. 7]
+        | c <- [0 .. 7]
         ]
           ++ "\n"
-        | r <- [7, 6 .. 0]
+      | r <- [7, 6 .. 0]
       ]
 
 rank1 :: Bitboard

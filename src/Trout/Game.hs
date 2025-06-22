@@ -176,8 +176,8 @@ mkGame pieces castling enPassant turn =
         (.^.)
         0
         [ hashBitboard (pieceBitboard (Piece color pieceType) pieces) (pieceZobrists color pieceType)
-          | color <- [White, Black],
-            pieceType <- [Pawn, Knight, Bishop, Rook, Queen, King]
+        | color <- [White, Black],
+          pieceType <- [Pawn, Knight, Bishop, Rook, Queen, King]
         ]
   where
     hashBitboard bb table = foldl' (\b a -> table `unsafeIndex` a .^. b) 0 (toSqs bb)

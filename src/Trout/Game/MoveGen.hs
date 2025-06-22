@@ -68,13 +68,13 @@ tableGen ds = V.generate 64 $
         sqY = sq `quot` 8
      in fromSqs
           [ xyToSq nSqX nSqY
-            | (dx, dy) <- ds,
-              let nSqX = sqX + dx,
-              0 <= nSqX,
-              nSqX < 8,
-              let nSqY = sqY + dy,
-              0 <= nSqY,
-              nSqY < 8
+          | (dx, dy) <- ds,
+            let nSqX = sqX + dx,
+            0 <= nSqX,
+            nSqX < 8,
+            let nSqY = sqY + dy,
+            0 <= nSqY,
+            nSqY < 8
           ]
 
 promos :: [PieceType]

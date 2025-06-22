@@ -36,13 +36,13 @@ bishopRays =
       V.fromList
         [ fromSqs
             [ sq
-              | d <- [1 .. 7],
-                let dc = (sx `fx` d, sy `fy` d),
-                xyInBoard dc,
-                let sq = uncurry xyToSq dc
+            | d <- [1 .. 7],
+              let dc = (sx `fx` d, sy `fy` d),
+              xyInBoard dc,
+              let sq = uncurry xyToSq dc
             ]
-          | sy <- [0 .. 7],
-            sx <- [0 .. 7]
+        | sy <- [0 .. 7],
+          sx <- [0 .. 7]
         ]
 
 -- N E S W
@@ -58,13 +58,13 @@ rookRays =
       V.fromList
         [ fromSqs
             [ sq
-              | d <- [1 .. 7],
-                let dc = if horz then (sx `f` d, sy) else (sx, sy `f` d),
-                xyInBoard dc,
-                let sq = uncurry xyToSq dc
+            | d <- [1 .. 7],
+              let dc = if horz then (sx `f` d, sy) else (sx, sy `f` d),
+              xyInBoard dc,
+              let sq = uncurry xyToSq dc
             ]
-          | sy <- [0 .. 7],
-            sx <- [0 .. 7]
+        | sy <- [0 .. 7],
+          sx <- [0 .. 7]
         ]
 
 slidingMovesClassic :: [Vector Bitboard] -> Bitboard -> Int -> Bitboard
