@@ -30,6 +30,7 @@ import Trout.Search.Worthiness (drawWorth, lossWorth)
 -- TODO this kinda sucks
 -- get rid of nullMove weirdness too
 -- fails horribly when there are no moves
+
 bestMove :: (Monad m, TTType m) => Int -> Game -> m (Int, Move)
 bestMove 0 game =
   pure
@@ -66,19 +67,16 @@ searchNega depth !alpha !beta !game = do
       (bResult, bMove) <- go Nothing ((0,) <$> gameMoves)
       TT.tttypeInsert game (TTEntry bResult bMove depth)
       pure (nodeResScore bResult)
-    Just (TTEntry {entryNode, entryMove, entryDepth}) ->
-      if entryDepth >= depth && nodeResType entryNode == ExactNode
-        then pure (nodeResScore entryNode)
-        else
-          let scoredMoves =
-                if entryMove /= nullMove
-                  then
-                    (1, entryMove) : ((0,) <$> filter (/= entryMove) gameMoves)
-                  else (0,) <$> gameMoves
-           in do
-                (bResult, bMove) <- go Nothing scoredMoves
-                TT.tttypeInsert game (TTEntry bResult bMove depth)
-                pure (nodeResScore bResult)
+    Just (TTEntry {entryMove}) ->
+      let scoredMoves =
+            if entryMove /= nullMove
+              then
+                (1, entryMove) : ((0,) <$> filter (/= entryMove) gameMoves)
+              else (0,) <$> gameMoves
+       in do
+            (bResult, bMove) <- go Nothing scoredMoves
+            TT.tttypeInsert game (TTEntry bResult bMove depth)
+            pure (nodeResScore bResult)
   where
     go :: (Monad m, TTType m) => Maybe (Int, Move) -> [(Int, Move)] -> m (NodeResult, Move)
     -- no valid moves

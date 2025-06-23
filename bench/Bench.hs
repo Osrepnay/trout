@@ -9,7 +9,7 @@ import Trout.Search.TranspositionTable qualified as TT
 main :: IO ()
 main = do
   -- probably better way to do this (env), cba read docs
-  let table = TT.sizedHMEmpty 1
+  let table = TT.sizedHMEmpty 100000
   defaultMain
     [ bench "perft(5)" $ whnf (perft 5) startingGame,
       bench "bestMove depth 6" $
