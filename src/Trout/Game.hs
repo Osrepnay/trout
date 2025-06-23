@@ -14,6 +14,7 @@ module Trout.Game
     clearRights,
     canCastle,
     Game (..),
+    hashGame,
     mkGame,
     startingGame,
     allMoves,
@@ -192,21 +193,26 @@ instance Hashable Game where
   hash = gameHash
   hashWithSalt salt game = hash game .^. salt
 
-mkGame :: Pieces -> Castling -> Maybe Int -> Color -> Game
-mkGame pieces castling enPassant turn =
-  Game pieces castling enPassant turn $
-    (if turn == White then playingZobrist else 0)
-      .^. (castleZobrists ! unCastling castling)
-      .^. maybe 0 (\sq -> enPassantZobrists ! (sq `rem` 8)) enPassant
-      .^. foldl'
-        (.^.)
-        0
-        [ hashBitboard (pieceBitboard (Piece color pieceType) pieces) (pieceZobrists color pieceType)
-        | color <- [White, Black],
-          pieceType <- [Pawn, Knight, Bishop, Rook, Queen, King]
-        ]
+-- actually hash game instead of using cached value
+hashGame :: Game -> Int
+hashGame (Game pieces castling enPassant turn _) =
+  (if turn == White then playingZobrist else 0)
+    .^. (castleZobrists ! unCastling castling)
+    .^. maybe 0 (\sq -> enPassantZobrists ! (sq `rem` 8)) enPassant
+    .^. foldl'
+      (.^.)
+      0
+      [ hashBitboard (pieceBitboard (Piece color pieceType) pieces) (pieceZobrists color pieceType)
+      | color <- [White, Black],
+        pieceType <- [Pawn, Knight, Bishop, Rook, Queen, King]
+      ]
   where
     hashBitboard bb table = foldl' (\b a -> table ! a .^. b) 0 (toSqs bb)
+
+mkGame :: Pieces -> Castling -> Maybe Int -> Color -> Game
+mkGame pieces castling enPassant turn = Game pieces castling enPassant turn (hashGame game)
+  where
+    game = Game pieces castling enPassant turn 0
 
 -- https://tearth.dev/bitboard-viewer/
 startingGame :: Game
@@ -370,7 +376,8 @@ makeMove (Game pieces castling enPassant turn hashed) (Move pieceType special fr
         .^. (castleZobrists ! unCastling movedCastling)
         .^. (castleZobrists ! unCastling castling)
         .^. maybe 0 (\(Piece c p) -> pieceZobrists c p ! to) capturePiece
-        .^. maybe 0 (pieceZobrists turn Pawn !) enPassant
+        .^. maybe 0 ((enPassantZobrists !) . (`rem` 8)) enPassant
+        .^. playingZobrist
 
     capturePiece = getPiece to pieces
     opp = other turn
