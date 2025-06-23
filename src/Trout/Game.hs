@@ -1,5 +1,5 @@
 module Trout.Game
-  ( Pieces,
+  ( Pieces (..),
     emptyPieces,
     addPiece,
     removePiece,
@@ -8,6 +8,7 @@ module Trout.Game
     pieceBitboard,
     occupancy,
     colorOccupancy,
+    piecesBoard,
     Castling (..),
     clearColorRights,
     clearRights,
@@ -25,7 +26,7 @@ import Data.Bits (Bits)
 import Data.Bool (bool)
 import Data.Foldable (foldl')
 import Data.Hashable (Hashable (..))
-import Data.Vector.Primitive (unsafeIndex)
+import Data.Vector.Primitive ((!))
 import Trout.Bitboard
   ( Bitboard,
     clearBit,
@@ -109,6 +110,7 @@ getPiece sq (Pieces pw p0 p1 p2)
                       + p1 !>>. sq .&. 1 * 2
                       + p2 !>>. sq .&. 1 * 4
                   )
+                  - 1
               )
           )
   | otherwise = Nothing
@@ -133,6 +135,30 @@ occupancy (Pieces _pw p0 p1 p2) = p0 .|. p1 .|. p2
 colorOccupancy :: Color -> Pieces -> Bitboard
 colorOccupancy White (Pieces pw p0 p1 p2) = pw .&. (p0 .|. p1 .|. p2)
 colorOccupancy Black (Pieces pw p0 p1 p2) = complement pw .&. (p0 .|. p1 .|. p2)
+
+piecesBoard :: Pieces -> String
+piecesBoard pcs =
+  concat
+    [ [ case getPiece sq pcs of
+          Nothing -> '.'
+          Just (Piece White Pawn) -> 'P'
+          Just (Piece White Knight) -> 'N'
+          Just (Piece White Bishop) -> 'B'
+          Just (Piece White Rook) -> 'R'
+          Just (Piece White Queen) -> 'Q'
+          Just (Piece White King) -> 'K'
+          Just (Piece Black Pawn) -> 'p'
+          Just (Piece Black Knight) -> 'n'
+          Just (Piece Black Bishop) -> 'b'
+          Just (Piece Black Rook) -> 'r'
+          Just (Piece Black Queen) -> 'q'
+          Just (Piece Black King) -> 'k'
+      | c <- [0 .. 7],
+        let sq = r * 8 + c
+      ]
+        ++ "\n"
+    | r <- [7, 6 .. 0]
+    ]
 
 newtype Castling = Castling {unCastling :: Int} deriving (Bits, Eq, Show)
 
@@ -170,8 +196,8 @@ mkGame :: Pieces -> Castling -> Maybe Int -> Color -> Game
 mkGame pieces castling enPassant turn =
   Game pieces castling enPassant turn $
     (if turn == White then playingZobrist else 0)
-      .^. (castleZobrists `unsafeIndex` unCastling castling)
-      .^. maybe 0 (\sq -> enPassantZobrists `unsafeIndex` (sq `rem` 8)) enPassant
+      .^. (castleZobrists ! unCastling castling)
+      .^. maybe 0 (\sq -> enPassantZobrists ! (sq `rem` 8)) enPassant
       .^. foldl'
         (.^.)
         0
@@ -180,7 +206,7 @@ mkGame pieces castling enPassant turn =
           pieceType <- [Pawn, Knight, Bishop, Rook, Queen, King]
         ]
   where
-    hashBitboard bb table = foldl' (\b a -> table `unsafeIndex` a .^. b) 0 (toSqs bb)
+    hashBitboard bb table = foldl' (\b a -> table ! a .^. b) 0 (toSqs bb)
 
 -- https://tearth.dev/bitboard-viewer/
 startingGame :: Game
@@ -240,14 +266,14 @@ inCheck color pieces =
               !<<. 7
               .|. (king .&. complement fileH)
               !<<. 9
-    knightAttackers = knightTable `unsafeIndex` kingSq .&. getOppPieces Knight
+    knightAttackers = knightTable ! kingSq .&. getOppPieces Knight
     blockers = occupancy pieces
     bishopSqs = bishopMovesMagic blockers kingSq
     bishopAttackers = bishopSqs .&. getOppPieces Bishop
     rookSqs = rookMovesMagic blockers kingSq
     rookAttackers = rookSqs .&. getOppPieces Rook
     queenAttackers = (bishopSqs .|. rookSqs) .&. getOppPieces Queen
-    kingAttackers = kingTable `unsafeIndex` kingSq .&. getOppPieces King
+    kingAttackers = kingTable ! kingSq .&. getOppPieces King
 
 makeMove :: Game -> Move -> Maybe Game
 makeMove (Game pieces castling enPassant turn hashed) (Move pieceType special from to) =
@@ -260,7 +286,7 @@ makeMove (Game pieces castling enPassant turn hashed) (Move pieceType special fr
           movedCastling
           (Just to)
           opp
-          (movedHash .^. enPassantZobrists `unsafeIndex` (to `rem` 8))
+          (movedHash .^. enPassantZobrists ! (to `rem` 8))
     CastleKing -> do
       toMaybe (inCheck turn pieces)
       toMaybe (inCheck turn movedPieces)
@@ -275,9 +301,9 @@ makeMove (Game pieces castling enPassant turn hashed) (Move pieceType special fr
             opp
             ( movedHash
                 .^. pieceZobrists turn Rook
-                `unsafeIndex` (from + 3)
+                ! (from + 3)
                 .^. pieceZobrists turn Rook
-                `unsafeIndex` (to - 1)
+                ! (to - 1)
             )
         )
     CastleQueen -> do
@@ -294,9 +320,9 @@ makeMove (Game pieces castling enPassant turn hashed) (Move pieceType special fr
             opp
             ( movedHash
                 .^. pieceZobrists turn Rook
-                `unsafeIndex` (from - 4)
+                ! (from - 4)
                 .^. pieceZobrists turn Rook
-                `unsafeIndex` (to + 1)
+                ! (to + 1)
             )
         )
     EnPassant sq ->
@@ -306,7 +332,7 @@ makeMove (Game pieces castling enPassant turn hashed) (Move pieceType special fr
           movedCastling
           Nothing
           opp
-          (movedHash .^. pieceZobrists opp Pawn `unsafeIndex` sq)
+          (movedHash .^. pieceZobrists opp Pawn ! sq)
     Promotion promote ->
       checkInCheck $
         Game
@@ -316,9 +342,9 @@ makeMove (Game pieces castling enPassant turn hashed) (Move pieceType special fr
           opp
           ( movedHash
               .^. pieceZobrists turn Pawn
-              `unsafeIndex` to
+              ! to
               .^. pieceZobrists turn promote
-              `unsafeIndex` to
+              ! to
           )
   where
     checkInCheck game = if inCheck turn (gamePieces game) then Nothing else Just game
@@ -339,12 +365,12 @@ makeMove (Game pieces castling enPassant turn hashed) (Move pieceType special fr
 
     movedHash =
       hashed
-        .^. (pieceZobrists turn pieceType `unsafeIndex` from)
-        .^. (pieceZobrists turn pieceType `unsafeIndex` to)
-        .^. (castleZobrists `unsafeIndex` unCastling movedCastling)
-        .^. (castleZobrists `unsafeIndex` unCastling castling)
-        .^. maybe 0 (\(Piece c p) -> pieceZobrists c p `unsafeIndex` to) capturePiece
-        .^. maybe 0 (pieceZobrists turn Pawn `unsafeIndex`) enPassant
+        .^. (pieceZobrists turn pieceType ! from)
+        .^. (pieceZobrists turn pieceType ! to)
+        .^. (castleZobrists ! unCastling movedCastling)
+        .^. (castleZobrists ! unCastling castling)
+        .^. maybe 0 (\(Piece c p) -> pieceZobrists c p ! to) capturePiece
+        .^. maybe 0 (pieceZobrists turn Pawn !) enPassant
 
     capturePiece = getPiece to pieces
     opp = other turn
