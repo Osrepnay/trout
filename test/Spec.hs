@@ -7,6 +7,7 @@ import Test.Hspec
 main :: IO ()
 main = hspec $ do
   addRemoveGetPieceTest
+  drawTest
   bishopMagicsSpec
   rookMagicsSpec
   incZobristSpec

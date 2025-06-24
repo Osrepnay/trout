@@ -140,6 +140,7 @@ doUci uciState = do
       doUci uciState
     Right (CommRegister _) -> doUci uciState
     Right CommUcinewgame ->
+      -- TODO reset transposition table
       doUci $
         uciState {uciGame = startingGame}
     Right (CommPosition posInit moves) ->
