@@ -42,8 +42,7 @@ ghc-options:
 
 language: GHC2021
 
-default-extensions:
-- CPP # used twice in 1 file!
+# default-extensions:
 
 library:
   source-dirs: src
