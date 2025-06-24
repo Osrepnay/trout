@@ -5,7 +5,6 @@ module Trout.Search
   )
 where
 
-import Data.Bifunctor (first)
 import Data.Foldable (foldl')
 import Data.Functor (($>))
 import Trout.Bitboard (popCount)
@@ -32,39 +31,13 @@ import Trout.Search.Worthiness (drawWorth, lossWorth)
 -- fails horribly when there are no moves
 
 bestMove :: (Monad m, TTType m) => Int -> Game -> m (Int, Move)
-bestMove 0 game@(Game {gameBoard = board})
-  | isDrawn game = pure (0, head (allMoves board))
-  | otherwise =
-      pure
-        ( colorSign (boardTurn board) * eval game,
-          head (allMoves board)
-        )
-bestMove depth game
-  | isDrawn game = pure (0, head (allMoves board))
-  | otherwise =
-      first
-        -- if player is black, flip because negamax is relative
-        (* colorSign (boardTurn board))
-        <$> go (alpha, nullMove) (allMoves board)
-  where
-    board = gameBoard game
-    alpha = minBound + 1 -- so negate works!!!!!!!
-    beta = maxBound
-    go best []
-      | snd best == nullMove =
-          pure $
-            if inCheck (boardTurn board) (boardPieces board)
-              then (lossWorth, nullMove)
-              else (drawWorth, nullMove)
-      | otherwise = pure best
-    go best@(bestScore, _) (move : moves) = case makeMove game move of
-      Nothing -> go best moves
-      Just moveMade -> do
-        otherScore <- searchNega (depth - 1) (-beta) (-max alpha bestScore) moveMade
-        let nodeScore = -otherScore
-        if nodeScore > bestScore
-          then go (nodeScore, move) moves
-          else go best moves
+bestMove depth game = do
+  _ <- searchNega depth (minBound + 1) maxBound game
+  maybeEntry <- TT.tttypeLookup (gameBoard game)
+  case maybeEntry of
+    Just (TTEntry {entryNode = node, entryMove = move}) ->
+      pure (nodeResScore node * colorSign (boardTurn (gameBoard game)), move)
+    Nothing -> error "no entry"
 
 searchNega :: (Monad m, TTType m) => Int -> Int -> Int -> Game -> m Int
 searchNega 0 !_ !_ !game
@@ -77,21 +50,16 @@ searchNega depth !alpha !beta !game
   | otherwise = do
       let gameMoves = allMoves board
       maybeEntry <- TT.tttypeLookup board
-      case maybeEntry of
-        Nothing -> do
-          (bResult, bMove) <- go Nothing ((0,) <$> gameMoves)
-          TT.tttypeInsert board (TTEntry bResult bMove depth)
-          pure (nodeResScore bResult)
-        Just (TTEntry {entryMove}) ->
-          let scoredMoves =
-                if entryMove /= nullMove
-                  then
-                    (1, entryMove) : ((0,) <$> filter (/= entryMove) gameMoves)
-                  else (0,) <$> gameMoves
-           in do
-                (bResult, bMove) <- go Nothing scoredMoves
-                TT.tttypeInsert board (TTEntry bResult bMove depth)
-                pure (nodeResScore bResult)
+      let scoredMoves = case maybeEntry of
+            Nothing -> (0,) <$> gameMoves
+            Just (TTEntry {entryMove}) ->
+              if entryMove /= nullMove
+                then
+                  (1, entryMove) : ((0,) <$> filter (/= entryMove) gameMoves)
+                else (0,) <$> gameMoves
+      (bResult, bMove) <- go Nothing scoredMoves
+      TT.tttypeInsert board (TTEntry bResult bMove depth)
+      pure (nodeResScore bResult)
   where
     board = gameBoard game
     go :: (Monad m, TTType m) => Maybe (Int, Move) -> [(Int, Move)] -> m (NodeResult, Move)
