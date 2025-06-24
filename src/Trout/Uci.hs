@@ -23,7 +23,8 @@ import Trout.Fen.Parse (fenToGame)
 import Trout.Game
   ( Game (..),
     allMoves,
-    gameTurn,
+    boardTurn,
+    gameBoard,
     makeMove,
     startingGame,
   )
@@ -109,7 +110,7 @@ launchGo moveVar ssVar game (GoSettings movetime times _incs maxDepth) = do
       | otherwise = pure ()
     time = flip fromMaybe movetime $
       flip quot 20 $
-        case gameTurn game of
+        case boardTurn (gameBoard game) of
           White -> fst times
           Black -> snd times
 
@@ -198,7 +199,7 @@ doUci uciState = do
             && f == from
             && t == to
         moveMatches (Move _ _ f t) = f == from && t == to
-        gMoves = filter moveMatches (allMoves g)
+        gMoves = filter moveMatches (allMoves (gameBoard g))
     doGoArg arg gs@(GoSettings mt ts is depth) = case arg of
       GoSearchMoves _ -> gs
       GoPonder -> gs

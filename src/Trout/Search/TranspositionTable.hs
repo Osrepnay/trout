@@ -5,7 +5,7 @@ import Control.Monad.Trans.State.Strict qualified as S
 import Data.HashMap.Strict (HashMap)
 import Data.HashMap.Strict qualified as HM
 import Data.Hashable (Hashable, hash)
-import Trout.Game (Game)
+import Trout.Game (Board)
 import Trout.Game.Move (Move)
 import Trout.Search.Node (NodeResult (..), NodeType (ExactNode))
 
@@ -19,8 +19,8 @@ data TTEntry = TTEntry
   deriving (Eq, Show)
 
 class TTType m where
-  tttypeInsert :: Game -> TTEntry -> m ()
-  tttypeLookup :: Game -> m (Maybe TTEntry)
+  tttypeInsert :: Board -> TTEntry -> m ()
+  tttypeLookup :: Board -> m (Maybe TTEntry)
 
 -- if queue is nonempty, output side should
 data Queue a = Queue [a] [a]

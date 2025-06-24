@@ -6,7 +6,7 @@ where
 import Test.Hspec (Spec, context, describe)
 import Test.Hspec.QuickCheck (prop)
 import Test.QuickCheck (chooseInt, forAll, listOf, resize, withMaxSuccess)
-import Trout.Game (Game (..), allMoves, hashGame, makeMove, startingGame)
+import Trout.Game (Game (..), allMoves, boardHash, hashBoard, makeMove, startingGame)
 
 incZobristSpec :: Spec
 incZobristSpec = describe "makeMove" $
@@ -19,11 +19,12 @@ incZobristSpec = describe "makeMove" $
   where
     -- uses ints as moves
     doInts (m : ms) game =
-      gameHash game == hashGame game
+      boardHash board == hashBoard board
         && case moved of
           Just hg -> doInts ms hg
           Nothing -> doInts ms game
       where
+        board = gameBoard game
         moved = makeMove game (moves !! (m `rem` length moves))
-        moves = allMoves game
-    doInts [] game = gameHash game == hashGame game
+        moves = allMoves (gameBoard game)
+    doInts [] (Game {gameBoard = board}) = boardHash board == hashBoard board

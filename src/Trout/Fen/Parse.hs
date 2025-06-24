@@ -5,12 +5,13 @@ import Data.Bifunctor (first)
 import Data.Char (digitToInt, isDigit, ord)
 import Data.Foldable (Foldable (foldl'))
 import Data.Functor (($>), (<&>))
+import Data.HashMap.Strict qualified as HM
 import Text.Parsec (char, oneOf, parse, spaces)
 import Text.Parsec.Char (digit)
 import Text.Parsec.Combinator (many1)
 import Text.Parsec.String (Parser)
 import Trout.Bitboard ((.|.))
-import Trout.Game (Castling (..), Game, Pieces, addPiece, emptyPieces, mkGame)
+import Trout.Game (Castling (..), Game (..), Pieces, addPiece, emptyPieces, mkBoard)
 import Trout.Piece (Color (Black, White), Piece (..), PieceType (..))
 
 -- TODO better fen handling; instead of 1 shot use setSq and friends
@@ -118,10 +119,20 @@ readFen = first show . parse parseFen ""
 
 fenToGame :: Fen -> Game
 fenToGame fen =
-  mkGame
-    (fenPieces fen)
-    (fenCastling fen)
-    (fenEnPassant fen)
-    turn
+  Game
+    ( fenFullmove fen * 2
+        + ( if fenTurn fen == White
+              then -1
+              else 0
+          )
+    )
+    (fenHalfmove fen)
+    HM.empty
+    ( mkBoard
+        (fenPieces fen)
+        (fenCastling fen)
+        (fenEnPassant fen)
+        turn
+    )
   where
     turn = fenTurn fen

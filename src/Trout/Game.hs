@@ -13,10 +13,12 @@ module Trout.Game
     clearColorRights,
     clearRights,
     canCastle,
+    Board (..),
     Game (..),
-    hashGame,
-    mkGame,
+    hashBoard,
+    mkBoard,
     startingGame,
+    isDrawn,
     allMoves,
     inCheck,
     makeMove,
@@ -26,7 +28,10 @@ where
 import Data.Bits (Bits)
 import Data.Bool (bool)
 import Data.Foldable (foldl')
+import Data.HashMap.Strict (HashMap)
+import Data.HashMap.Strict qualified as HM
 import Data.Hashable (Hashable (..))
+import Data.Maybe (isJust)
 import Data.Vector.Primitive ((!))
 import Trout.Bitboard
   ( Bitboard,
@@ -180,22 +185,30 @@ clearRights color kingside (Castling castle) =
 canCastle :: Color -> Bool -> Castling -> Bool
 canCastle color kingside castling = clearRights color kingside castling /= castling
 
-data Game = Game
-  { gamePieces :: !Pieces,
-    gameCastling :: !Castling,
-    gameEnPassant :: !(Maybe Int),
-    gameTurn :: !Color,
-    gameHash :: !Int
+data Board = Board
+  { boardPieces :: !Pieces,
+    boardCastling :: !Castling,
+    boardEnPassant :: !(Maybe Int),
+    boardTurn :: !Color,
+    boardHash :: !Int
   }
   deriving (Eq, Show)
 
-instance Hashable Game where
-  hash = gameHash
-  hashWithSalt salt game = hash game .^. salt
+instance Hashable Board where
+  hash = boardHash
+  hashWithSalt salt board = hash board .^. salt
+
+data Game = Game
+  { gameHalfmove :: !Int,
+    game50MovePlies :: !Int, -- halfmoves since last capture or pawn move
+    gameHistory :: !(HashMap Board Int),
+    gameBoard :: !Board
+  }
+  deriving (Eq, Show)
 
 -- actually hash game instead of using cached value
-hashGame :: Game -> Int
-hashGame (Game pieces castling enPassant turn _) =
+hashBoard :: Board -> Int
+hashBoard (Board pieces castling enPassant turn _) =
   (if turn == White then playingZobrist else 0)
     .^. (castleZobrists ! unCastling castling)
     .^. maybe 0 (\sq -> enPassantZobrists ! (sq `rem` 8)) enPassant
@@ -209,27 +222,37 @@ hashGame (Game pieces castling enPassant turn _) =
   where
     hashBitboard bb table = foldl' (\b a -> table ! a .^. b) 0 (toSqs bb)
 
-mkGame :: Pieces -> Castling -> Maybe Int -> Color -> Game
-mkGame pieces castling enPassant turn = Game pieces castling enPassant turn (hashGame game)
+mkBoard :: Pieces -> Castling -> Maybe Int -> Color -> Board
+mkBoard pieces castling enPassant turn = Board pieces castling enPassant turn (hashBoard board)
   where
-    game = Game pieces castling enPassant turn 0
+    board = Board pieces castling enPassant turn 0
 
 -- https://tearth.dev/bitboard-viewer/
 startingGame :: Game
 startingGame =
-  mkGame
-    ( Pieces
-        0xFFFF
-        0x2CFF00000000FF2C
-        0x7600000000000076
-        0x9900000000000099
+  Game
+    1
+    0
+    HM.empty
+    ( mkBoard
+        ( Pieces
+            0xFFFF
+            0x2CFF00000000FF2C
+            0x7600000000000076
+            0x9900000000000099
+        )
+        (Castling 15)
+        Nothing
+        White
     )
-    (Castling 15)
-    Nothing
-    White
 
-allMoves :: Game -> [Move]
-allMoves (Game pieces castling enPassant turn _) =
+-- non-stalemate draws
+isDrawn :: Game -> Bool
+isDrawn (Game {game50MovePlies = plies, gameHistory = history, gameBoard = board}) =
+  plies >= 50 || maybe False (>= 1) (HM.lookup board history)
+
+allMoves :: Board -> [Move]
+allMoves (Board pieces castling enPassant turn _) =
   pawnsMoves enPassant turn block myBlock (pieceBB Pawn) $
     concatDL
       ( moveSqs knightMoves (pieceBB Knight) $
@@ -282,102 +305,121 @@ inCheck color pieces =
     kingAttackers = kingTable ! kingSq .&. getOppPieces King
 
 makeMove :: Game -> Move -> Maybe Game
-makeMove (Game pieces castling enPassant turn hashed) (Move pieceType special from to) =
-  case special of
-    Normal -> checkInCheck $ Game movedPieces movedCastling Nothing opp movedHash
-    PawnDouble ->
-      checkInCheck $
-        Game
-          movedPieces
-          movedCastling
-          (Just to)
-          opp
-          (movedHash .^. enPassantZobrists ! (to `rem` 8))
-    CastleKing -> do
-      toMaybe (inCheck turn pieces)
-      toMaybe (inCheck turn movedPieces)
-      let oneRight = addPiece (Piece turn King) (from + 1) $ removePiece from pieces
-      toMaybe (inCheck turn oneRight)
-      let rookMoved = addPiece (Piece turn Rook) (to - 1) $ removePiece (from + 3) movedPieces
-      checkInCheck
-        ( Game
-            rookMoved
-            movedCastling
-            Nothing
-            opp
-            ( movedHash
-                .^. pieceZobrists turn Rook
-                ! (from + 3)
-                .^. pieceZobrists turn Rook
-                ! (to - 1)
-            )
-        )
-    CastleQueen -> do
-      toMaybe (inCheck turn pieces)
-      toMaybe (inCheck turn movedPieces)
-      let oneLeft = addPiece (Piece turn King) (from - 1) $ removePiece from pieces
-      toMaybe (inCheck turn oneLeft)
-      let rookMoved = addPiece (Piece turn Rook) (to + 1) $ removePiece (from - 4) movedPieces
-      checkInCheck
-        ( Game
-            rookMoved
-            movedCastling
-            Nothing
-            opp
-            ( movedHash
-                .^. pieceZobrists turn Rook
-                ! (from - 4)
-                .^. pieceZobrists turn Rook
-                ! (to + 1)
-            )
-        )
-    EnPassant sq ->
-      checkInCheck $
-        Game
-          (removePiece sq movedPieces)
-          movedCastling
-          Nothing
-          opp
-          (movedHash .^. pieceZobrists opp Pawn ! sq)
-    Promotion promote ->
-      checkInCheck $
-        Game
-          (addPiece (Piece turn promote) to $ removePiece from pieces)
-          movedCastling
-          Nothing
-          opp
-          ( movedHash
-              .^. pieceZobrists turn Pawn
-              ! to
-              .^. pieceZobrists turn promote
-              ! to
+makeMove
+  (Game halfmove fiftyPlies history origBoard@(Board pieces castling enPassant turn hashed))
+  (Move pieceType special from to) =
+    case special of
+      Normal ->
+        mkMovedGame
+          ( Board
+              movedPieces
+              movedCastling
+              Nothing
+              opp
+              movedHash
           )
-  where
-    checkInCheck game = if inCheck turn (gamePieces game) then Nothing else Just game
-    toMaybe = bool (Just ()) Nothing
-    movedPieces = addPiece (Piece turn pieceType) to $ removePiece from pieces
+      PawnDouble ->
+        mkMovedGame
+          ( Board
+              movedPieces
+              movedCastling
+              (Just to)
+              opp
+              (movedHash .^. enPassantZobrists ! (to `rem` 8))
+          )
+      CastleKing -> do
+        toMaybe (inCheck turn pieces)
+        toMaybe (inCheck turn movedPieces)
+        let oneRight = addPiece (Piece turn King) (from + 1) $ removePiece from pieces
+        toMaybe (inCheck turn oneRight)
+        let rookMoved = addPiece (Piece turn Rook) (to - 1) $ removePiece (from + 3) movedPieces
+        mkMovedGame
+          ( Board
+              rookMoved
+              movedCastling
+              Nothing
+              opp
+              ( movedHash
+                  .^. (pieceZobrists turn Rook ! (from + 3))
+                  .^. (pieceZobrists turn Rook ! (to - 1))
+              )
+          )
+      CastleQueen -> do
+        toMaybe (inCheck turn pieces)
+        toMaybe (inCheck turn movedPieces)
+        let oneLeft = addPiece (Piece turn King) (from - 1) $ removePiece from pieces
+        toMaybe (inCheck turn oneLeft)
+        let rookMoved = addPiece (Piece turn Rook) (to + 1) $ removePiece (from - 4) movedPieces
+        mkMovedGame
+          ( Board
+              rookMoved
+              movedCastling
+              Nothing
+              opp
+              ( movedHash
+                  .^. (pieceZobrists turn Rook ! (from - 4))
+                  .^. (pieceZobrists turn Rook ! (to + 1))
+              )
+          )
+      EnPassant sq ->
+        mkMovedGame
+          ( Board
+              (removePiece sq movedPieces)
+              movedCastling
+              Nothing
+              opp
+              (movedHash .^. pieceZobrists opp Pawn ! sq)
+          )
+      Promotion promote ->
+        mkMovedGame
+          ( Board
+              (addPiece (Piece turn promote) to $ removePiece from pieces)
+              movedCastling
+              Nothing
+              opp
+              ( movedHash
+                  .^. (pieceZobrists turn Pawn ! to)
+                  .^. (pieceZobrists turn promote ! to)
+              )
+          )
+    where
+      toMaybe = bool (Just ()) Nothing
 
-    clearCorners White 0 = clearRights White False
-    clearCorners White 7 = clearRights White True
-    clearCorners Black 56 = clearRights Black False
-    clearCorners Black 63 = clearRights Black True
-    clearCorners _ _ = id
+      opp = other turn
+      capturePiece = getPiece to pieces
 
-    movedCastling = clearCorners opp to $
-      case pieceType of
-        King -> clearColorRights turn castling
-        Rook -> clearCorners turn from castling
-        _ -> castling
+      movedPieces = addPiece (Piece turn pieceType) to $ removePiece from pieces
 
-    movedHash =
-      hashed
-        .^. (pieceZobrists turn pieceType ! from)
-        .^. (pieceZobrists turn pieceType ! to)
-        .^. (castleZobrists ! unCastling movedCastling)
-        .^. (castleZobrists ! unCastling castling)
-        .^. maybe 0 (\(Piece c p) -> pieceZobrists c p ! to) capturePiece
-        .^. maybe 0 ((enPassantZobrists !) . (`rem` 8)) enPassant
-        .^. playingZobrist
+      clearCorners White 0 = clearRights White False
+      clearCorners White 7 = clearRights White True
+      clearCorners Black 56 = clearRights Black False
+      clearCorners Black 63 = clearRights Black True
+      clearCorners _ _ = id
 
-    capturePiece = getPiece to pieces
-    opp = other turn
+      movedCastling = clearCorners opp to $
+        case pieceType of
+          King -> clearColorRights turn castling
+          Rook -> clearCorners turn from castling
+          _ -> castling
+
+      movedHash =
+        hashed
+          .^. (pieceZobrists turn pieceType ! from)
+          .^. (pieceZobrists turn pieceType ! to)
+          .^. (castleZobrists ! unCastling movedCastling)
+          .^. (castleZobrists ! unCastling castling)
+          .^. maybe 0 (\(Piece c p) -> pieceZobrists c p ! to) capturePiece
+          .^. maybe 0 ((enPassantZobrists !) . (`rem` 8)) enPassant
+          .^. playingZobrist
+
+      movedFiftyPlies =
+        if isJust capturePiece || pieceType == Pawn
+          then 0
+          else fiftyPlies + 1
+
+      movedHistory = HM.insertWith (+) origBoard 1 history
+
+      mkMovedGame board =
+        if inCheck turn (boardPieces board)
+          then Nothing
+          else Just $ Game (halfmove + 1) movedFiftyPlies movedHistory board

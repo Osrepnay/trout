@@ -24,4 +24,4 @@ perft 0 _ = 1
 perft depth game =
   sum $
     perft (depth - 1)
-      <$> mapMaybe (makeMove game) (allMoves game)
+      <$> mapMaybe (makeMove game) (allMoves (gameBoard game))

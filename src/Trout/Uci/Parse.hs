@@ -1,3 +1,5 @@
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# HLINT ignore "Use lambda-case" #-}
 module Trout.Uci.Parse
   ( CommPositionInit (..),
     CommGoArg (..),

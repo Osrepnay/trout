@@ -13,7 +13,8 @@ addRemoveGetPieceTest =
   parallel $
     describe "Pieces" $
       it "should add, remove, and get pieces correctly" $
-        let addedPieces = addPiece (Piece White King) 30 (gamePieces startingGame)
+        let startingPieces = boardPieces (gameBoard startingGame)
+            addedPieces = addPiece (Piece White King) 30 startingPieces
             gotPiece = getPiece 30 addedPieces
             removedPieces = removePiece 30 addedPieces
-         in removedPieces == gamePieces startingGame && gotPiece == Just (Piece White King)
+         in removedPieces == startingPieces && gotPiece == Just (Piece White King)

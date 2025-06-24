@@ -10,11 +10,11 @@ import Data.Foldable (foldl')
 import Data.Functor (($>))
 import Trout.Bitboard (popCount)
 import Trout.Game
-  ( Game,
+  ( Board (..),
+    Game (..),
     allMoves,
-    gamePieces,
-    gameTurn,
     inCheck,
+    isDrawn,
     makeMove,
     pieceBitboard,
     pieceTypeBitboard,
@@ -32,20 +32,31 @@ import Trout.Search.Worthiness (drawWorth, lossWorth)
 -- fails horribly when there are no moves
 
 bestMove :: (Monad m, TTType m) => Int -> Game -> m (Int, Move)
-bestMove 0 game =
-  pure
-    ( colorSign (gameTurn game) * eval game,
-      head (allMoves game)
-    )
-bestMove depth game =
-  first
-    -- if player is black, flip because negamax is relative
-    (* colorSign (gameTurn game))
-    <$> go (alpha, nullMove) (allMoves game)
+bestMove 0 game@(Game {gameBoard = board})
+  | isDrawn game = pure (0, head (allMoves board))
+  | otherwise =
+      pure
+        ( colorSign (boardTurn board) * eval game,
+          head (allMoves board)
+        )
+bestMove depth game
+  | isDrawn game = pure (0, head (allMoves board))
+  | otherwise =
+      first
+        -- if player is black, flip because negamax is relative
+        (* colorSign (boardTurn board))
+        <$> go (alpha, nullMove) (allMoves board)
   where
+    board = gameBoard game
     alpha = minBound + 1 -- so negate works!!!!!!!
     beta = maxBound
-    go best [] = pure best
+    go best []
+      | snd best == nullMove =
+          pure $
+            if inCheck (boardTurn board) (boardPieces board)
+              then (lossWorth, nullMove)
+              else (drawWorth, nullMove)
+      | otherwise = pure best
     go best@(bestScore, _) (move : moves) = case makeMove game move of
       Nothing -> go best moves
       Just moveMade -> do
@@ -56,33 +67,38 @@ bestMove depth game =
           else go best moves
 
 searchNega :: (Monad m, TTType m) => Int -> Int -> Int -> Game -> m Int
-searchNega 0 !_ !_ !game = TT.tttypeInsert game (TTEntry result nullMove 0) $> nodeResScore result
+searchNega 0 !_ !_ !game
+  | isDrawn game = pure 0
+  | otherwise = TT.tttypeInsert (gameBoard game) (TTEntry result nullMove 0) $> nodeResScore result
   where
     result = NodeResult (eval game) ExactNode
-searchNega depth !alpha !beta !game = do
-  let gameMoves = allMoves game
-  maybeEntry <- TT.tttypeLookup game
-  case maybeEntry of
-    Nothing -> do
-      (bResult, bMove) <- go Nothing ((0,) <$> gameMoves)
-      TT.tttypeInsert game (TTEntry bResult bMove depth)
-      pure (nodeResScore bResult)
-    Just (TTEntry {entryMove}) ->
-      let scoredMoves =
-            if entryMove /= nullMove
-              then
-                (1, entryMove) : ((0,) <$> filter (/= entryMove) gameMoves)
-              else (0,) <$> gameMoves
-       in do
-            (bResult, bMove) <- go Nothing scoredMoves
-            TT.tttypeInsert game (TTEntry bResult bMove depth)
-            pure (nodeResScore bResult)
+searchNega depth !alpha !beta !game
+  | isDrawn game = pure 0
+  | otherwise = do
+      let gameMoves = allMoves board
+      maybeEntry <- TT.tttypeLookup board
+      case maybeEntry of
+        Nothing -> do
+          (bResult, bMove) <- go Nothing ((0,) <$> gameMoves)
+          TT.tttypeInsert board (TTEntry bResult bMove depth)
+          pure (nodeResScore bResult)
+        Just (TTEntry {entryMove}) ->
+          let scoredMoves =
+                if entryMove /= nullMove
+                  then
+                    (1, entryMove) : ((0,) <$> filter (/= entryMove) gameMoves)
+                  else (0,) <$> gameMoves
+           in do
+                (bResult, bMove) <- go Nothing scoredMoves
+                TT.tttypeInsert board (TTEntry bResult bMove depth)
+                pure (nodeResScore bResult)
   where
+    board = gameBoard game
     go :: (Monad m, TTType m) => Maybe (Int, Move) -> [(Int, Move)] -> m (NodeResult, Move)
-    -- no valid moves
+    -- no valid moves (stalemate, checkmate checks)
     -- bestScore is nothing if all moves are illegal
     go Nothing []
-      | inCheck (gameTurn game) (gamePieces game) = pure (NodeResult lossWorth ExactNode, nullMove)
+      | inCheck (boardTurn board) (boardPieces board) = pure (NodeResult lossWorth ExactNode, nullMove)
       | otherwise = pure (NodeResult drawWorth ExactNode, nullMove)
     -- bestScore tracks the best score among moves, but separate from real alpha
     -- this way we keep track of realer score and not alpha cutoff (fail-soft)
@@ -128,17 +144,19 @@ searchNega depth !alpha !beta !game = do
             moves
 
 eval :: Game -> Int
-eval game = colorSign (gameTurn game) * pstEvalValue
+eval game = colorSign (boardTurn board) * pstEvalValue
   where
-    getBB color = ($ gamePieces game) . pieceBitboard . Piece color
+    board = gameBoard game
+    pieces = boardPieces board
+    getBB color = ($ pieces) . pieceBitboard . Piece color
     -- calculate game phase
     -- pawns don't count, bishops and rooks count 1, rooks 2, queens 4
     -- taken from pesto/ethereal/fruit
     mgPhase =
-      popCount (pieceTypeBitboard Knight (gamePieces game))
-        + popCount (pieceTypeBitboard Bishop (gamePieces game))
-        + 2 * popCount (pieceTypeBitboard Rook (gamePieces game))
-        + 4 * popCount (pieceTypeBitboard Queen (gamePieces game))
+      popCount (pieceTypeBitboard Knight pieces)
+        + popCount (pieceTypeBitboard Bishop pieces)
+        + 2 * popCount (pieceTypeBitboard Rook pieces)
+        + 4 * popCount (pieceTypeBitboard Queen pieces)
     egPhase = 24 - mgPhase
     pst bb p = pstEval bb p mgPhase egPhase
     pstEvalValue =
