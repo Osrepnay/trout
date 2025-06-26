@@ -68,7 +68,7 @@ searchNega depth !alpha !beta !game
   | otherwise = do
       (SearchEnv {searchStateTT = tt}) <- ask
       let gameMoves = allMoves board
-      maybeEntry <- flip seq Nothing <$> lift (TT.lookup board tt)
+      maybeEntry <- lift (TT.lookup board tt)
       let scoredMoves = case maybeEntry of
             Nothing -> (0,) <$> gameMoves
             Just (TTEntry {entryMove}) ->
