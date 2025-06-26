@@ -29,46 +29,37 @@ data TTEntry = TTEntry
   }
   deriving (Eq, Show)
 
-maxChain :: Int
-maxChain = 1
+type TranspositionTable = Vector (Maybe (Int, TTEntry))
 
-type TranspositionTable = Vector [(Int, TTEntry)]
-
-type STTranspositionTable s = STVector s [(Int, TTEntry)]
+type STTranspositionTable s = STVector s (Maybe (Int, TTEntry))
 
 new :: Int -> ST s (STTranspositionTable s)
-new n = MV.replicate n []
+new n = MV.replicate n Nothing
 
 clear :: STTranspositionTable s -> ST s ()
-clear tt = MV.set tt []
+clear tt = MV.set tt Nothing
 
 toKey :: Int -> Int -> Int
 toKey unkeyed len = fromIntegral ((fromIntegral unkeyed :: Word) `rem` fromIntegral len)
 
 basicInsert :: Board -> TTEntry -> STTranspositionTable s -> ST s ()
 basicInsert board entry vec =
-  MV.modify
+  MV.write
     vec
-    ( \chain ->
-        let filteredChain = filter ((/= hash board) . fst) chain
-         in (hash board, entry)
-              : if length filteredChain < maxChain
-                then filteredChain
-                else init filteredChain
-    )
     (toKey (hash board) (MV.length vec))
+    (Just (hash board, entry))
 
 lookup :: Board -> STTranspositionTable s -> ST s (Maybe TTEntry)
 lookup board vec =
-  findRealEntry
+  checkEntry
     <$> MV.read
       vec
       (toKey (hash board) (MV.length vec))
   where
-    findRealEntry [] = Nothing
-    findRealEntry ((cHash, cEntry) : chain)
+    checkEntry Nothing = Nothing
+    checkEntry (Just (cHash, cEntry))
       | cHash == hash board = Just cEntry
-      | otherwise = findRealEntry chain
+      | otherwise = Nothing
 
 insert :: Board -> TTEntry -> STTranspositionTable s -> ST s ()
 insert board entry vec = do
