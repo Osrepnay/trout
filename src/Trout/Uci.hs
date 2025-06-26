@@ -6,10 +6,10 @@ import Control.Concurrent
     forkIO,
     killThread,
     newEmptyMVar,
+    newMVar,
     putMVar,
     readMVar,
     swapMVar,
-    tryPutMVar,
     tryReadMVar,
     tryTakeMVar,
   )
@@ -55,7 +55,9 @@ data UciState = UciState
   }
 
 newUciState :: IO UciState
-newUciState = UciState startingGame False Nothing <$> newEmptyMVar
+newUciState =
+  UciState startingGame False Nothing
+    <$> (stToIO (newEnv 1000000) >>= newMVar)
 
 data PlayerTime = PlayerTime
   { playerTime :: Int,
@@ -161,11 +163,6 @@ doUci uciState = do
     Right (CommGo args) -> do
       goVar <- newEmptyMVar
       let ssVar = uciSearchEnv uciState
-      -- don't care if it was successful
-      -- if it was then :)
-      -- if it wasn't that means there was already a state
-      -- hopefully the vector creation is deferred because lazy
-      _ <- stToIO (newEnv 1000000) >>= tryPutMVar ssVar
       thread <-
         forkIO $
           launchGo
