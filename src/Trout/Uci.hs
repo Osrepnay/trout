@@ -1,4 +1,4 @@
-module Trout.Uci (doUci, UciState (..)) where
+module Trout.Uci (doUci, UciState (..), newUciState) where
 
 import Control.Concurrent
   ( MVar,
@@ -9,6 +9,8 @@ import Control.Concurrent
     putMVar,
     readMVar,
     swapMVar,
+    tryPutMVar,
+    tryReadMVar,
     tryTakeMVar,
   )
 import Control.Exception (evaluate)
@@ -35,7 +37,7 @@ import Trout.Game.Move
     uciShowMove,
   )
 import Trout.Piece (Color (..))
-import Trout.Search (SearchEnv, bestMove, newEnv)
+import Trout.Search (SearchEnv, bestMove, clearEnv, newEnv)
 import Trout.Search.TranspositionTable ()
 import Trout.Uci.Parse
   ( CommGoArg (..),
@@ -49,8 +51,11 @@ data UciState = UciState
   { uciGame :: Game,
     uciIsDebug :: Bool,
     uciSearch :: Maybe (ThreadId, MVar Move),
-    uciSearchEnv :: Maybe (MVar (SearchEnv RealWorld))
+    uciSearchEnv :: MVar (SearchEnv RealWorld)
   }
+
+newUciState :: IO UciState
+newUciState = UciState startingGame False Nothing <$> newEmptyMVar
 
 data PlayerTime = PlayerTime
   { playerTime :: Int,
@@ -134,8 +139,12 @@ doUci uciState = do
       hFlush stderr
       doUci uciState
     Right (CommRegister _) -> doUci uciState
-    Right CommUcinewgame ->
-      -- TODO reset transposition table
+    Right CommUcinewgame -> do
+      let envMVar = uciSearchEnv uciState
+      maybeEnv <- tryReadMVar envMVar
+      case maybeEnv of
+        Just env -> stToIO (clearEnv env)
+        Nothing -> pure ()
       doUci $
         uciState {uciGame = startingGame}
     Right (CommPosition posInit moves) ->
@@ -151,13 +160,12 @@ doUci uciState = do
               doUci (uciState {uciGame = game})
     Right (CommGo args) -> do
       goVar <- newEmptyMVar
-      ssVar <- case uciSearchEnv uciState of
-        Just x -> pure x
-        Nothing -> do
-          v <- newEmptyMVar
-          tt <- stToIO (newEnv 1000000)
-          _ <- putMVar v tt
-          pure v
+      let ssVar = uciSearchEnv uciState
+      -- don't care if it was successful
+      -- if it was then :)
+      -- if it wasn't that means there was already a state
+      -- hopefully the vector creation is deferred because lazy
+      _ <- stToIO (newEnv 1000000) >>= tryPutMVar ssVar
       thread <-
         forkIO $
           launchGo
@@ -168,7 +176,7 @@ doUci uciState = do
       doUci
         ( uciState
             { uciSearch = Just (thread, goVar),
-              uciSearchEnv = Just ssVar
+              uciSearchEnv = ssVar
             }
         )
     Right CommStop -> case uciSearch uciState of

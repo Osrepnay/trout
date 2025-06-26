@@ -91,13 +91,13 @@ spaces1 = skipMany1 space
 -- simple commands without arguments
 parseArgless :: Parser UciCommand
 parseArgless =
-  string' "uci" *> commBreak $> CommUci
-    <|> string' "Dont" *> commBreak $> CommDont
-    <|> string' "isready" *> commBreak $> CommIsready
-    <|> string' "ucinewgame" *> commBreak $> CommUcinewgame
-    <|> string' "stop" *> commBreak $> CommStop
-    <|> string' "ponderhit" *> commBreak $> CommPonderhit
-    <|> string' "quit" *> commBreak $> CommQuit
+  try (string' "uci" *> commBreak) $> CommUci
+    <|> try (string' "Dont" *> commBreak) $> CommDont
+    <|> try (string' "isready" *> commBreak) $> CommIsready
+    <|> try (string' "ucinewgame" *> commBreak) $> CommUcinewgame
+    <|> try (string' "stop" *> commBreak) $> CommStop
+    <|> try (string' "ponderhit" *> commBreak) $> CommPonderhit
+    <|> try (string' "quit" *> commBreak) $> CommQuit
 
 parseDebug :: Parser UciCommand
 parseDebug =
