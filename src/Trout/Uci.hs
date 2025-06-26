@@ -12,7 +12,8 @@ import Control.Concurrent
     tryTakeMVar,
   )
 import Control.Exception (evaluate)
-import Control.Monad.Trans.State.Strict (runState)
+import Control.Monad.ST (RealWorld, stToIO)
+import Control.Monad.Trans.Reader (ReaderT (runReaderT))
 import Data.Bifunctor (first, second)
 import Data.Foldable (foldl')
 import Data.Function ((&))
@@ -34,9 +35,8 @@ import Trout.Game.Move
     uciShowMove,
   )
 import Trout.Piece (Color (..))
-import Trout.Search (bestMove)
-import Trout.Search.TranspositionTable (SizedHashMapTT)
-import Trout.Search.TranspositionTable qualified as TT
+import Trout.Search (SearchEnv, bestMove, newEnv)
+import Trout.Search.TranspositionTable ()
 import Trout.Uci.Parse
   ( CommGoArg (..),
     CommPositionInit (..),
@@ -45,14 +45,11 @@ import Trout.Uci.Parse
     readUciLine,
   )
 
--- TODO hack
-type SearchState = SizedHashMapTT
-
 data UciState = UciState
   { uciGame :: Game,
     uciIsDebug :: Bool,
     uciSearch :: Maybe (ThreadId, MVar Move),
-    uciSearchState :: Maybe (MVar SearchState)
+    uciSearchEnv :: Maybe (MVar (SearchEnv RealWorld))
   }
 
 data PlayerTime = PlayerTime
@@ -88,22 +85,24 @@ reportMove moveVar = do
   putStrLn ("bestmove " ++ move)
   hFlush stdout
 
-launchGo :: MVar Move -> MVar SearchState -> Game -> GoSettings -> IO ()
+launchGo :: MVar Move -> MVar (SearchEnv RealWorld) -> Game -> GoSettings -> IO ()
 launchGo moveVar ssVar game (GoSettings movetime times _incs maxDepth) = do
   _ <- timeout (time * 1000) (searches 0)
   reportMove moveVar
   where
     searches depth
       | depth <= maxDepth = do
-          st0 <- readMVar ssVar
-          let ((score, move), st1) =
-                runState
-                  (bestMove depth game)
-                  st0
+          stateVec <- readMVar ssVar
+          (score, move, stateVecPost) <- stToIO $ do
+            (score, move) <-
+              runReaderT
+                (bestMove depth game)
+                stateVec
+            pure (score, move, stateVec)
           _ <- evaluate score
           _ <- tryTakeMVar moveVar
           putMVar moveVar move
-          _ <- swapMVar ssVar st1
+          _ <- swapMVar ssVar stateVecPost
           putStrLn ("info depth " ++ show depth ++ " score cp " ++ show score)
           hFlush stdout
           searches (depth + 1)
@@ -156,11 +155,11 @@ doUci uciState = do
               doUci (uciState {uciGame = game})
     Right (CommGo args) -> do
       goVar <- newEmptyMVar
-      ssVar <- case uciSearchState uciState of
+      ssVar <- case uciSearchEnv uciState of
         Just x -> pure x
         Nothing -> do
           v <- newEmptyMVar
-          let tt = TT.sizedHMEmpty 1000000
+          tt <- stToIO (newEnv 1000000)
           _ <- putMVar v tt
           pure v
       thread <-
@@ -173,7 +172,7 @@ doUci uciState = do
       doUci
         ( uciState
             { uciSearch = Just (thread, goVar),
-              uciSearchState = Just ssVar
+              uciSearchEnv = Just ssVar
             }
         )
     Right CommStop -> case uciSearch uciState of

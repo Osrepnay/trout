@@ -1,12 +1,17 @@
 module Trout.Search
-  ( bestMove,
+  ( SearchEnv,
+    newEnv,
+    clearEnv,
+    bestMove,
     searchNega,
     eval,
   )
 where
 
+import Control.Monad.ST (ST)
+import Control.Monad.Trans.Class (lift)
+import Control.Monad.Trans.Reader (ReaderT, ask)
 import Data.Foldable (foldl')
-import Data.Functor (($>))
 import Trout.Bitboard (popCount)
 import Trout.Game
   ( Board (..),
@@ -22,7 +27,7 @@ import Trout.Game.Move (Move (..), nullMove)
 import Trout.Piece (Color (..), Piece (..), PieceType (..), colorSign)
 import Trout.Search.Node (NodeResult (..), NodeType (..))
 import Trout.Search.PieceSquareTables (pstEval)
-import Trout.Search.TranspositionTable (TTEntry (..), TTType)
+import Trout.Search.TranspositionTable (STTranspositionTable, TTEntry (..))
 import Trout.Search.TranspositionTable qualified as TT
 import Trout.Search.Worthiness (drawWorth, lossWorth)
 
@@ -30,26 +35,40 @@ import Trout.Search.Worthiness (drawWorth, lossWorth)
 -- get rid of nullMove weirdness too
 -- fails horribly when there are no moves
 
-bestMove :: (Monad m, TTType m) => Int -> Game -> m (Int, Move)
+newtype SearchEnv s = SearchEnv
+  { searchStateTT :: STTranspositionTable s
+  }
+
+newEnv :: Int -> ST s (SearchEnv s)
+newEnv n = SearchEnv <$> TT.new n
+
+clearEnv :: SearchEnv s -> ST s ()
+clearEnv (SearchEnv tt) = TT.clear tt
+
+bestMove :: Int -> Game -> ReaderT (SearchEnv s) (ST s) (Int, Move)
 bestMove depth game = do
   _ <- searchNega depth (minBound + 1) maxBound game
-  maybeEntry <- TT.tttypeLookup (gameBoard game)
+  maybeEntry <- ask >>= lift . TT.lookup (gameBoard game) . searchStateTT
   case maybeEntry of
     Just (TTEntry {entryNode = node, entryMove = move}) ->
       pure (nodeResScore node * colorSign (boardTurn (gameBoard game)), move)
     Nothing -> error "no entry"
 
-searchNega :: (Monad m, TTType m) => Int -> Int -> Int -> Game -> m Int
+searchNega :: Int -> Int -> Int -> Game -> ReaderT (SearchEnv s) (ST s) Int
 searchNega 0 !_ !_ !game
   | isDrawn game = pure 0
-  | otherwise = TT.tttypeInsert (gameBoard game) (TTEntry result nullMove 0) $> nodeResScore result
+  | otherwise = do
+      (SearchEnv {searchStateTT = tt}) <- ask
+      lift $ TT.insert (gameBoard game) (TTEntry result nullMove 0) tt
+      pure (nodeResScore result)
   where
     result = NodeResult (eval game) ExactNode
 searchNega depth !alpha !beta !game
   | isDrawn game = pure 0
   | otherwise = do
+      (SearchEnv {searchStateTT = tt}) <- ask
       let gameMoves = allMoves board
-      maybeEntry <- TT.tttypeLookup board
+      maybeEntry <- flip seq Nothing <$> lift (TT.lookup board tt)
       let scoredMoves = case maybeEntry of
             Nothing -> (0,) <$> gameMoves
             Just (TTEntry {entryMove}) ->
@@ -58,11 +77,11 @@ searchNega depth !alpha !beta !game
                   (1, entryMove) : ((0,) <$> filter (/= entryMove) gameMoves)
                 else (0,) <$> gameMoves
       (bResult, bMove) <- go Nothing scoredMoves
-      TT.tttypeInsert board (TTEntry bResult bMove depth)
+      lift (TT.insert board (TTEntry bResult bMove depth) tt)
       pure (nodeResScore bResult)
   where
     board = gameBoard game
-    go :: (Monad m, TTType m) => Maybe (Int, Move) -> [(Int, Move)] -> m (NodeResult, Move)
+    go :: Maybe (Int, Move) -> [(Int, Move)] -> ReaderT (SearchEnv s) (ST s) (NodeResult, Move)
     -- no valid moves (stalemate, checkmate checks)
     -- bestScore is nothing if all moves are illegal
     go Nothing []

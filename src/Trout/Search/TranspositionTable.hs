@@ -1,13 +1,24 @@
-module Trout.Search.TranspositionTable (TTEntry (..), SizedHashMap (..), SizedHashMapTT, sizedHMEmpty, TTType (..)) where
+module Trout.Search.TranspositionTable
+  ( TTEntry (..),
+    TranspositionTable,
+    STTranspositionTable,
+    new,
+    clear,
+    lookup,
+    insert,
+  )
+where
 
-import Control.Monad.Trans.State.Strict (State)
-import Control.Monad.Trans.State.Strict qualified as S
-import Data.HashMap.Strict (HashMap)
-import Data.HashMap.Strict qualified as HM
-import Data.Hashable (Hashable, hash)
+import Control.Monad (when)
+import Control.Monad.ST (ST)
+import Data.Hashable (hash)
+import Data.Vector (Vector)
+import Data.Vector.Mutable (STVector)
+import Data.Vector.Mutable qualified as MV
 import Trout.Game (Board)
 import Trout.Game.Move (Move)
-import Trout.Search.Node (NodeResult (..), NodeType (ExactNode))
+import Trout.Search.Node (NodeResult (..))
+import Prelude hiding (lookup)
 
 -- correct move for depth only guaranteed on exact nodes
 -- TODO consider moving entryMove into NodeResult
@@ -18,55 +29,52 @@ data TTEntry = TTEntry
   }
   deriving (Eq, Show)
 
-class TTType m where
-  tttypeInsert :: Board -> TTEntry -> m ()
-  tttypeLookup :: Board -> m (Maybe TTEntry)
+maxChain :: Int
+maxChain = 1
 
--- if queue is nonempty, output side should
-data Queue a = Queue [a] [a]
+type TranspositionTable = Vector [(Int, TTEntry)]
 
-emptyQueue :: Queue a
-emptyQueue = Queue [] []
+type STTranspositionTable s = STVector s [(Int, TTEntry)]
 
-pop :: Queue a -> (a, Queue a)
-pop (Queue [] []) = error "empty queue"
-pop (Queue ins (o : outs)) = (o, Queue ins outs)
-pop (Queue ins []) = pop (Queue [] (reverse ins))
+new :: Int -> ST s (STTranspositionTable s)
+new n = MV.replicate n []
 
-push :: a -> Queue a -> Queue a
-push x (Queue ins outs) = Queue (x : ins) outs
+clear :: STTranspositionTable s -> ST s ()
+clear tt = MV.set tt []
 
-data SizedHashMap v = SizedHashMap
-  { sizedHMQueue :: Queue Int,
-    sizedHMMap :: HashMap Int v,
-    sizedHMSize :: Int,
-    sizedHMMaxSize :: Int
-  }
+toKey :: Int -> Int -> Int
+toKey unkeyed len = fromIntegral ((fromIntegral unkeyed :: Word) `rem` fromIntegral len)
 
-type SizedHashMapTT = SizedHashMap TTEntry
+basicInsert :: Board -> TTEntry -> STTranspositionTable s -> ST s ()
+basicInsert board entry vec =
+  MV.modify
+    vec
+    ( \chain ->
+        let filteredChain = filter ((/= hash board) . fst) chain
+         in (hash board, entry)
+              : if length filteredChain < maxChain
+                then filteredChain
+                else init filteredChain
+    )
+    (toKey (hash board) (MV.length vec))
 
-sizedHMEmpty :: Int -> SizedHashMap v
-sizedHMEmpty = SizedHashMap emptyQueue HM.empty 0
-
-sizedHMInsert :: (Hashable k) => k -> v -> SizedHashMap v -> SizedHashMap v
-sizedHMInsert k v (SizedHashMap q m size maxSize)
-  | size /= maxSize = SizedHashMap (push kHash q) (HM.insert kHash v m) (size + 1) maxSize
-  | otherwise =
-      let (toDrop, newQ) = pop q
-       in SizedHashMap (push kHash newQ) (HM.insert kHash v (HM.delete (hash toDrop) m)) size maxSize
+lookup :: Board -> STTranspositionTable s -> ST s (Maybe TTEntry)
+lookup board vec =
+  findRealEntry
+    <$> MV.read
+      vec
+      (toKey (hash board) (MV.length vec))
   where
-    kHash = hash k
+    findRealEntry [] = Nothing
+    findRealEntry ((cHash, cEntry) : chain)
+      | cHash == hash board = Just cEntry
+      | otherwise = findRealEntry chain
 
-instance TTType (State SizedHashMapTT) where
-  -- replacement strategy: depth-preferred, exact preferred, lazy otherwise and won't replace
-  tttypeInsert game entry = S.modify $
-    \m -> case HM.lookup (hash game) (sizedHMMap m) of
-      Just oldEntry ->
-        if entryDepth oldEntry < entryDepth entry
-          || entryDepth oldEntry == entryDepth entry
-            && nodeResType (entryNode entry) == ExactNode
-            && nodeResType (entryNode oldEntry) /= ExactNode
-          then sizedHMInsert game entry m
-          else m
-      Nothing -> sizedHMInsert game entry m
-  tttypeLookup game = HM.lookup (hash game) . sizedHMMap <$> S.get
+insert :: Board -> TTEntry -> STTranspositionTable s -> ST s ()
+insert board entry vec = do
+  existing <- lookup board vec
+  case existing of
+    Just oldEntry ->
+      when (entryDepth oldEntry <= entryDepth entry) $
+        basicInsert board entry vec
+    Nothing -> basicInsert board entry vec

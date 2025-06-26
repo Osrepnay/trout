@@ -1,23 +1,31 @@
-import Control.Monad.Trans.State.Strict
+{-# OPTIONS_GHC -Wno-orphans #-}
+import Control.DeepSeq (NFData (rnf))
+import Control.Monad.ST (RealWorld, stToIO)
+import Control.Monad.Trans.Reader (runReaderT)
 import Criterion.Main
 import Data.Maybe
 import Trout.Game
 import Trout.Search
-import Trout.Search.TranspositionTable (SizedHashMapTT)
-import Trout.Search.TranspositionTable qualified as TT
+
+instance NFData (SearchEnv s) where
+  rnf !_ = ()
 
 main :: IO ()
 main = do
   -- probably better way to do this (env), cba read docs
-  let table = TT.sizedHMEmpty 100000
   defaultMain
     [ bench "perft(5)" $ whnf (perft 5) startingGame,
       bench "bestMove depth 6" $
-        whnf (bestMoveWrapper 6 startingGame) table
+        perRunEnv
+          createVec
+          (bestMoveWrapper 6 startingGame)
     ]
 
-bestMoveWrapper :: Int -> Game -> SizedHashMapTT -> Int
-bestMoveWrapper depth game = fst . evalState (bestMove depth game)
+createVec :: IO (SearchEnv RealWorld)
+createVec = stToIO (newEnv 1000000)
+
+bestMoveWrapper :: Int -> Game -> SearchEnv RealWorld -> IO Int
+bestMoveWrapper depth game vec = stToIO (fst <$> runReaderT (bestMove depth game) vec)
 
 perft :: Int -> Game -> Int
 perft 0 _ = 1
