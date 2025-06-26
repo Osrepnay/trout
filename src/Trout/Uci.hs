@@ -66,16 +66,13 @@ data GoSettings = GoSettings
   }
   deriving (Show)
 
-niceDays :: Int
-niceDays = 69 * 24 * 60 * 60 * 1000
-
 defaultSettings :: GoSettings
 defaultSettings =
   GoSettings
     { goMovetime = Nothing,
-      goTimes = (niceDays, niceDays),
+      goTimes = (maxBound, maxBound),
       goIncs = (0, 0),
-      goMaxDepth = niceDays
+      goMaxDepth = maxBound
     }
 
 reportMove :: MVar Move -> IO ()
@@ -86,7 +83,7 @@ reportMove moveVar = do
   hFlush stdout
 
 launchGo :: MVar Move -> MVar (SearchEnv RealWorld) -> Game -> GoSettings -> IO ()
-launchGo moveVar ssVar game (GoSettings movetime times _incs maxDepth) = do
+launchGo moveVar ssVar game (GoSettings movetime times incs maxDepth) = do
   _ <- timeout (time * 1000) (searches 0)
   reportMove moveVar
   where
@@ -107,11 +104,10 @@ launchGo moveVar ssVar game (GoSettings movetime times _incs maxDepth) = do
           hFlush stdout
           searches (depth + 1)
       | otherwise = pure ()
-    time = flip fromMaybe movetime $
-      flip quot 20 $
-        case boardTurn (gameBoard game) of
-          White -> fst times
-          Black -> snd times
+    time = fromMaybe (getter times `quot` 20 + getter incs `quot` 2) movetime
+    getter = case boardTurn (gameBoard game) of
+      White -> fst
+      Black -> snd
 
 doUci :: UciState -> IO ()
 doUci uciState = do
@@ -212,4 +208,4 @@ doUci uciState = do
       GoNodes _ -> gs
       GoMate _ -> gs
       GoMovetime m -> GoSettings (Just m) ts is depth
-      GoInfinite -> GoSettings (Just niceDays) ts is depth
+      GoInfinite -> GoSettings (Just maxBound) ts is depth
