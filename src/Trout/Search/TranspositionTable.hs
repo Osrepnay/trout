@@ -12,9 +12,11 @@ where
 import Control.Monad (when)
 import Control.Monad.ST (ST)
 import Data.Hashable (hash)
-import Data.Vector (Vector)
-import Data.Vector.Mutable (STVector)
-import Data.Vector.Mutable qualified as MV
+import Data.Vector.Storable (Vector)
+import Data.Vector.Storable.Mutable (STVector)
+import Data.Vector.Storable.Mutable qualified as MSV
+import Foreign.Ptr (Ptr, castPtr, plusPtr)
+import Foreign.Storable (Storable (..))
 import Trout.Game (Board)
 import Trout.Game.Move (Move)
 import Trout.Search.Node (NodeResult (..))
@@ -29,32 +31,72 @@ data TTEntry = TTEntry
   }
   deriving (Eq, Show)
 
+instance Storable TTEntry where
+  sizeOf :: TTEntry -> Int
+  sizeOf _ = sizeOf (undefined :: NodeResult) + sizeOf (undefined :: Move) + sizeOf (undefined :: Int)
+  alignment :: TTEntry -> Int
+  alignment _ = sizeOf (undefined :: Int)
+  peek :: Ptr TTEntry -> IO TTEntry
+  peek ptr = do
+    node <- peek (castPtr ptr)
+    move <- peek (ptr `plusPtr` sizeOf node)
+    depth <- peek (ptr `plusPtr` (sizeOf node + sizeOf move))
+    pure (TTEntry node move depth)
+  poke :: Ptr TTEntry -> TTEntry -> IO ()
+  poke ptr (TTEntry node move depth) = do
+    poke (castPtr ptr) node
+    poke (ptr `plusPtr` sizeOf node) move
+    poke (ptr `plusPtr` (sizeOf node + sizeOf move)) depth
+
+instance Storable (Maybe (Int, TTEntry)) where
+  sizeOf :: Maybe (Int, TTEntry) -> Int
+  sizeOf _ = 2 * sizeOf (undefined :: Int) + sizeOf (undefined :: TTEntry)
+  alignment :: Maybe (Int, TTEntry) -> Int
+  alignment _ = sizeOf (undefined :: Int)
+  peek :: Ptr (Maybe (Int, TTEntry)) -> IO (Maybe (Int, TTEntry))
+  peek ptr = do
+    let intPtr = castPtr ptr :: Ptr Int
+    (maybeMarker :: Int) <- peek intPtr
+    if maybeMarker == 0
+      then pure Nothing
+      else do
+        trueHash <- peekElemOff intPtr 1
+        entry <- peek (ptr `plusPtr` (2 * sizeOf (undefined :: Int)))
+        pure (Just (trueHash, entry))
+  poke :: Ptr (Maybe (Int, TTEntry)) -> Maybe (Int, TTEntry) -> IO ()
+  poke ptr Nothing = poke (castPtr ptr) (0 :: Int)
+  poke ptr (Just (trueHash, entry)) = do
+    let intPtr = castPtr ptr :: Ptr Int
+    poke intPtr 1
+    pokeElemOff intPtr 1 trueHash
+    pokeByteOff ptr (2 * sizeOf (undefined :: Int)) entry
+
 type TranspositionTable = Vector (Maybe (Int, TTEntry))
 
 type STTranspositionTable s = STVector s (Maybe (Int, TTEntry))
 
 new :: Int -> ST s (STTranspositionTable s)
-new n = MV.replicate n Nothing
+new n = MSV.replicate n Nothing
 
 clear :: STTranspositionTable s -> ST s ()
-clear tt = MV.set tt Nothing
+clear tt = MSV.set tt Nothing
 
 toKey :: Int -> Int -> Int
 toKey unkeyed len = fromIntegral ((fromIntegral unkeyed :: Word) `rem` fromIntegral len)
 
 basicInsert :: Board -> TTEntry -> STTranspositionTable s -> ST s ()
 basicInsert board entry vec =
-  MV.write
+  MSV.write
     vec
-    (toKey (hash board) (MV.length vec))
+    (toKey (hash board) (MSV.length vec))
     (Just (hash board, entry))
 
 lookup :: Board -> STTranspositionTable s -> ST s (Maybe TTEntry)
 lookup board vec =
   checkEntry
-    <$> MV.read
+    <$> MSV.read
       vec
-      (toKey (hash board) (MV.length vec))
+      (toKey (hash board) (MSV.length vec))
   where
     checkEntry Nothing = Nothing
     checkEntry (Just (cHash, cEntry))
