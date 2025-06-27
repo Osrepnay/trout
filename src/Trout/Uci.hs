@@ -57,7 +57,7 @@ data UciState = UciState
 newUciState :: IO UciState
 newUciState =
   UciState startingGame False Nothing
-    <$> (stToIO (newEnv 1000000) >>= newMVar)
+    <$> (stToIO (newEnv 200000) >>= newMVar)
 
 data PlayerTime = PlayerTime
   { playerTime :: Int,

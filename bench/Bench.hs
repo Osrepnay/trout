@@ -22,7 +22,7 @@ main = do
     ]
 
 createVec :: IO (SearchEnv RealWorld)
-createVec = stToIO (newEnv 1000000)
+createVec = stToIO (newEnv 200000)
 
 bestMoveWrapper :: Int -> Game -> SearchEnv RealWorld -> IO Int
 bestMoveWrapper depth game vec = stToIO (fst <$> runReaderT (bestMove depth game) vec)
