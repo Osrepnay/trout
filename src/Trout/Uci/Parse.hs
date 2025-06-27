@@ -1,4 +1,5 @@
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+
 {-# HLINT ignore "Use lambda-case" #-}
 module Trout.Uci.Parse
   ( CommPositionInit (..),
@@ -16,6 +17,7 @@ import Data.Functor (($>), (<&>))
 import Text.Parsec
   ( alphaNum,
     anyChar,
+    char,
     digit,
     eof,
     many,
@@ -167,7 +169,10 @@ parseGo :: Parser UciCommand
 parseGo = string' "go" *> many (spaces1 *> parseArg) <&> CommGo
   where
     parseIntArg :: String -> (Int -> CommGoArg) -> Parser CommGoArg
-    parseIntArg n c = string' n *> spaces1 *> (c . read <$> many1 digit)
+    parseIntArg n c =
+      string' n
+        *> spaces1
+        *> (c . read <$> ((((:) <$> char '-') <*> many1 digit) <|> many1 digit))
     parseArg =
       ( string' "searchmoves"
           *> many (try (spaces *> many alphaNum))
