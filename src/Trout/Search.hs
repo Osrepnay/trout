@@ -2,6 +2,7 @@ module Trout.Search
   ( SearchEnv,
     newEnv,
     clearEnv,
+    pvWalk,
     bestMove,
     searchNega,
     eval,
@@ -12,6 +13,7 @@ import Control.Monad.ST (ST)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Reader (ReaderT, ask)
 import Data.Foldable (foldl')
+import Data.Maybe (fromMaybe)
 import Trout.Bitboard (popCount)
 import Trout.Game
   ( Board (..),
@@ -41,6 +43,54 @@ newEnv n = SearchEnv <$> TT.new n
 
 clearEnv :: SearchEnv s -> ST s ()
 clearEnv (SearchEnv tt) = TT.clear tt
+
+-- (attempt to) finid the pv (the tt might have been overwritten)
+pvWalk :: Game -> ReaderT (SearchEnv s) (ST s) [Move]
+pvWalk game = go game Nothing
+  where
+    go _ (Just 0) = pure []
+    go g maybeDepth = do
+      (SearchEnv {searchStateTT = tt}) <- ask
+      maybeEntry <- lift (TT.lookup (gameBoard g) tt)
+      case maybeEntry of
+        Just (TTEntry {entryDepth = 0}) -> pure [] -- for initial depth of 0 edge case
+        Just (TTEntry {entryMove = move, entryDepth = depth}) ->
+          if maybe True (depth ==) maybeDepth
+            then case makeMove g move of
+              Just movedG -> (move :) <$> go movedG (Just (fromMaybe depth maybeDepth - 1))
+              Nothing -> pure [] -- should be rare, this means full tt collision
+            else pure []
+        Nothing -> pure []
+
+eval :: Game -> Int
+eval game = colorSign (boardTurn board) * pstEvalValue
+  where
+    board = gameBoard game
+    pieces = boardPieces board
+    getBB color = ($ pieces) . pieceBitboard . Piece color
+    -- calculate game phase
+    -- pawns don't count, bishops and rooks count 1, rooks 2, queens 4
+    -- taken from pesto/ethereal/fruit
+    mgPhase =
+      popCount (pieceTypeBitboard Knight pieces)
+        + popCount (pieceTypeBitboard Bishop pieces)
+        + 2 * popCount (pieceTypeBitboard Rook pieces)
+        + 4 * popCount (pieceTypeBitboard Queen pieces)
+    egPhase = 24 - mgPhase
+    pst bb p = pstEval bb p mgPhase egPhase
+    pstEvalValue =
+      pst (getBB White Pawn) Pawn 0
+        - pst (getBB Black Pawn) Pawn 56
+        + pst (getBB White Knight) Knight 0
+        - pst (getBB Black Knight) Knight 56
+        + pst (getBB White Bishop) Bishop 0
+        - pst (getBB Black Bishop) Bishop 56
+        + pst (getBB White Rook) Rook 0
+        - pst (getBB Black Rook) Rook 56
+        + pst (getBB White Queen) Queen 0
+        - pst (getBB Black Queen) Queen 56
+        + pst (getBB White King) King 0
+        - pst (getBB Black King) King 56
 
 quieSearch :: Int -> Int -> Game -> ReaderT (SearchEnv s) (ST s) Int
 quieSearch !alpha !beta !game
@@ -146,33 +196,3 @@ searchNega depth !alpha !beta !game
             )
             ([], minBound, nullMove)
             moves
-
-eval :: Game -> Int
-eval game = colorSign (boardTurn board) * pstEvalValue
-  where
-    board = gameBoard game
-    pieces = boardPieces board
-    getBB color = ($ pieces) . pieceBitboard . Piece color
-    -- calculate game phase
-    -- pawns don't count, bishops and rooks count 1, rooks 2, queens 4
-    -- taken from pesto/ethereal/fruit
-    mgPhase =
-      popCount (pieceTypeBitboard Knight pieces)
-        + popCount (pieceTypeBitboard Bishop pieces)
-        + 2 * popCount (pieceTypeBitboard Rook pieces)
-        + 4 * popCount (pieceTypeBitboard Queen pieces)
-    egPhase = 24 - mgPhase
-    pst bb p = pstEval bb p mgPhase egPhase
-    pstEvalValue =
-      pst (getBB White Pawn) Pawn 0
-        - pst (getBB Black Pawn) Pawn 56
-        + pst (getBB White Knight) Knight 0
-        - pst (getBB Black Knight) Knight 56
-        + pst (getBB White Bishop) Bishop 0
-        - pst (getBB Black Bishop) Bishop 56
-        + pst (getBB White Rook) Rook 0
-        - pst (getBB Black Rook) Rook 56
-        + pst (getBB White Queen) Queen 0
-        - pst (getBB Black Queen) Queen 56
-        + pst (getBB White King) King 0
-        - pst (getBB Black King) King 56

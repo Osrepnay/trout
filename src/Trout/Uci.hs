@@ -22,6 +22,7 @@ import Data.Function ((&))
 import Data.Maybe (fromMaybe)
 import System.IO (hFlush, hPutStrLn, stderr, stdout)
 import System.Timeout (timeout)
+import Text.Printf (printf)
 import Trout.Fen.Parse (fenToGame)
 import Trout.Game
   ( Game (..),
@@ -37,7 +38,7 @@ import Trout.Game.Move
     uciShowMove,
   )
 import Trout.Piece (Color (..))
-import Trout.Search (SearchEnv, bestMove, clearEnv, newEnv)
+import Trout.Search (SearchEnv, bestMove, clearEnv, newEnv, pvWalk)
 import Trout.Search.TranspositionTable ()
 import Trout.Uci.Parse
   ( CommGoArg (..),
@@ -97,17 +98,18 @@ launchGo moveVar ssVar game (GoSettings movetime times incs maxDepth) = do
     searches depth
       | depth <= maxDepth = do
           stateVec <- readMVar ssVar
-          (score, move, stateVecPost) <- stToIO $ do
-            (score, move) <-
-              runReaderT
-                (bestMove depth game)
-                stateVec
-            pure (score, move, stateVec)
+          (score, move) <- stToIO (runReaderT (bestMove depth game) stateVec)
           _ <- evaluate score
           _ <- tryTakeMVar moveVar
           putMVar moveVar move
-          _ <- swapMVar ssVar stateVecPost
-          putStrLn ("info depth " ++ show depth ++ " score cp " ++ show score)
+          _ <- swapMVar ssVar stateVec
+          pv <- stToIO (runReaderT (pvWalk game) stateVec)
+          let pvMoves = foldr (\a str -> ' ' : (uciShowMove a ++ str)) "" pv
+          let pvStr =
+                if pvMoves == ""
+                  then ""
+                  else " pv" ++ pvMoves
+          printf "info depth %d score cp %d%s\n" depth score pvStr
           hFlush stdout
           searches (depth + 1)
       | otherwise = pure ()
