@@ -20,6 +20,7 @@ module Trout.Game
     startingGame,
     isDrawn,
     allMoves,
+    allCaptures,
     inCheck,
     makeMove,
   )
@@ -50,15 +51,21 @@ import Trout.Bitboard
   )
 import Trout.Game.Move (Move (..), SpecialMove (..))
 import Trout.Game.MoveGen
-  ( bishopMoves,
+  ( bishopCaptures,
+    bishopMoves,
     concatDL,
+    kingCaptures,
     kingMoves,
     kingTable,
+    knightCaptures,
     knightMoves,
     knightTable,
     mapOnes,
+    pawnsCaptures,
     pawnsMoves,
+    queenCaptures,
     queenMoves,
+    rookCaptures,
     rookMoves,
   )
 import Trout.Game.MoveGen.Sliding.Magic (bishopMovesMagic, rookMovesMagic)
@@ -260,6 +267,23 @@ allMoves (Board pieces castling enPassant turn _) =
             moveSqs rookMoves (pieceBB Rook) $
               moveSqs queenMoves (pieceBB Queen) $
                 moveSqs (kingMoves (canCastle turn True castling) (canCastle turn False castling)) (pieceBB King) []
+      )
+      []
+  where
+    block = occupancy pieces
+    myBlock = colorOccupancy turn pieces
+    pieceBB = ($ pieces) . pieceBitboard . Piece turn
+    moveSqs mover = mapOnes (mover block myBlock)
+
+allCaptures :: Board -> [Move]
+allCaptures (Board pieces _ enPassant turn _) =
+  pawnsCaptures enPassant turn block myBlock (pieceBB Pawn) $
+    concatDL
+      ( moveSqs knightCaptures (pieceBB Knight) $
+          moveSqs bishopCaptures (pieceBB Bishop) $
+            moveSqs rookCaptures (pieceBB Rook) $
+              moveSqs queenCaptures (pieceBB Queen) $
+                moveSqs kingCaptures (pieceBB King) []
       )
       []
   where

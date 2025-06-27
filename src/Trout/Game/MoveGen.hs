@@ -7,6 +7,12 @@ module Trout.Game.MoveGen
     queenMoves,
     kingTable,
     kingMoves,
+    pawnsCaptures,
+    knightCaptures,
+    bishopCaptures,
+    rookCaptures,
+    queenCaptures,
+    kingCaptures,
     SpecialMove (..),
     Move (..),
     DList,
@@ -45,6 +51,8 @@ import Trout.Game.MoveGen.Sliding.Magic
     rookMovesMagic,
   )
 import Trout.Piece (Color (..), PieceType (..))
+
+-- TODO figure out a way to factor out the capturing/reduce duplication
 
 type DList a = [a] -> [a]
 
@@ -176,6 +184,87 @@ pawnsMoves enPSq Black block myBlock pawnBB =
       Nothing -> id
 {-# INLINE pawnsMoves #-}
 
+pawnsCaptures ::
+  Maybe Int ->
+  Color ->
+  Bitboard ->
+  Bitboard ->
+  Bitboard ->
+  DList Move
+pawnsCaptures enPSq White block myBlock pawnBB =
+  enPassant
+    . concatDL
+      ( promos
+          <&> \p ->
+            mapOnes (\to -> Move Pawn (Promotion p) (to - 7) to) leftP
+              . mapOnes (\to -> Move Pawn (Promotion p) (to - 9) to) rightP
+      )
+    . mapOnes (\to -> Move Pawn Normal (to - 7) to) leftN
+    . mapOnes (\to -> Move Pawn Normal (to - 9) to) rightN
+  where
+    leftCaptures =
+      (pawnBB .&. complement fileA)
+        !<<. 7
+        .&. block
+        .&. complement myBlock
+    rightCaptures =
+      (pawnBB .&. complement fileH)
+        !<<. 9
+        .&. block
+        .&. complement myBlock
+    leftN = leftCaptures .&. complement rank8
+    rightN = rightCaptures .&. complement rank8
+    leftP = leftCaptures .&. rank8
+    rightP = rightCaptures .&. rank8
+    enPassant = case enPSq of
+      Just enP ->
+        mapOnes
+          (\sq -> Move Pawn (EnPassant enP) sq (enP + 8))
+          ( pawnBB
+              .&. rank5
+              .&. 0
+              `setBit` (enP - 1)
+              `setBit` (enP + 1)
+          )
+      Nothing -> id
+pawnsCaptures enPSq Black block myBlock pawnBB =
+  enPassant
+    . concatDL
+      ( promos
+          <&> \p ->
+            mapOnes (\to -> Move Pawn (Promotion p) (to + 9) to) leftP
+              . mapOnes (\to -> Move Pawn (Promotion p) (to + 7) to) rightP
+      )
+    . mapOnes (\to -> Move Pawn Normal (to + 9) to) leftN
+    . mapOnes (\to -> Move Pawn Normal (to + 7) to) rightN
+  where
+    leftCaptures =
+      (pawnBB .&. complement fileA)
+        !>>. 9
+        .&. block
+        .&. complement myBlock
+    rightCaptures =
+      (pawnBB .&. complement fileH)
+        !>>. 7
+        .&. block
+        .&. complement myBlock
+    leftN = leftCaptures .&. complement rank1
+    rightN = rightCaptures .&. complement rank1
+    leftP = leftCaptures .&. rank1
+    rightP = rightCaptures .&. rank1
+    enPassant = case enPSq of
+      Just enP ->
+        mapOnes
+          (\sq -> Move Pawn (EnPassant enP) sq (enP - 8))
+          ( pawnBB
+              .&. rank4
+              .&. 0
+              `setBit` (enP - 1)
+              `setBit` (enP + 1)
+          )
+      Nothing -> id
+{-# INLINE pawnsCaptures #-}
+
 knightTable :: Vector Bitboard
 knightTable =
   tableGen
@@ -196,6 +285,13 @@ knightMoves _ myBlock sq =
     (knightTable `unsafeIndex` sq .&. complement myBlock)
 {-# INLINE knightMoves #-}
 
+knightCaptures :: Bitboard -> Bitboard -> Int -> DList Move
+knightCaptures block myBlock sq =
+  mapOnes
+    (Move Knight Normal sq)
+    (knightTable `unsafeIndex` sq .&. complement myBlock .&. block)
+{-# INLINE knightCaptures #-}
+
 bishopMoves :: Bitboard -> Bitboard -> Int -> DList Move
 bishopMoves block myBlock sq =
   mapOnes
@@ -203,12 +299,26 @@ bishopMoves block myBlock sq =
     (bishopMovesMagic block sq .&. complement myBlock)
 {-# INLINE bishopMoves #-}
 
+bishopCaptures :: Bitboard -> Bitboard -> Int -> DList Move
+bishopCaptures block myBlock sq =
+  mapOnes
+    (Move Bishop Normal sq)
+    (bishopMovesMagic block sq .&. complement myBlock .&. block)
+{-# INLINE bishopCaptures #-}
+
 rookMoves :: Bitboard -> Bitboard -> Int -> DList Move
 rookMoves block myBlock sq =
   mapOnes
     (Move Rook Normal sq)
     (rookMovesMagic block sq .&. complement myBlock)
 {-# INLINE rookMoves #-}
+
+rookCaptures :: Bitboard -> Bitboard -> Int -> DList Move
+rookCaptures block myBlock sq =
+  mapOnes
+    (Move Rook Normal sq)
+    (rookMovesMagic block sq .&. complement myBlock .&. block)
+{-# INLINE rookCaptures #-}
 
 queenMoves :: Bitboard -> Bitboard -> Int -> DList Move
 queenMoves block myBlock sq =
@@ -218,6 +328,16 @@ queenMoves block myBlock sq =
         .&. complement myBlock
     )
 {-# INLINE queenMoves #-}
+
+queenCaptures :: Bitboard -> Bitboard -> Int -> DList Move
+queenCaptures block myBlock sq =
+  mapOnes
+    (Move Queen Normal sq)
+    ( (bishopMovesMagic block sq .|. rookMovesMagic block sq)
+        .&. complement myBlock
+        .&. block
+    )
+{-# INLINE queenCaptures #-}
 
 kingTable :: Vector Bitboard
 kingTable =
@@ -243,3 +363,10 @@ kingMoves kAllowed qAllowed block myBlock sq =
     castleK = kAllowed && block .&. (3 !<<. (sq + 1)) == 0
     castleQ = qAllowed && block .&. (7 !<<. (sq - 3)) == 0
 {-# INLINE kingMoves #-}
+
+kingCaptures :: Bitboard -> Bitboard -> Int -> DList Move
+kingCaptures block myBlock sq =
+    mapOnes
+      (Move King Normal sq)
+      (kingTable `unsafeIndex` sq .&. complement myBlock .&. block)
+{-# INLINE kingCaptures #-}

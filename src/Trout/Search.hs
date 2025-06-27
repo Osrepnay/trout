@@ -16,6 +16,7 @@ import Trout.Bitboard (popCount)
 import Trout.Game
   ( Board (..),
     Game (..),
+    allCaptures,
     allMoves,
     inCheck,
     isDrawn,
@@ -31,10 +32,6 @@ import Trout.Search.TranspositionTable (STTranspositionTable, TTEntry (..))
 import Trout.Search.TranspositionTable qualified as TT
 import Trout.Search.Worthiness (drawWorth, lossWorth)
 
--- TODO this kinda sucks
--- get rid of nullMove weirdness too
--- fails horribly when there are no moves
-
 newtype SearchEnv s = SearchEnv
   { searchStateTT :: STTranspositionTable s
   }
@@ -44,6 +41,25 @@ newEnv n = SearchEnv <$> TT.new n
 
 clearEnv :: SearchEnv s -> ST s ()
 clearEnv (SearchEnv tt) = TT.clear tt
+
+quieSearch :: Int -> Int -> Game -> ReaderT (SearchEnv s) (ST s) Int
+quieSearch !alpha !beta !game
+  -- stand-pat from null-move observation (eval immediately = not moving)
+  | staticEval >= beta = pure staticEval
+  | otherwise = go staticEval (allCaptures board)
+  where
+    staticEval = eval game
+    board = gameBoard game
+    go :: Int -> [Move] -> ReaderT (SearchEnv s) (ST s) Int
+    go bestScore [] = pure bestScore
+    go bestScore (move : moves) = case makeMove game move of
+      Just movedGame -> do
+        let trueAlpha = max alpha bestScore
+        score <- negate <$> quieSearch (-beta) (-trueAlpha) movedGame
+        if score >= beta
+          then pure score
+          else go (max score bestScore) moves
+      Nothing -> go bestScore moves
 
 bestMove :: Int -> Game -> ReaderT (SearchEnv s) (ST s) (Int, Move)
 bestMove depth game = do
@@ -55,14 +71,14 @@ bestMove depth game = do
     Nothing -> error "no entry"
 
 searchNega :: Int -> Int -> Int -> Game -> ReaderT (SearchEnv s) (ST s) Int
-searchNega 0 !_ !_ !game
+searchNega 0 !alpha !beta !game
   | isDrawn game = pure 0
   | otherwise = do
       (SearchEnv {searchStateTT = tt}) <- ask
+      -- TODO exactnoding quiescence is a little sus
+      result <- flip NodeResult ExactNode <$> quieSearch alpha beta game
       lift $ TT.insert (gameBoard game) (TTEntry result nullMove 0) tt
       pure (nodeResScore result)
-  where
-    result = NodeResult (eval game) ExactNode
 searchNega depth !alpha !beta !game
   | isDrawn game = pure 0
   | otherwise = do
@@ -96,6 +112,7 @@ searchNega depth !alpha !beta !game
     -- TODO make sure that fail-soft behavior doesn't fiddle with bestScore too weirdly
     go (Just (bestScore, bMove)) []
       -- normally alpha is set if bestScore > alpha, but technically the score is exact
+      -- TODO recheck thsi behavior
       | bestScore >= alpha = pure (NodeResult bestScore ExactNode, bMove)
       | otherwise = pure (NodeResult bestScore AllNode, bMove)
     go best moves = case makeMove game move of
