@@ -73,7 +73,11 @@ pvWalk game = go game Nothing
         Nothing -> pure []
 
 scoreMVVLVA :: Board -> Move -> Int
-scoreMVVLVA board move = fromMaybe 0 $ subtract <$> squareScore (moveTo move) <*> squareScore (moveFrom move)
+scoreMVVLVA board move =
+  fromMaybe 0 $ do
+    victim <- squareScore (moveTo move)
+    attacker <- squareScore (moveFrom move)
+    pure (victim * 10 - attacker)
   where
     squareScore sq =
       ( \t -> case t of
@@ -180,7 +184,7 @@ searchNega depth !alpha !beta !game
             Just (TTEntry {entryMove}) ->
               if entryMove /= nullMove
                 then
-                  (10000, entryMove) : ((\m -> (scoreMVVLVA board m, m)) <$> filter (/= entryMove) gameMoves)
+                  (100000, entryMove) : ((\m -> (scoreMVVLVA board m, m)) <$> filter (/= entryMove) gameMoves)
                 else (0,) <$> gameMoves
       (bResult, bMove) <- go Nothing scoredMoves
       lift (TT.insert board (TTEntry bResult bMove depth) tt)
