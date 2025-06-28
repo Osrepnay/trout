@@ -441,7 +441,12 @@ makeMove
           then 0
           else fiftyPlies + 1
 
-      movedHistory = HM.insertWith (+) origBoard 1 history
+      movedHistory =
+        -- unreversible
+        -- should probably check more rigorously
+        if isJust capturePiece || movedCastling /= castling || pieceType == Pawn
+          then HM.empty
+          else HM.insertWith (+) origBoard 1 history
 
       mkMovedGame board =
         if inCheck turn (boardPieces board)
