@@ -33,16 +33,7 @@ import Trout.Search.Node (NodeResult (..), NodeType (..))
 import Trout.Search.PieceSquareTables (pstEval)
 import Trout.Search.TranspositionTable (STTranspositionTable, TTEntry (..))
 import Trout.Search.TranspositionTable qualified as TT
-import Trout.Search.Worthiness
-  ( bishopWorth,
-    drawWorth,
-    kingWorth,
-    knightWorth,
-    lossWorth,
-    pawnWorth,
-    queenWorth,
-    rookWorth,
-  )
+import Trout.Search.Worthiness (drawWorth, lossWorth)
 
 newtype SearchEnv s = SearchEnv
   { searchStateTT :: STTranspositionTable s
@@ -79,17 +70,7 @@ scoreMVVLVA board move =
     attacker <- squareScore (moveFrom move)
     pure (victim * 10 - attacker)
   where
-    squareScore sq =
-      ( \t -> case t of
-          Pawn -> pawnWorth
-          Knight -> knightWorth
-          Bishop -> bishopWorth
-          Rook -> rookWorth
-          Queen -> queenWorth
-          King -> kingWorth
-      )
-        . pieceType
-        <$> getPiece sq (boardPieces board)
+    squareScore sq = fromEnum . pieceType <$> getPiece sq (boardPieces board)
 
 eval :: Game -> Int
 eval game = colorSign (boardTurn board) * pstEvalValue
