@@ -20,6 +20,7 @@ import Trout.Game
     Game (..),
     allCaptures,
     allMoves,
+    getPiece,
     inCheck,
     isDrawn,
     makeMove,
@@ -32,7 +33,16 @@ import Trout.Search.Node (NodeResult (..), NodeType (..))
 import Trout.Search.PieceSquareTables (pstEval)
 import Trout.Search.TranspositionTable (STTranspositionTable, TTEntry (..))
 import Trout.Search.TranspositionTable qualified as TT
-import Trout.Search.Worthiness (drawWorth, lossWorth)
+import Trout.Search.Worthiness
+  ( bishopWorth,
+    drawWorth,
+    kingWorth,
+    knightWorth,
+    lossWorth,
+    pawnWorth,
+    queenWorth,
+    rookWorth,
+  )
 
 newtype SearchEnv s = SearchEnv
   { searchStateTT :: STTranspositionTable s
@@ -61,6 +71,21 @@ pvWalk game = go game Nothing
               Nothing -> pure [] -- should be rare, this means full tt collision
             else pure []
         Nothing -> pure []
+
+scoreMVVLVA :: Board -> Move -> Int
+scoreMVVLVA board move = fromMaybe 0 $ subtract <$> squareScore (moveTo move) <*> squareScore (moveFrom move)
+  where
+    squareScore sq =
+      ( \t -> case t of
+          Pawn -> pawnWorth
+          Knight -> knightWorth
+          Bishop -> bishopWorth
+          Rook -> rookWorth
+          Queen -> queenWorth
+          King -> kingWorth
+      )
+        . pieceType
+        <$> getPiece sq (boardPieces board)
 
 eval :: Game -> Int
 eval game = colorSign (boardTurn board) * pstEvalValue
@@ -92,24 +117,39 @@ eval game = colorSign (boardTurn board) * pstEvalValue
         + pst (getBB White King) King 0
         - pst (getBB Black King) King 56
 
+-- selection for move ordering
+singleSelect :: [(Int, Move)] -> (Move, [(Int, Move)])
+singleSelect moves =
+  fst $
+    foldl'
+      ( \((moveBest, ms), scoreBest) (score, m) ->
+          if score > scoreBest
+            then ((m, ms), score)
+            else ((moveBest, (score, m) : ms), scoreBest)
+      )
+      ((nullMove, []), minBound)
+      moves
+
 quieSearch :: Int -> Int -> Game -> ReaderT (SearchEnv s) (ST s) Int
 quieSearch !alpha !beta !game
   -- stand-pat from null-move observation (eval immediately = not moving)
   | staticEval >= beta = pure staticEval
-  | otherwise = go staticEval (allCaptures board)
+  | otherwise = go staticEval ((\m -> (scoreMVVLVA board m, m)) <$> allCaptures board)
   where
     staticEval = eval game
     board = gameBoard game
-    go :: Int -> [Move] -> ReaderT (SearchEnv s) (ST s) Int
+    go :: Int -> [(Int, Move)] -> ReaderT (SearchEnv s) (ST s) Int
     go bestScore [] = pure bestScore
-    go bestScore (move : moves) = case makeMove game move of
+    go bestScore moves = case makeMove game move of
       Just movedGame -> do
         let trueAlpha = max alpha bestScore
         score <- negate <$> quieSearch (-beta) (-trueAlpha) movedGame
         if score >= beta
           then pure score
-          else go (max score bestScore) moves
-      Nothing -> go bestScore moves
+          else go (max score bestScore) movesRest
+      Nothing -> go bestScore movesRest
+      where
+        (move, movesRest) = singleSelect moves
 
 bestMove :: Int -> Game -> ReaderT (SearchEnv s) (ST s) (Int, Move)
 bestMove depth game = do
@@ -140,7 +180,7 @@ searchNega depth !alpha !beta !game
             Just (TTEntry {entryMove}) ->
               if entryMove /= nullMove
                 then
-                  (1, entryMove) : ((0,) <$> filter (/= entryMove) gameMoves)
+                  (1, entryMove) : ((\m -> (scoreMVVLVA board m, m)) <$> filter (/= entryMove) gameMoves)
                 else (0,) <$> gameMoves
       (bResult, bMove) <- go Nothing scoredMoves
       lift (TT.insert board (TTEntry bResult bMove depth) tt)
@@ -186,13 +226,6 @@ searchNega depth !alpha !beta !game
                   else best
               Nothing -> Just (nodeScore, move)
       where
-        -- filter out move with best score and get filtered list in one pass
-        (movesRest, _, move) =
-          foldl'
-            ( \(ms, sb, mb) (s, m) ->
-                if s > sb
-                  then (ms, s, m)
-                  else ((s, m) : ms, sb, mb)
-            )
-            ([], minBound, nullMove)
-            moves
+        (move, movesRest) = singleSelect moves
+
+-- filter out move with best score and get filtered list in one pass
