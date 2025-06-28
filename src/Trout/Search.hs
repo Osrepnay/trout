@@ -180,7 +180,7 @@ searchNega depth !alpha !beta !game
             Just (TTEntry {entryMove}) ->
               if entryMove /= nullMove
                 then
-                  (1, entryMove) : ((\m -> (scoreMVVLVA board m, m)) <$> filter (/= entryMove) gameMoves)
+                  (10000, entryMove) : ((\m -> (scoreMVVLVA board m, m)) <$> filter (/= entryMove) gameMoves)
                 else (0,) <$> gameMoves
       (bResult, bMove) <- go Nothing scoredMoves
       lift (TT.insert board (TTEntry bResult bMove depth) tt)
