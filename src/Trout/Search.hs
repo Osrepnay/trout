@@ -138,16 +138,17 @@ quieSearch !alpha !beta !game
 bestMove :: Int -> Game -> ReaderT (SearchEnv s) (ST s) (Int, Move)
 bestMove depth game = do
   (SearchEnv {searchStateTT = tt}) <- ask
-  guess <- maybe 0 (nodeResScore . entryNode) <$> lift (TT.lookup (gameBoard game) tt)
-  _ <- mtdf depth guess game
+  -- guess <- maybe 0 (nodeResScore . entryNode) <$> lift (TT.lookup (gameBoard game) tt)
+  -- _ <- mtdf depth guess game
+  _ <- searchNega depth (minBound + 1) maxBound game
   maybeEntry <- lift (TT.lookup (gameBoard game) tt)
   case maybeEntry of
     Just (TTEntry {entryNode = node, entryMove = move}) ->
       pure (nodeResScore node * colorSign (boardTurn (gameBoard game)), move)
     Nothing -> error "no entry"
 
-mtdf :: Int -> Int -> Game -> ReaderT (SearchEnv s) (ST s) Int
-mtdf depth !initialGuess !game = go (minBound + 1) maxBound initialGuess
+_mtdf :: Int -> Int -> Game -> ReaderT (SearchEnv s) (ST s) Int
+_mtdf depth !initialGuess !game = go (minBound + 1) maxBound initialGuess
   where
     go :: Int -> Int -> Int -> ReaderT (SearchEnv s) (ST s) Int
     go lower upper guess
