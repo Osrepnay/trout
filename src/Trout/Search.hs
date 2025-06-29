@@ -139,7 +139,7 @@ bestMove :: Int -> Game -> ReaderT (SearchEnv s) (ST s) (Int, Move)
 bestMove depth game = do
   (SearchEnv {searchStateTT = tt}) <- ask
   -- guess <- maybe 0 (nodeResScore . entryNode) <$> lift (TT.lookup (gameBoard game) tt)
-  -- _ <- mtdf depth guess game
+  -- _ <- aspirate depth guess game
   _ <- searchNega depth (minBound + 1) maxBound game
   maybeEntry <- lift (TT.lookup (gameBoard game) tt)
   case maybeEntry of
@@ -159,6 +159,21 @@ _mtdf depth !initialGuess !game = go (minBound + 1) maxBound initialGuess
             then go lower newGuess newGuess
             else go newGuess upper newGuess
       | otherwise = pure guess
+
+_aspirate :: Int -> Int -> Game -> ReaderT (SearchEnv s) (ST s) Int
+_aspirate depth !initialGuess !game = go 50 50
+  where
+    go :: Int -> Int -> ReaderT (SearchEnv s) (ST s) Int
+    go lowerMargin upperMargin = do
+      result <- searchNega depth lower upper game
+      if result <= lower
+        then go (lowerMargin * 2) upperMargin
+        else if result >= upper
+          then go lowerMargin (upperMargin * 2)
+          else pure result
+      where
+        lower = initialGuess - lowerMargin
+        upper = initialGuess + upperMargin
 
 searchNega :: Int -> Int -> Int -> Game -> ReaderT (SearchEnv s) (ST s) Int
 searchNega 0 !alpha !beta !game
