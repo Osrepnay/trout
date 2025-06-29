@@ -165,10 +165,14 @@ searchNega 0 !alpha !beta !game
   | isDrawn game = pure 0
   | otherwise = do
       (SearchEnv {searchStateTT = tt}) <- ask
-      -- TODO exactnoding quiescence is a little sus
-      result <- flip NodeResult ExactNode <$> quieSearch alpha beta game
-      lift $ TT.insert (gameBoard game) (TTEntry result nullMove 0) tt
-      pure (nodeResScore result)
+      score <- quieSearch alpha beta game
+      let nodeType
+            | score >= beta = CutNode
+            | score <= alpha = AllNode
+            | otherwise = ExactNode
+      let node = NodeResult score nodeType
+      lift $ TT.insert (gameBoard game) (TTEntry node nullMove 0) tt
+      pure score
 searchNega depth !alpha !beta !game
   | isDrawn game = pure 0
   | otherwise = do
