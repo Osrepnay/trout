@@ -117,6 +117,6 @@ insert board entry vec = do
   existing <- slotLookup board vec
   case existing of
     Just (sameBoard, oldEntry) ->
-      when (sameBoard && entryDepth oldEntry <= entryDepth entry) $
+      when (not sameBoard || sameBoard && entryDepth oldEntry <= entryDepth entry) $
         basicInsert board entry vec
     Nothing -> basicInsert board entry vec
