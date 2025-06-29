@@ -21,6 +21,7 @@ import Trout.Game (Board)
 import Trout.Game.Move (Move)
 import Trout.Search.Node (NodeResult (..))
 import Prelude hiding (lookup)
+import Data.Bifunctor (first)
 
 -- correct move for depth only guaranteed on exact nodes
 -- TODO consider moving entryMove into NodeResult
@@ -103,11 +104,15 @@ lookup board vec =
       | cHash == hash board = Just cEntry
       | otherwise = Nothing
 
+-- also returns if wrong hash
+slotLookup :: Board -> STTranspositionTable s -> ST s (Maybe (Bool, TTEntry))
+slotLookup board vec = fmap (first (== hash board)) <$> MSV.read vec (toKey (hash board) (MSV.length vec))
+
 insert :: Board -> TTEntry -> STTranspositionTable s -> ST s ()
 insert board entry vec = do
-  existing <- lookup board vec
+  existing <- slotLookup board vec
   case existing of
-    Just oldEntry ->
-      when (entryDepth oldEntry <= entryDepth entry) $
+    Just (sameBoard, oldEntry) ->
+      when (sameBoard && entryDepth oldEntry <= entryDepth entry) $
         basicInsert board entry vec
     Nothing -> basicInsert board entry vec

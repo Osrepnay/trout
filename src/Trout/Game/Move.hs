@@ -9,6 +9,7 @@ where
 import Data.Char (chr, ord)
 import Foreign (Ptr, Storable (..), castPtr)
 import Trout.Piece (PieceType (..))
+import Data.Int (Int8)
 
 -- moves that dont fit normal piece things
 data SpecialMove
@@ -16,7 +17,7 @@ data SpecialMove
   | PawnDouble -- double moe forware
   | CastleKing
   | CastleQueen
-  | EnPassant Int -- en passant pawn squaree
+  | EnPassant Int -- en passant pawn scolumn
   | Promotion PieceType -- promote piece
   deriving (Eq, Show)
 
@@ -54,13 +55,14 @@ uciShowMove (Move _ special from to) =
 
 instance Storable Move where
   sizeOf :: Move -> Int
-  sizeOf _ = 5 * sizeOf (undefined :: Int)
+  -- 5 int8s, 40 bits total
+  sizeOf _ = sizeOf (undefined :: Int)
   alignment :: Move -> Int
   alignment _ = alignment (undefined :: Int)
   peek :: Ptr Move -> IO Move
   peek ptr = do
-    let casted = castPtr ptr :: Ptr Int
-    pieceInt <- peek casted
+    let casted = castPtr ptr :: Ptr Int8
+    pieceInt <- fromIntegral <$> peek casted
     let piece = toEnum pieceInt
     specialTypeInt <- peekElemOff casted 1
     special <- case specialTypeInt of
@@ -68,16 +70,16 @@ instance Storable Move where
       1 -> pure PawnDouble
       2 -> pure CastleKing
       3 -> pure CastleQueen
-      4 -> EnPassant <$> peekElemOff casted 2
-      5 -> Promotion . toEnum <$> peekElemOff casted 2
+      4 -> EnPassant . fromIntegral <$> peekElemOff casted 2
+      5 -> Promotion . toEnum . fromIntegral <$> peekElemOff casted 2
       _ -> error "unknown special move type"
-    from <- peekElemOff casted 3
-    to <- peekElemOff casted 4
+    from <- fromIntegral <$> peekElemOff casted 3
+    to <- fromIntegral <$> peekElemOff casted 4
     pure (Move piece special from to)
   poke :: Ptr Move -> Move -> IO ()
   poke ptr (Move piece special from to) = do
-    let casted = castPtr ptr :: Ptr Int
-    poke casted (fromEnum piece)
+    let casted = castPtr ptr :: Ptr Int8
+    poke casted (fromIntegral (fromEnum piece))
     case special of
       Normal -> pokeElemOff casted 1 0
       PawnDouble -> pokeElemOff casted 1 1
@@ -85,9 +87,9 @@ instance Storable Move where
       CastleQueen -> pokeElemOff casted 1 3
       EnPassant enp -> do
         pokeElemOff casted 1 4
-        pokeElemOff casted 2 enp
+        pokeElemOff casted 2 (fromIntegral enp)
       Promotion p -> do
         pokeElemOff casted 1 5
-        pokeElemOff casted 2 (fromEnum p)
-    pokeElemOff casted 3 from
-    pokeElemOff casted 4 to
+        pokeElemOff casted 2 (fromIntegral (fromEnum p))
+    pokeElemOff casted 3 (fromIntegral from)
+    pokeElemOff casted 4 (fromIntegral to)

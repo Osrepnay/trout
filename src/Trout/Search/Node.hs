@@ -1,12 +1,20 @@
-module Trout.Search.Node (NodeType (..), NodeResult (..), ibv) where
+{-# LANGUAGE MagicHash #-}
 
-import Foreign (Ptr, Storable (..), castPtr, plusPtr)
+module Trout.Search.Node (NodeType (..), NodeResult (..)) where
+
+import Foreign (Ptr, Storable (..), castPtr)
+import GHC.Base (Int (I#), dataToTag#, tagToEnum#)
+import Data.Bits ((.&.), complement)
 
 data NodeType
-  = ExactNode -- not fail high or fail low
+  = AllNode -- failed low, move is "too bad"
+  | ExactNode -- not fail high or fail low
   | CutNode -- failed high/beta cutoff, move is "too good"
-  | AllNode -- failed low, move is "too bad"
   deriving (Eq, Show)
+
+instance Enum NodeType where
+  toEnum (I# i) = tagToEnum# i
+  fromEnum x = I# (dataToTag# x)
 
 data NodeResult = NodeResult
   { nodeResScore :: !Int,
@@ -15,36 +23,25 @@ data NodeResult = NodeResult
   deriving (Eq, Show)
 
 -- integrated bounds and values
-ibv :: NodeResult -> Int
-ibv (NodeResult score nodeType) =
-  4 * score + case nodeType of
-    ExactNode -> 0
-    CutNode -> 1
-    AllNode -> -1
+toIbv :: NodeResult -> Int
+toIbv (NodeResult score nodeType) =
+  4 * score + fromEnum nodeType - 1
 
--- TODO ibv?
+fromIbv :: Int -> NodeResult
+fromIbv ibv = NodeResult rawScore (toEnum (diff + 1))
+  where
+    rawScore = ((ibv + 1) .&. complement 3) `quot` 4
+    diff = ibv - rawScore
+
 instance Storable NodeResult where
   sizeOf :: NodeResult -> Int
-  sizeOf _ = 2 * sizeOf (undefined :: Int)
+  sizeOf _ = sizeOf (undefined :: Int)
   alignment :: NodeResult -> Int
   alignment _ = alignment (undefined :: Int)
   peek :: Ptr NodeResult -> IO NodeResult
   peek ptr = do
     score <- peek (castPtr ptr)
-    nodeTypeInt <- peek ((ptr `plusPtr` sizeOf score) :: Ptr Int)
-    let nodeType = case nodeTypeInt of
-          0 -> ExactNode
-          1 -> CutNode
-          2 -> AllNode
-          _ -> error "unknown node"
-    pure $ NodeResult score nodeType
+    pure $ fromIbv score
   poke :: Ptr NodeResult -> NodeResult -> IO ()
-  poke ptr (NodeResult score nodeType) = do
-    poke (castPtr ptr) score
-    poke
-      (ptr `plusPtr` sizeOf score)
-      ( case nodeType of
-          ExactNode -> 0 :: Int
-          CutNode -> 1
-          AllNode -> 2
-      )
+  poke ptr res = do
+    poke (castPtr ptr) (toIbv res)
