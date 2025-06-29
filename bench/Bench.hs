@@ -28,9 +28,8 @@ createEnv = stToIO (newEnv 200000)
 bestMoveWrapper :: Int -> Game -> SearchEnv RealWorld -> IO Int
 bestMoveWrapper depth game searchEnv =
   stToIO $
-    fmap fst $
-      flip runReaderT searchEnv $
-        last <$> traverse (`bestMove` game) (reverse [1 .. depth])
+    flip runReaderT searchEnv $
+      last . fmap fst <$> traverse (`bestMove` game) [1 .. depth]
 
 perft :: Int -> Game -> Int
 perft 0 _ = 1
