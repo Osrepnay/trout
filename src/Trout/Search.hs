@@ -54,9 +54,8 @@ pvWalk game = go game Nothing
       (SearchEnv {searchStateTT = tt}) <- ask
       maybeEntry <- lift (TT.lookup (gameBoard g) tt)
       case maybeEntry of
-        Just (TTEntry {entryDepth = 0}) -> pure [] -- for initial depth of 0 edge case
         Just (TTEntry {entryMove = move, entryDepth = depth}) ->
-          if maybe True (depth ==) maybeDepth
+          if maybe True (depth ==) maybeDepth && move /= nullMove
             then case makeMove g move of
               Just movedG -> (move :) <$> go movedG (Just (fromMaybe depth maybeDepth - 1))
               Nothing -> pure [] -- should be rare, this means full tt collision
