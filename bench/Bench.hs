@@ -7,6 +7,7 @@ import Criterion.Main
 import Data.Maybe
 import Trout.Game
 import Trout.Search
+import Trout.Search.TranspositionTable (sizeOfEntry)
 
 instance NFData (SearchEnv s) where
   rnf !_ = ()
@@ -23,7 +24,7 @@ main = do
     ]
 
 createEnv :: IO (SearchEnv RealWorld)
-createEnv = stToIO (newEnv 200000)
+createEnv = stToIO (newEnv (16000000 `quot` sizeOfEntry))
 
 bestMoveWrapper :: Int -> Game -> SearchEnv RealWorld -> IO Int
 bestMoveWrapper depth game searchEnv =

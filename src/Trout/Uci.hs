@@ -39,7 +39,7 @@ import Trout.Game.Move
   )
 import Trout.Piece (Color (..))
 import Trout.Search (SearchEnv, bestMove, clearEnv, newEnv, pvWalk)
-import Trout.Search.TranspositionTable ()
+import Trout.Search.TranspositionTable (sizeOfEntry)
 import Trout.Uci.Parse
   ( CommGoArg (..),
     CommPositionInit (..),
@@ -58,7 +58,7 @@ data UciState = UciState
 newUciState :: IO UciState
 newUciState =
   UciState startingGame False Nothing
-    <$> (stToIO (newEnv 200000) >>= newMVar)
+    <$> (stToIO (newEnv (16000000 `quot` sizeOfEntry)) >>= newMVar)
 
 data PlayerTime = PlayerTime
   { playerTime :: Int,

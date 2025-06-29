@@ -6,11 +6,13 @@ module Trout.Search.TranspositionTable
     clear,
     lookup,
     insert,
+    sizeOfEntry,
   )
 where
 
 import Control.Monad (when)
 import Control.Monad.ST (ST)
+import Data.Bifunctor (first)
 import Data.Hashable (hash)
 import Data.Vector.Storable (Vector)
 import Data.Vector.Storable.Mutable (STVector)
@@ -21,7 +23,6 @@ import Trout.Game (Board)
 import Trout.Game.Move (Move)
 import Trout.Search.Node (NodeResult (..))
 import Prelude hiding (lookup)
-import Data.Bifunctor (first)
 
 -- correct move for depth only guaranteed on exact nodes
 -- TODO consider moving entryMove into NodeResult
@@ -71,6 +72,9 @@ instance Storable (Maybe (Int, TTEntry)) where
     poke intPtr 1
     pokeElemOff intPtr 1 trueHash
     pokeByteOff ptr (2 * sizeOf (undefined :: Int)) entry
+
+sizeOfEntry :: Int
+sizeOfEntry = sizeOf (undefined :: Maybe (Int, TTEntry))
 
 type TranspositionTable = Vector (Maybe (Int, TTEntry))
 
