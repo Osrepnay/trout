@@ -1,4 +1,5 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
+
 import Control.DeepSeq (NFData (rnf))
 import Control.Monad.ST (RealWorld, stToIO)
 import Control.Monad.Trans.Reader (runReaderT)
@@ -17,15 +18,19 @@ main = do
     [ bench "perft(5)" $ whnf (perft 5) startingGame,
       bench "bestMove depth 6" $
         perRunEnv
-          createVec
+          createEnv
           (bestMoveWrapper 6 startingGame)
     ]
 
-createVec :: IO (SearchEnv RealWorld)
-createVec = stToIO (newEnv 200000)
+createEnv :: IO (SearchEnv RealWorld)
+createEnv = stToIO (newEnv 200000)
 
 bestMoveWrapper :: Int -> Game -> SearchEnv RealWorld -> IO Int
-bestMoveWrapper depth game vec = stToIO (fst <$> runReaderT (bestMove depth game) vec)
+bestMoveWrapper depth game searchEnv =
+  stToIO $
+    fmap fst $
+      flip runReaderT searchEnv $
+        last <$> traverse (`bestMove` game) (reverse [1 .. depth])
 
 perft :: Int -> Game -> Int
 perft 0 _ = 1
