@@ -36,7 +36,7 @@ import Trout.Piece (Color (..), Piece (..), PieceType (..), colorSign)
 import Trout.Search.PieceSquareTables (pstEval)
 import Trout.Search.TranspositionTable (STTranspositionTable, TTEntry (..))
 import Trout.Search.TranspositionTable qualified as TT
-import Trout.Search.Worthiness (drawWorth, lossWorth, pieceWorth)
+import Trout.Search.Worthiness (drawWorth, lossWorth, pieceWorth, winWorth)
 
 newtype SearchEnv s = SearchEnv
   { searchEnvTT :: STTranspositionTable s
@@ -156,7 +156,7 @@ bestMove depth game = do
   (SearchEnv {searchEnvTT = tt}) <- ask
   -- guess <- maybe 0 (nodeResScore . entryNode) <$> lift (TT.lookup (gameBoard game) tt)
   -- _ <- aspirate depth guess game
-  score <- searchNega depth (minBound + 1) maxBound game
+  score <- searchNega depth depth lossWorth winWorth game
   maybeEntry <- lift (TT.lookup (gameBoard game) tt)
   case maybeEntry of
     Just (TTEntry {entryMove = move}) ->
@@ -164,13 +164,13 @@ bestMove depth game = do
     Nothing -> error "no entry"
 
 _mtdf :: Int -> Int -> Game -> ReaderT (SearchEnv s) (ST s) Int
-_mtdf depth !initialGuess !game = go (minBound + 1) maxBound initialGuess
+_mtdf depth !initialGuess !game = go lossWorth winWorth initialGuess
   where
     go :: Int -> Int -> Int -> ReaderT (SearchEnv s) (ST s) Int
     go lower upper guess
       | lower < upper = do
           let beta = if lower == guess then guess + 1 else guess
-          newGuess <- searchNega depth (beta - 1) beta game
+          newGuess <- searchNega depth depth (beta - 1) beta game
           if newGuess < beta
             then go lower newGuess newGuess
             else go newGuess upper newGuess
@@ -181,7 +181,7 @@ _aspirate depth !initialGuess !game = go 50 50
   where
     go :: Int -> Int -> ReaderT (SearchEnv s) (ST s) Int
     go lowerMargin upperMargin = do
-      result <- searchNega depth lower upper game
+      result <- searchNega depth depth lower upper game
       if result <= lower
         then go (lowerMargin * 2) upperMargin
         else
@@ -192,16 +192,16 @@ _aspirate depth !initialGuess !game = go 50 50
         lower = initialGuess - lowerMargin
         upper = initialGuess + upperMargin
 
-searchNega :: Int -> Int -> Int -> Game -> ReaderT (SearchEnv s) (ST s) Int
-searchNega 0 !alpha !beta !game
-  | isDrawn game = pure 0
+searchNega :: Int -> Int -> Int -> Int -> Game -> ReaderT (SearchEnv s) (ST s) Int
+searchNega startingDepth 0 !alpha !beta !game
+  | isDrawn game && startingDepth /= 0 = pure 0
   | otherwise = do
       (SearchEnv {searchEnvTT = tt}) <- ask
       score <- quieSearch alpha beta game
       lift $ TT.insert (gameBoard game) (TTEntry (gameHalfmove game) nullMove 0) tt
       pure score
-searchNega depth !alpha !beta !game
-  | isDrawn game = pure 0
+searchNega startingDepth depth !alpha !beta !game
+  | isDrawn game && startingDepth /= depth = pure 0
   | otherwise = do
       (SearchEnv {searchEnvTT = tt}) <- ask
       let gameMoves = allMoves board
@@ -213,34 +213,36 @@ searchNega depth !alpha !beta !game
                 then
                   (100000, entryMove) : ((\m -> (seeOfCapture board m, m)) <$> filter (/= entryMove) gameMoves)
                 else (0,) <$> gameMoves
-      (bResult, bMove) <- go Nothing scoredMoves
+      (bResult, bMove) <- go True Nothing scoredMoves
       lift (TT.insert board (TTEntry (gameHalfmove game) bMove depth) tt)
       pure bResult
   where
     board = gameBoard game
-    go :: Maybe (Int, Move) -> [(Int, Move)] -> ReaderT (SearchEnv s) (ST s) (Int, Move)
+    go :: Bool -> Maybe (Int, Move) -> [(Int, Move)] -> ReaderT (SearchEnv s) (ST s) (Int, Move)
     -- no valid moves (stalemate, checkmate checks)
     -- bestScore is nothing if all moves are illegal
-    go Nothing []
+    go _ Nothing []
       | inCheck (boardTurn board) (boardPieces board) = pure (lossWorth, nullMove)
       | otherwise = pure (drawWorth, nullMove)
     -- bestScore tracks the best score among moves, but separate from real alpha
     -- this way we keep track of realer score and not alpha cutoff (fail-soft)
-    go (Just (bestScore, bMove)) [] = pure (bestScore, bMove)
-    go best moves = case makeMove game move of
-      Nothing -> go best movesRest
+    go _ (Just (bestScore, bMove)) [] = pure (bestScore, bMove)
+    go leftmost best moves = case makeMove game move of
+      Nothing -> go True best movesRest
       Just moveMade -> do
-        otherScore <-
-          searchNega
-            (depth - 1)
-            (-beta)
-            (-maybe alpha (max alpha . fst) best)
-            moveMade
-        let nodeScore = -otherScore
-        -- fail-high, move is too good - parent node shouldn't play this move
+        let trueAlpha = maybe alpha (max alpha . fst) best
+        nodeScore <-
+          if leftmost
+            then negate <$> searchNega startingDepth (depth - 1) (-beta) (-trueAlpha) moveMade
+            else do
+              score <- negate <$> searchNega startingDepth (depth - 1) (-trueAlpha - 1) (-trueAlpha) moveMade
+              -- don't research if non-pv branch, some older relative will research anyways
+              if score > trueAlpha && beta - alpha > 1
+                then negate <$> searchNega startingDepth (depth - 1) (-beta) (-trueAlpha) moveMade
+                else pure score
         if nodeScore >= beta
           then pure (nodeScore, move)
-          else flip go movesRest $
+          else flip (go False) movesRest $
             case best of
               Just (bScore, _) ->
                 if bScore < nodeScore

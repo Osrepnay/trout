@@ -6,6 +6,7 @@ module Trout.Search.Worthiness
     queenWorth,
     kingWorth,
     lossWorth,
+    winWorth,
     drawWorth,
     pieceWorth,
   )
@@ -42,6 +43,9 @@ pieceWorth King = kingWorth
 
 lossWorth :: Int
 lossWorth = -kingWorth
+
+winWorth :: Int
+winWorth = kingWorth
 
 drawWorth :: Int
 drawWorth = 0
