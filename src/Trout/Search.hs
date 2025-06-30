@@ -13,7 +13,7 @@ import Control.Monad.ST (ST)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Reader (ReaderT, ask)
 import Data.Foldable (foldl')
-import Data.Maybe (fromJust, fromMaybe)
+import Data.Maybe (fromJust)
 import Trout.Bitboard (popCount)
 import Trout.Game
   ( Board (..),
@@ -39,7 +39,7 @@ import Trout.Search.TranspositionTable qualified as TT
 import Trout.Search.Worthiness (drawWorth, lossWorth, pieceWorth)
 
 newtype SearchEnv s = SearchEnv
-  { searchStateTT :: STTranspositionTable s
+  { searchEnvTT :: STTranspositionTable s
   }
 
 newEnv :: Int -> ST s (SearchEnv s)
@@ -54,13 +54,13 @@ pvWalk game = go game Nothing
   where
     go _ (Just 0) = pure []
     go g maybeDepth = do
-      (SearchEnv {searchStateTT = tt}) <- ask
+      (SearchEnv {searchEnvTT = tt}) <- ask
       maybeEntry <- lift (TT.lookup (gameBoard g) tt)
       case maybeEntry of
         Just (TTEntry {entryMove = move, entryDepth = depth}) ->
           if maybe True (depth ==) maybeDepth && move /= nullMove
             then case makeMove g move of
-              Just movedG -> (move :) <$> go movedG (Just (fromMaybe depth maybeDepth - 1))
+              Just movedG -> (move :) <$> go movedG (Just (depth - 1))
               Nothing -> pure [] -- should be rare, this means full tt collision
             else pure []
         Nothing -> pure []
@@ -160,7 +160,7 @@ quieSearch !alpha !beta !game
 
 bestMove :: Int -> Game -> ReaderT (SearchEnv s) (ST s) (Int, Move)
 bestMove depth game = do
-  (SearchEnv {searchStateTT = tt}) <- ask
+  (SearchEnv {searchEnvTT = tt}) <- ask
   -- guess <- maybe 0 (nodeResScore . entryNode) <$> lift (TT.lookup (gameBoard game) tt)
   -- _ <- aspirate depth guess game
   _ <- searchNega depth (minBound + 1) maxBound game
@@ -203,7 +203,7 @@ searchNega :: Int -> Int -> Int -> Game -> ReaderT (SearchEnv s) (ST s) Int
 searchNega 0 !alpha !beta !game
   | isDrawn game = pure 0
   | otherwise = do
-      (SearchEnv {searchStateTT = tt}) <- ask
+      (SearchEnv {searchEnvTT = tt}) <- ask
       score <- quieSearch alpha beta game
       let nodeType
             | score >= beta = CutNode
@@ -215,7 +215,7 @@ searchNega 0 !alpha !beta !game
 searchNega depth !alpha !beta !game
   | isDrawn game = pure 0
   | otherwise = do
-      (SearchEnv {searchStateTT = tt}) <- ask
+      (SearchEnv {searchEnvTT = tt}) <- ask
       let gameMoves = allMoves board
       maybeEntry <- lift (TT.lookup board tt)
       let scoredMoves = case maybeEntry of
