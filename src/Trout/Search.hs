@@ -12,8 +12,9 @@ where
 import Control.Monad.ST (ST)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Reader (ReaderT, ask)
-import Data.Foldable (foldl')
+import Data.Foldable (maximumBy)
 import Data.Maybe (fromJust)
+import Data.Ord (comparing)
 import Trout.Bitboard (popCount)
 import Trout.Game
   ( Board (..),
@@ -125,16 +126,9 @@ eval game = colorSign (boardTurn board) * pstEvalValue
 
 -- selection for move ordering
 singleSelect :: [(Int, Move)] -> (Move, [(Int, Move)])
-singleSelect moves =
-  fst $
-    foldl'
-      ( \((moveBest, ms), scoreBest) (score, m) ->
-          if score > scoreBest
-            then ((m, ms), score)
-            else ((moveBest, (score, m) : ms), scoreBest)
-      )
-      ((nullMove, []), minBound)
-      moves
+singleSelect moves = (snd best, filter (/= best) moves)
+  where
+    best = maximumBy (comparing fst) moves
 
 quieSearch :: Int -> Int -> Game -> ReaderT (SearchEnv s) (ST s) Int
 quieSearch !alpha !beta !game
