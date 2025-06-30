@@ -246,5 +246,3 @@ searchNega depth !alpha !beta !game
               Nothing -> Just (nodeScore, move)
       where
         (move, movesRest) = singleSelect moves
-
--- filter out move with best score and get filtered list in one pass
