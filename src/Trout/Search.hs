@@ -32,7 +32,6 @@ import Trout.Game
   )
 import Trout.Game.Move (Move (..), nullMove)
 import Trout.Piece (Color (..), Piece (..), PieceType (..), colorSign)
-import Trout.Search.Node (NodeResult (..), NodeType (..))
 import Trout.Search.PieceSquareTables (pstEval)
 import Trout.Search.TranspositionTable (STTranspositionTable, TTEntry (..))
 import Trout.Search.TranspositionTable qualified as TT
@@ -163,11 +162,11 @@ bestMove depth game = do
   (SearchEnv {searchEnvTT = tt}) <- ask
   -- guess <- maybe 0 (nodeResScore . entryNode) <$> lift (TT.lookup (gameBoard game) tt)
   -- _ <- aspirate depth guess game
-  _ <- searchNega depth (minBound + 1) maxBound game
+  score <- searchNega depth (minBound + 1) maxBound game
   maybeEntry <- lift (TT.lookup (gameBoard game) tt)
   case maybeEntry of
-    Just (TTEntry {entryNode = node, entryMove = move}) ->
-      pure (nodeResScore node * colorSign (boardTurn (gameBoard game)), move)
+    Just (TTEntry {entryMove = move}) ->
+      pure (score * colorSign (boardTurn (gameBoard game)), move)
     Nothing -> error "no entry"
 
 _mtdf :: Int -> Int -> Game -> ReaderT (SearchEnv s) (ST s) Int
@@ -205,12 +204,7 @@ searchNega 0 !alpha !beta !game
   | otherwise = do
       (SearchEnv {searchEnvTT = tt}) <- ask
       score <- quieSearch alpha beta game
-      let nodeType
-            | score >= beta = CutNode
-            | score <= alpha = AllNode
-            | otherwise = ExactNode
-      let node = NodeResult score nodeType
-      lift $ TT.insert (gameBoard game) (TTEntry node nullMove 0) tt
+      lift $ TT.insert (gameBoard game) (TTEntry (gameHalfmove game) nullMove 0) tt
       pure score
 searchNega depth !alpha !beta !game
   | isDrawn game = pure 0
@@ -226,28 +220,19 @@ searchNega depth !alpha !beta !game
                   (100000, entryMove) : ((\m -> (seeOfCapture board m, m)) <$> filter (/= entryMove) gameMoves)
                 else (0,) <$> gameMoves
       (bResult, bMove) <- go Nothing scoredMoves
-      lift (TT.insert board (TTEntry bResult bMove depth) tt)
-      pure (nodeResScore bResult)
+      lift (TT.insert board (TTEntry (gameHalfmove game) bMove depth) tt)
+      pure bResult
   where
     board = gameBoard game
-    go :: Maybe (Int, Move) -> [(Int, Move)] -> ReaderT (SearchEnv s) (ST s) (NodeResult, Move)
+    go :: Maybe (Int, Move) -> [(Int, Move)] -> ReaderT (SearchEnv s) (ST s) (Int, Move)
     -- no valid moves (stalemate, checkmate checks)
     -- bestScore is nothing if all moves are illegal
     go Nothing []
-      | inCheck (boardTurn board) (boardPieces board) = pure (NodeResult lossWorth ExactNode, nullMove)
-      | otherwise = pure (NodeResult drawWorth ExactNode, nullMove)
+      | inCheck (boardTurn board) (boardPieces board) = pure (lossWorth, nullMove)
+      | otherwise = pure (drawWorth, nullMove)
     -- bestScore tracks the best score among moves, but separate from real alpha
     -- this way we keep track of realer score and not alpha cutoff (fail-soft)
-    -- <----------|---------------|--------->
-    --  AllNode alpha ExactNode beta CutNode
-    -- bestScore can be anywhere on the number line left of beta
-    -- ExactNode is inclusive on alpha, because bestScore is exact even if it touches alpha
-    -- TODO make sure that fail-soft behavior doesn't fiddle with bestScore too weirdly
-    go (Just (bestScore, bMove)) []
-      -- normally alpha is set if bestScore > alpha, but technically the score is exact
-      -- TODO recheck thsi behavior
-      | bestScore >= alpha = pure (NodeResult bestScore ExactNode, bMove)
-      | otherwise = pure (NodeResult bestScore AllNode, bMove)
+    go (Just (bestScore, bMove)) [] = pure (bestScore, bMove)
     go best moves = case makeMove game move of
       Nothing -> go best movesRest
       Just moveMade -> do
@@ -260,7 +245,7 @@ searchNega depth !alpha !beta !game
         let nodeScore = -otherScore
         -- fail-high, move is too good - parent node shouldn't play this move
         if nodeScore >= beta
-          then pure (NodeResult nodeScore CutNode, move)
+          then pure (nodeScore, move)
           else flip go movesRest $
             case best of
               Just (bScore, _) ->

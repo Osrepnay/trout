@@ -1,6 +1,5 @@
 module Trout.Search.TranspositionTable
   ( TTEntry (..),
-    TranspositionTable,
     STTranspositionTable,
     new,
     clear,
@@ -14,7 +13,6 @@ import Control.Monad (when)
 import Control.Monad.ST (ST)
 import Data.Bifunctor (first)
 import Data.Hashable (hash)
-import Data.Vector.Storable (Vector)
 import Data.Vector.Storable.Mutable (STVector)
 import Data.Vector.Storable.Mutable qualified as MSV
 import Foreign.Ptr (Ptr, castPtr, plusPtr)
@@ -27,7 +25,7 @@ import Prelude hiding (lookup)
 -- correct move for depth only guaranteed on exact nodes
 -- TODO consider moving entryMove into NodeResult
 data TTEntry = TTEntry
-  { entryNode :: !NodeResult,
+  { entryHalfmove :: !Int,
     entryMove :: !Move,
     entryDepth :: !Int
   }
@@ -40,15 +38,15 @@ instance Storable TTEntry where
   alignment _ = sizeOf (undefined :: Int)
   peek :: Ptr TTEntry -> IO TTEntry
   peek ptr = do
-    node <- peek (castPtr ptr)
-    move <- peek (ptr `plusPtr` sizeOf node)
-    depth <- peek (ptr `plusPtr` (sizeOf node + sizeOf move))
-    pure (TTEntry node move depth)
+    halfmove <- peek (castPtr ptr)
+    move <- peek (ptr `plusPtr` sizeOf halfmove)
+    depth <- peek (ptr `plusPtr` (sizeOf halfmove + sizeOf move))
+    pure (TTEntry halfmove move depth)
   poke :: Ptr TTEntry -> TTEntry -> IO ()
-  poke ptr (TTEntry node move depth) = do
-    poke (castPtr ptr) node
-    poke (ptr `plusPtr` sizeOf node) move
-    poke (ptr `plusPtr` (sizeOf node + sizeOf move)) depth
+  poke ptr (TTEntry halfmove move depth) = do
+    poke (castPtr ptr) halfmove
+    poke (ptr `plusPtr` sizeOf halfmove) move
+    poke (ptr `plusPtr` (sizeOf halfmove + sizeOf move)) depth
 
 instance Storable (Maybe (Int, TTEntry)) where
   sizeOf :: Maybe (Int, TTEntry) -> Int
@@ -75,8 +73,6 @@ instance Storable (Maybe (Int, TTEntry)) where
 
 sizeOfEntry :: Int
 sizeOfEntry = sizeOf (undefined :: Maybe (Int, TTEntry))
-
-type TranspositionTable = Vector (Maybe (Int, TTEntry))
 
 type STTranspositionTable s = STVector s (Maybe (Int, TTEntry))
 
@@ -117,6 +113,12 @@ insert board entry vec = do
   existing <- slotLookup board vec
   case existing of
     Just (sameBoard, oldEntry) ->
-      when (not sameBoard || sameBoard && entryDepth oldEntry <= entryDepth entry) $
-        basicInsert board entry vec
+      when
+        ( not sameBoard
+            && ( entryDepth entry >= entryDepth oldEntry
+                   || (entryHalfmove oldEntry + entryDepth oldEntry + 3 < entryHalfmove entry + entryDepth entry)
+               )
+            || sameBoard && entryDepth oldEntry <= entryDepth entry
+        )
+        $ basicInsert board entry vec
     Nothing -> basicInsert board entry vec
