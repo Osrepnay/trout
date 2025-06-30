@@ -7,10 +7,13 @@ module Trout.Search.Worthiness
     kingWorth,
     lossWorth,
     drawWorth,
+    pieceWorth,
   )
 where
 
--- based on centipawns; maybe go for 256 instead? more common
+import Trout.Piece (PieceType (..))
+
+-- based on centipawns
 pawnWorth :: Int
 knightWorth :: Int
 bishopWorth :: Int
@@ -28,6 +31,14 @@ rookWorth = 500
 queenWorth = 900
 
 kingWorth = 100000000
+
+pieceWorth :: PieceType -> Int
+pieceWorth Pawn = pawnWorth
+pieceWorth Knight = knightWorth
+pieceWorth Bishop = bishopWorth
+pieceWorth Rook = rookWorth
+pieceWorth Queen = queenWorth
+pieceWorth King = kingWorth
 
 lossWorth :: Int
 lossWorth = -kingWorth

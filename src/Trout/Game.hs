@@ -21,6 +21,7 @@ module Trout.Game
     isDrawn,
     allMoves,
     allCaptures,
+    squareAttackers,
     inCheck,
     makeMove,
   )
@@ -291,6 +292,42 @@ allCaptures (Board pieces _ enPassant turn _) =
     myBlock = colorOccupancy turn pieces
     pieceBB = ($ pieces) . pieceBitboard . Piece turn
     moveSqs mover = mapOnes (mover block myBlock)
+
+-- smallest first, for SEE
+squareAttackers :: Color -> Pieces -> Int -> [Int]
+squareAttackers color pieces sq =
+  toSqs pawnAttackers
+    ++ toSqs knightAttackers
+    ++ toSqs bishopAttackers
+    ++ toSqs rookAttackers
+    ++ toSqs queenAttackers
+    ++ toSqs kingAttackers
+  where
+    oppColor = other color
+    getOppPieces = ($ pieces) . pieceBitboard . Piece oppColor
+    sqSet = 1 !<<. sq
+
+    pawnAttackers =
+      getOppPieces Pawn
+        .&. case oppColor of
+          White ->
+            (sqSet .&. complement fileA)
+              !>>. 9
+              .|. (sqSet .&. complement fileH)
+              !>>. 7
+          Black ->
+            (sqSet .&. complement fileA)
+              !<<. 7
+              .|. (sqSet .&. complement fileH)
+              !<<. 9
+    knightAttackers = knightTable ! sq .&. getOppPieces Knight
+    blockers = occupancy pieces
+    bishopSqs = bishopMovesMagic blockers sq
+    bishopAttackers = bishopSqs .&. getOppPieces Bishop
+    rookSqs = rookMovesMagic blockers sq
+    rookAttackers = rookSqs .&. getOppPieces Rook
+    queenAttackers = (bishopSqs .|. rookSqs) .&. getOppPieces Queen
+    kingAttackers = kingTable ! sq .&. getOppPieces King
 
 inCheck :: Color -> Pieces -> Bool
 inCheck color pieces =

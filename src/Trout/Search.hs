@@ -13,11 +13,12 @@ import Control.Monad.ST (ST)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Reader (ReaderT, ask)
 import Data.Foldable (foldl')
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromJust, fromMaybe)
 import Trout.Bitboard (popCount)
 import Trout.Game
   ( Board (..),
     Game (..),
+    addPiece,
     allCaptures,
     allMoves,
     getPiece,
@@ -26,6 +27,8 @@ import Trout.Game
     makeMove,
     pieceBitboard,
     pieceTypeBitboard,
+    removePiece,
+    squareAttackers,
   )
 import Trout.Game.Move (Move (..), nullMove)
 import Trout.Piece (Color (..), Piece (..), PieceType (..), colorSign)
@@ -33,7 +36,7 @@ import Trout.Search.Node (NodeResult (..), NodeType (..))
 import Trout.Search.PieceSquareTables (pstEval)
 import Trout.Search.TranspositionTable (STTranspositionTable, TTEntry (..))
 import Trout.Search.TranspositionTable qualified as TT
-import Trout.Search.Worthiness (drawWorth, lossWorth)
+import Trout.Search.Worthiness (drawWorth, lossWorth, pieceWorth)
 
 newtype SearchEnv s = SearchEnv
   { searchStateTT :: STTranspositionTable s
@@ -62,14 +65,34 @@ pvWalk game = go game Nothing
             else pure []
         Nothing -> pure []
 
-scoreMVVLVA :: Board -> Move -> Int
-scoreMVVLVA board move =
-  fromMaybe 0 $ do
-    victim <- squareScore (moveTo move)
-    attacker <- squareScore (moveFrom move)
-    pure (victim * 10 - attacker)
+-- no check detection, just sends it
+staticExchEval :: Board -> Int -> Int
+staticExchEval board sq = case getPiece sq pieces of
+  Just pieceVictim -> case attackers of
+    (attackerSq : _) ->
+      let pieceAttacker = fromJust (getPiece attackerSq pieces)
+          newPieces = addPiece pieceAttacker sq (removePiece attackerSq pieces)
+          newBoard = board {boardPieces = newPieces}
+          worthCaptured = pieceWorth (pieceType pieceVictim)
+       in max (worthCaptured - staticExchEval newBoard sq) 0
+    [] -> 0
+  Nothing -> 0
   where
-    squareScore sq = fromEnum . pieceType <$> getPiece sq (boardPieces board)
+    pieces = boardPieces board
+    attackers = squareAttackers (boardTurn board) pieces sq
+
+-- static exchange eval
+seeOfCapture :: Board -> Move -> Int
+seeOfCapture board move = case getPiece (moveTo move) (boardPieces board) of
+  Just captured ->
+    let pieceAttacker = fromJust (getPiece (moveFrom move) pieces)
+        newPieces = addPiece pieceAttacker (moveTo move) (removePiece (moveFrom move) pieces)
+        newBoard = board {boardPieces = newPieces}
+        worthCaptured = pieceWorth (pieceType captured)
+     in max (worthCaptured - staticExchEval newBoard (moveTo move)) 0
+  Nothing -> 0
+  where
+    pieces = boardPieces board
 
 eval :: Game -> Int
 eval game = colorSign (boardTurn board) * pstEvalValue
@@ -118,7 +141,7 @@ quieSearch :: Int -> Int -> Game -> ReaderT (SearchEnv s) (ST s) Int
 quieSearch !alpha !beta !game
   -- stand-pat from null-move observation (eval immediately = not moving)
   | staticEval >= beta = pure staticEval
-  | otherwise = go staticEval ((\m -> (scoreMVVLVA board m, m)) <$> allCaptures board)
+  | otherwise = go staticEval (filter ((>= 0) . fst) ((\m -> (seeOfCapture board m, m)) <$> allCaptures board))
   where
     staticEval = eval game
     board = gameBoard game
@@ -168,9 +191,10 @@ _aspirate depth !initialGuess !game = go 50 50
       result <- searchNega depth lower upper game
       if result <= lower
         then go (lowerMargin * 2) upperMargin
-        else if result >= upper
-          then go lowerMargin (upperMargin * 2)
-          else pure result
+        else
+          if result >= upper
+            then go lowerMargin (upperMargin * 2)
+            else pure result
       where
         lower = initialGuess - lowerMargin
         upper = initialGuess + upperMargin
@@ -199,7 +223,7 @@ searchNega depth !alpha !beta !game
             Just (TTEntry {entryMove}) ->
               if entryMove /= nullMove
                 then
-                  (100000, entryMove) : ((\m -> (scoreMVVLVA board m, m)) <$> filter (/= entryMove) gameMoves)
+                  (100000, entryMove) : ((\m -> (seeOfCapture board m, m)) <$> filter (/= entryMove) gameMoves)
                 else (0,) <$> gameMoves
       (bResult, bMove) <- go Nothing scoredMoves
       lift (TT.insert board (TTEntry bResult bMove depth) tt)
