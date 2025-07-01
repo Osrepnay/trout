@@ -28,6 +28,7 @@ library
       Trout.Bitboard
       Trout.Fen.Parse
       Trout.Game
+      Trout.Game.Board
       Trout.Game.Move
       Trout.Game.MoveGen
       Trout.Game.MoveGen.Sliding.Classic

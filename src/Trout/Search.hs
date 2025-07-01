@@ -17,20 +17,15 @@ import Data.Maybe (fromJust)
 import Data.Ord (comparing)
 import Trout.Bitboard (popCount)
 import Trout.Game
-  ( Board (..),
-    Game (..),
-    addPiece,
+  ( Game (..),
     allCaptures,
     allMoves,
-    getPiece,
     inCheck,
     isDrawn,
     makeMove,
-    pieceBitboard,
-    pieceTypeBitboard,
-    removePiece,
     squareAttackers,
   )
+import Trout.Game.Board (Board (..), addPiece, getPiece, pieceBitboard, pieceTypeBitboard, removePiece)
 import Trout.Game.Move (Move (..), nullMove)
 import Trout.Piece (Color (..), Piece (..), PieceType (..), colorSign)
 import Trout.Search.PieceSquareTables (pstEval)

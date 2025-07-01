@@ -27,11 +27,11 @@ import Trout.Fen.Parse (fenToGame)
 import Trout.Game
   ( Game (..),
     allMoves,
-    boardTurn,
     gameBoard,
     makeMove,
     startingGame,
   )
+import Trout.Game.Board (boardTurn)
 import Trout.Game.Move
   ( Move (..),
     SpecialMove (Promotion),

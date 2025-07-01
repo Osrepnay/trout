@@ -6,7 +6,8 @@ where
 import Test.Hspec (Spec, context, describe)
 import Test.Hspec.QuickCheck (prop)
 import Test.QuickCheck (chooseInt, forAll, listOf, resize, withMaxSuccess)
-import Trout.Game (Game (..), allMoves, boardHash, hashBoard, makeMove, startingGame)
+import Trout.Game
+import Trout.Game.Board
 
 incZobristSpec :: Spec
 incZobristSpec = describe "makeMove" $

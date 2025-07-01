@@ -8,6 +8,7 @@ import Data.Foldable (foldl')
 import Data.Maybe (fromJust)
 import Test.Hspec
 import Trout.Game
+import Trout.Game.Board
 import Trout.Game.Move
 import Trout.Piece
 

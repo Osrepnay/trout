@@ -11,7 +11,8 @@ import Text.Parsec.Char (digit)
 import Text.Parsec.Combinator (many1)
 import Text.Parsec.String (Parser)
 import Trout.Bitboard ((.|.))
-import Trout.Game (Castling (..), Game (..), Pieces, addPiece, emptyPieces, mkBoard)
+import Trout.Game (Game (..), mkBoard)
+import Trout.Game.Board (Castling (..), Pieces, addPiece, emptyPieces)
 import Trout.Piece (Color (Black, White), Piece (..), PieceType (..))
 
 -- TODO better fen handling; instead of 1 shot use setSq and friends

@@ -17,7 +17,7 @@ import Data.Vector.Storable.Mutable (STVector)
 import Data.Vector.Storable.Mutable qualified as MSV
 import Foreign.Ptr (Ptr, castPtr, plusPtr)
 import Foreign.Storable (Storable (..))
-import Trout.Game (Board)
+import Trout.Game.Board (Board)
 import Trout.Game.Move (Move)
 import Prelude hiding (lookup)
 
