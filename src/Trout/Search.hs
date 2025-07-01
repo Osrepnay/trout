@@ -15,7 +15,7 @@ import Control.Monad.Trans.Reader (ReaderT, ask)
 import Data.Foldable (maximumBy)
 import Data.Maybe (fromJust)
 import Data.Ord (comparing)
-import Trout.Bitboard (popCount)
+import Trout.Bitboard (popCount, (.|.))
 import Trout.Game
   ( Game (..),
     allCaptures,
@@ -89,20 +89,25 @@ seeOfCapture board move = case getPiece (moveTo move) (boardPieces board) of
   where
     pieces = boardPieces board
 
+-- 24: all pieces, 0: none
+-- pawns don't count, bishops and knights count 1, rooks 2, queens 4
+-- taken from pesto/ethereal/fruit
+gamePhase :: Game -> Int
+gamePhase game =
+  popCount (pieceTypeBitboard Knight pieces .|. pieceTypeBitboard Bishop pieces)
+    + 2 * popCount (pieceTypeBitboard Rook pieces)
+    + 4 * popCount (pieceTypeBitboard Queen pieces)
+  where
+    board = gameBoard game
+    pieces = boardPieces board
+
 eval :: Game -> Int
 eval game = colorSign (boardTurn board) * pstEvalValue
   where
     board = gameBoard game
     pieces = boardPieces board
     getBB color = ($ pieces) . pieceBitboard . Piece color
-    -- calculate game phase
-    -- pawns don't count, bishops and rooks count 1, rooks 2, queens 4
-    -- taken from pesto/ethereal/fruit
-    mgPhase =
-      popCount (pieceTypeBitboard Knight pieces)
-        + popCount (pieceTypeBitboard Bishop pieces)
-        + 2 * popCount (pieceTypeBitboard Rook pieces)
-        + 4 * popCount (pieceTypeBitboard Queen pieces)
+    mgPhase = gamePhase game
     egPhase = 24 - mgPhase
     pst bb p = pstEval bb p mgPhase egPhase
     pstEvalValue =
@@ -174,6 +179,9 @@ _aspirate depth !initialGuess !game = go 50 50
         lower = initialGuess - lowerMargin
         upper = initialGuess + upperMargin
 
+nullReduction :: Int
+nullReduction = 3
+
 searchPVS :: Int -> Int -> Int -> Int -> Bool -> Game -> ReaderT (SearchEnv s) (ST s) Int
 searchPVS startingDepth 0 !alpha !beta _ !game
   | isDrawn game && startingDepth /= 0 = pure 0
@@ -183,23 +191,41 @@ searchPVS startingDepth 0 !alpha !beta _ !game
       lift $ TT.insert (gameBoard game) (TTEntry (gameHalfmove game) NullMove 0) tt
       pure score
 searchPVS startingDepth depth !alpha !beta !isPV !game
+  | depth < 0 = searchPVS startingDepth 0 alpha beta isPV game
   | isDrawn game && startingDepth /= depth = pure 0
   | otherwise = do
-      (SearchEnv {searchEnvTT = tt}) <- ask
-      let gameMoves = allMoves board
-      maybeEntry <- lift (TT.lookup board tt)
-      let scoredMoves = case maybeEntry of
-            Nothing -> (0,) <$> gameMoves
-            Just (TTEntry {entryMove}) ->
-              if entryMove /= NullMove
-                then
-                  (100000, entryMove) : ((\m -> (seeOfCapture board m, m)) <$> filter (/= entryMove) gameMoves)
-                else (0,) <$> gameMoves
-      (bResult, bMove) <- go True Nothing scoredMoves
-      lift (TT.insert board (TTEntry (gameHalfmove game) bMove depth) tt)
-      pure bResult
+      -- null move pruning
+      nullMoveResult <- checkNullMove
+      case nullMoveResult of
+        Just res -> pure res
+        Nothing -> do
+          (SearchEnv {searchEnvTT = tt}) <- ask
+          let gameMoves = allMoves board
+          maybeEntry <- lift (TT.lookup board tt)
+          let scoredMoves = case maybeEntry of
+                Nothing -> (0,) <$> gameMoves
+                Just (TTEntry {entryMove}) ->
+                  if entryMove /= NullMove
+                    then
+                      (100000, entryMove) : ((\m -> (seeOfCapture board m, m)) <$> filter (/= entryMove) gameMoves)
+                    else (0,) <$> gameMoves
+          (bResult, bMove) <- go True Nothing scoredMoves
+          lift (TT.insert board (TTEntry (gameHalfmove game) bMove depth) tt)
+          pure bResult
   where
     board = gameBoard game
+
+    checkNullMove = case makeMove game NullMove of
+      Just nullGame -> do
+        if gamePhase game >= 1 && not isPV
+          then do
+            nullScore <- negate <$> searchPVS startingDepth (depth - nullReduction) (-beta) (-beta + 1) isPV nullGame
+            if nullScore >= beta
+              then pure (Just nullScore)
+              else pure Nothing
+          else pure Nothing
+      Nothing -> pure Nothing
+
     go :: Bool -> Maybe (Int, Move) -> [(Int, Move)] -> ReaderT (SearchEnv s) (ST s) (Int, Move)
     -- no valid moves (stalemate, checkmate checks)
     -- bestScore is nothing if all moves are illegal
