@@ -19,7 +19,6 @@ import Foreign.Ptr (Ptr, castPtr, plusPtr)
 import Foreign.Storable (Storable (..))
 import Trout.Game (Board)
 import Trout.Game.Move (Move)
-import Trout.Search.Node (NodeResult (..))
 import Prelude hiding (lookup)
 
 -- correct move for depth only guaranteed on exact nodes
@@ -33,7 +32,7 @@ data TTEntry = TTEntry
 
 instance Storable TTEntry where
   sizeOf :: TTEntry -> Int
-  sizeOf _ = sizeOf (undefined :: NodeResult) + sizeOf (undefined :: Move) + sizeOf (undefined :: Int)
+  sizeOf _ = sizeOf (undefined :: Int) + sizeOf (undefined :: Move) + sizeOf (undefined :: Int)
   alignment :: TTEntry -> Int
   alignment _ = sizeOf (undefined :: Int)
   peek :: Ptr TTEntry -> IO TTEntry
