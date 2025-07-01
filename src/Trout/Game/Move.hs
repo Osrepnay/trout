@@ -1,6 +1,8 @@
+{-# LANGUAGE PatternSynonyms #-}
+
 module Trout.Game.Move
   ( SpecialMove (..),
-    Move (..),
+    Move (.., NullMove),
     uciShowMove,
     nullMove,
   )
@@ -30,8 +32,11 @@ data Move = Move
   }
   deriving (Eq, Show)
 
+pattern NullMove :: Move
+pattern NullMove = Move Pawn Normal 0 0
+
 nullMove :: Move
-nullMove = Move Pawn Normal 0 0
+nullMove = NullMove
 
 -- show uci format of move
 uciShowMove :: Move -> String

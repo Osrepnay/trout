@@ -238,6 +238,23 @@ inCheck color pieces =
 
 makeMove :: Game -> Move -> Maybe Game
 makeMove
+  ( Game
+      halfmove
+      fiftyPlies
+      history
+      origBoard@(Board {boardPieces = pieces, boardTurn = turn, boardHash = hashed})
+    )
+  NullMove = do
+    if inCheck turn pieces
+      then Nothing
+      else
+        Just $
+          Game
+            (halfmove + 1)
+            (fiftyPlies + 1)
+            history
+            (origBoard {boardTurn = other turn, boardHash = hashed .^. playingZobrist})
+makeMove
   (Game halfmove fiftyPlies history origBoard@(Board pieces castling enPassant turn hashed))
   (Move pieceType special from to) =
     case special of

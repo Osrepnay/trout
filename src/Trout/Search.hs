@@ -26,7 +26,7 @@ import Trout.Game
     squareAttackers,
   )
 import Trout.Game.Board (Board (..), addPiece, getPiece, pieceBitboard, pieceTypeBitboard, removePiece)
-import Trout.Game.Move (Move (..), nullMove)
+import Trout.Game.Move (Move (..))
 import Trout.Piece (Color (..), Piece (..), PieceType (..), colorSign)
 import Trout.Search.PieceSquareTables (pstEval)
 import Trout.Search.TranspositionTable (STTranspositionTable, TTEntry (..))
@@ -53,7 +53,7 @@ pvWalk game = go game Nothing
       maybeEntry <- lift (TT.lookup (gameBoard g) tt)
       case maybeEntry of
         Just (TTEntry {entryMove = move, entryDepth = depth}) ->
-          if maybe True (depth ==) maybeDepth && move /= nullMove
+          if maybe True (depth ==) maybeDepth && move /= NullMove
             then case makeMove g move of
               Just movedG -> (move :) <$> go movedG (Just (depth - 1))
               Nothing -> pure [] -- should be rare, this means full tt collision
@@ -180,7 +180,7 @@ searchNega startingDepth 0 !alpha !beta _ !game
   | otherwise = do
       (SearchEnv {searchEnvTT = tt}) <- ask
       score <- quieSearch alpha beta game
-      lift $ TT.insert (gameBoard game) (TTEntry (gameHalfmove game) nullMove 0) tt
+      lift $ TT.insert (gameBoard game) (TTEntry (gameHalfmove game) NullMove 0) tt
       pure score
 searchNega startingDepth depth !alpha !beta !isPV !game
   | isDrawn game && startingDepth /= depth = pure 0
@@ -191,7 +191,7 @@ searchNega startingDepth depth !alpha !beta !isPV !game
       let scoredMoves = case maybeEntry of
             Nothing -> (0,) <$> gameMoves
             Just (TTEntry {entryMove}) ->
-              if entryMove /= nullMove
+              if entryMove /= NullMove
                 then
                   (100000, entryMove) : ((\m -> (seeOfCapture board m, m)) <$> filter (/= entryMove) gameMoves)
                 else (0,) <$> gameMoves
@@ -204,8 +204,8 @@ searchNega startingDepth depth !alpha !beta !isPV !game
     -- no valid moves (stalemate, checkmate checks)
     -- bestScore is nothing if all moves are illegal
     go _ Nothing []
-      | inCheck (boardTurn board) (boardPieces board) = pure (lossWorth, nullMove)
-      | otherwise = pure (drawWorth, nullMove)
+      | inCheck (boardTurn board) (boardPieces board) = pure (lossWorth, NullMove)
+      | otherwise = pure (drawWorth, NullMove)
     -- bestScore tracks the best score among moves, but separate from real alpha
     -- this way we keep track of realer score and not alpha cutoff (fail-soft)
     go _ (Just (bestScore, bMove)) [] = pure (bestScore, bMove)
