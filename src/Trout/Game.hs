@@ -242,7 +242,7 @@ makeMove
       halfmove
       fiftyPlies
       history
-      origBoard@(Board {boardPieces = pieces, boardTurn = turn, boardHash = hashed})
+      (Board pieces castling _ turn hashed)
     )
   NullMove = do
     if inCheck turn pieces
@@ -253,7 +253,7 @@ makeMove
             (halfmove + 1)
             (fiftyPlies + 1)
             history
-            (origBoard {boardTurn = other turn, boardHash = hashed .^. playingZobrist})
+            (Board pieces castling Nothing (other turn) (hashed .^. playingZobrist))
 makeMove
   (Game halfmove fiftyPlies history origBoard@(Board pieces castling enPassant turn hashed))
   (Move pieceType special from to) =
