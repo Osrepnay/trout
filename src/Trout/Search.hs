@@ -156,32 +156,19 @@ bestMove depth game = do
   (SearchEnv {searchEnvTT = tt}) <- ask
   -- guess <- maybe 0 (nodeResScore . entryNode) <$> lift (TT.lookup (gameBoard game) tt)
   -- _ <- aspirate depth guess game
-  score <- searchNega depth depth lossWorth winWorth game
+  score <- searchNega depth depth lossWorth winWorth True game
   maybeEntry <- lift (TT.lookup (gameBoard game) tt)
   case maybeEntry of
     Just (TTEntry {entryMove = move}) ->
       pure (score * colorSign (boardTurn (gameBoard game)), move)
     Nothing -> error "no entry"
 
-_mtdf :: Int -> Int -> Game -> ReaderT (SearchEnv s) (ST s) Int
-_mtdf depth !initialGuess !game = go lossWorth winWorth initialGuess
-  where
-    go :: Int -> Int -> Int -> ReaderT (SearchEnv s) (ST s) Int
-    go lower upper guess
-      | lower < upper = do
-          let beta = if lower == guess then guess + 1 else guess
-          newGuess <- searchNega depth depth (beta - 1) beta game
-          if newGuess < beta
-            then go lower newGuess newGuess
-            else go newGuess upper newGuess
-      | otherwise = pure guess
-
 _aspirate :: Int -> Int -> Game -> ReaderT (SearchEnv s) (ST s) Int
 _aspirate depth !initialGuess !game = go 50 50
   where
     go :: Int -> Int -> ReaderT (SearchEnv s) (ST s) Int
     go lowerMargin upperMargin = do
-      result <- searchNega depth depth lower upper game
+      result <- searchNega depth depth lower upper True game
       if result <= lower
         then go (lowerMargin * 2) upperMargin
         else
@@ -192,15 +179,15 @@ _aspirate depth !initialGuess !game = go 50 50
         lower = initialGuess - lowerMargin
         upper = initialGuess + upperMargin
 
-searchNega :: Int -> Int -> Int -> Int -> Game -> ReaderT (SearchEnv s) (ST s) Int
-searchNega startingDepth 0 !alpha !beta !game
+searchNega :: Int -> Int -> Int -> Int -> Bool -> Game -> ReaderT (SearchEnv s) (ST s) Int
+searchNega startingDepth 0 !alpha !beta _ !game
   | isDrawn game && startingDepth /= 0 = pure 0
   | otherwise = do
       (SearchEnv {searchEnvTT = tt}) <- ask
       score <- quieSearch alpha beta game
       lift $ TT.insert (gameBoard game) (TTEntry (gameHalfmove game) nullMove 0) tt
       pure score
-searchNega startingDepth depth !alpha !beta !game
+searchNega startingDepth depth !alpha !beta !isPV !game
   | isDrawn game && startingDepth /= depth = pure 0
   | otherwise = do
       (SearchEnv {searchEnvTT = tt}) <- ask
@@ -233,12 +220,12 @@ searchNega startingDepth depth !alpha !beta !game
         let trueAlpha = maybe alpha (max alpha . fst) best
         nodeScore <-
           if leftmost
-            then negate <$> searchNega startingDepth (depth - 1) (-beta) (-trueAlpha) moveMade
+            then negate <$> searchNega startingDepth (depth - 1) (-beta) (-trueAlpha) isPV moveMade
             else do
-              score <- negate <$> searchNega startingDepth (depth - 1) (-trueAlpha - 1) (-trueAlpha) moveMade
+              score <- negate <$> searchNega startingDepth (depth - 1) (-trueAlpha - 1) (-trueAlpha) False moveMade
               -- don't research if non-pv branch, some older relative will research anyways
               if score > trueAlpha && beta - alpha > 1
-                then negate <$> searchNega startingDepth (depth - 1) (-beta) (-trueAlpha) moveMade
+                then negate <$> searchNega startingDepth (depth - 1) (-beta) (-trueAlpha) False moveMade
                 else pure score
         if nodeScore >= beta
           then pure (nodeScore, move)
