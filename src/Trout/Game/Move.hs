@@ -3,14 +3,14 @@
 module Trout.Game.Move
   ( SpecialMove (..),
     Move (.., NullMove),
-    uciShowMove
+    uciShowMove,
   )
 where
 
 import Data.Char (chr, ord)
+import Data.Int (Int8)
 import Foreign (Ptr, Storable (..), castPtr)
 import Trout.Piece (PieceType (..))
-import Data.Int (Int8)
 
 -- moves that dont fit normal piece things
 data SpecialMove
@@ -57,9 +57,9 @@ uciShowMove (Move _ special from to) =
 instance Storable Move where
   sizeOf :: Move -> Int
   -- 5 int8s, 40 bits total
-  sizeOf _ = sizeOf (undefined :: Int)
+  sizeOf _ = 5 * sizeOf (undefined :: Int8)
   alignment :: Move -> Int
-  alignment _ = alignment (undefined :: Int)
+  alignment _ = alignment (undefined :: Int8)
   peek :: Ptr Move -> IO Move
   peek ptr = do
     let casted = castPtr ptr :: Ptr Int8

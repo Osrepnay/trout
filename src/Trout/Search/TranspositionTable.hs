@@ -12,6 +12,7 @@ where
 import Control.Monad (when)
 import Control.Monad.ST (ST)
 import Data.Bifunctor (first)
+import Data.Bits ((.&.))
 import Data.Hashable (hash)
 import Data.Int (Int16)
 import Data.Vector.Storable.Mutable (STVector)
@@ -19,57 +20,73 @@ import Data.Vector.Storable.Mutable qualified as MSV
 import Foreign.Ptr (Ptr, castPtr, plusPtr)
 import Foreign.Storable (Storable (..))
 import Trout.Game.Board (Board)
-import Trout.Game.Move (Move)
+import Trout.Game.Move (Move (NullMove))
+import Trout.Search.Node (NodeResult (NodeResult), NodeType (..))
 import Prelude hiding (lookup)
 
 -- correct move for depth only guaranteed on exact nodes
 -- TODO consider moving entryMove into NodeResult
 data TTEntry = TTEntry
-  { entryHalfmove :: !Int16,
+  { entryScore :: !NodeResult,
     entryMove :: !Move,
+    entryHalfmove :: !Int16,
     entryDepth :: !Int16
   }
   deriving (Eq, Show)
 
 instance Storable TTEntry where
   sizeOf :: TTEntry -> Int
-  sizeOf _ = sizeOf (undefined :: Int) + sizeOf (undefined :: Move) + sizeOf (undefined :: Int)
+  sizeOf _ =
+    sizeOf (undefined :: NodeResult)
+      + sizeOf (undefined :: Move)
+      + padding
+      + sizeOf (undefined :: Int16)
+      + sizeOf (undefined :: Int16)
+    where
+      padding = 2 - sizeOf (undefined :: Move) .&. 1
   alignment :: TTEntry -> Int
-  alignment _ = sizeOf (undefined :: Int)
+  alignment _ =
+    max
+      (alignment (undefined :: NodeResult))
+      (max (alignment (undefined :: Move)) (alignment (undefined :: Int16)))
   peek :: Ptr TTEntry -> IO TTEntry
   peek ptr = do
-    halfmove <- peek (castPtr ptr)
-    move <- peek (ptr `plusPtr` sizeOf halfmove)
-    depth <- peek (ptr `plusPtr` (sizeOf halfmove + sizeOf move))
-    pure (TTEntry halfmove move depth)
+    nodeResult <- peek (castPtr ptr)
+    let nodedPtr = ptr `plusPtr` sizeOf nodeResult
+    move <- peek nodedPtr
+    let paddedPtr = nodedPtr `plusPtr` (sizeOf move + 2 - sizeOf move .&. 1)
+    halfmove <- peekElemOff paddedPtr 0
+    depth <- peekElemOff paddedPtr 1
+    pure (TTEntry nodeResult move halfmove depth)
   poke :: Ptr TTEntry -> TTEntry -> IO ()
-  poke ptr (TTEntry halfmove move depth) = do
-    poke (castPtr ptr) halfmove
-    poke (ptr `plusPtr` sizeOf halfmove) move
-    poke (ptr `plusPtr` (sizeOf halfmove + sizeOf move)) depth
+  poke ptr (TTEntry nodeResult move halfmove depth) = do
+    poke (castPtr ptr) nodeResult
+    let nodedPtr = ptr `plusPtr` sizeOf nodeResult
+    poke nodedPtr move
+    let paddedPtr = nodedPtr `plusPtr` (sizeOf move + 2 - sizeOf move .&. 1)
+    pokeElemOff paddedPtr 0 halfmove
+    pokeElemOff paddedPtr 1 depth
 
 instance Storable (Maybe (Int, TTEntry)) where
   sizeOf :: Maybe (Int, TTEntry) -> Int
-  sizeOf _ = 2 * sizeOf (undefined :: Int) + sizeOf (undefined :: TTEntry)
+  sizeOf _ = sizeOf (undefined :: Int) + sizeOf (undefined :: TTEntry)
   alignment :: Maybe (Int, TTEntry) -> Int
-  alignment _ = sizeOf (undefined :: Int)
+  alignment _ = max (alignment (undefined :: Int)) (alignment (undefined :: TTEntry))
   peek :: Ptr (Maybe (Int, TTEntry)) -> IO (Maybe (Int, TTEntry))
   peek ptr = do
     let intPtr = castPtr ptr :: Ptr Int
-    (maybeMarker :: Int) <- peek intPtr
-    if maybeMarker == 0
+    trueHash <- peekElemOff intPtr 0
+    entry <- peek (ptr `plusPtr` sizeOf (undefined :: Int))
+    if trueHash == 0 && entry == TTEntry (NodeResult 0 ExactNode) NullMove 0 0
       then pure Nothing
-      else do
-        trueHash <- peekElemOff intPtr 1
-        entry <- peek (ptr `plusPtr` (2 * sizeOf (undefined :: Int)))
-        pure (Just (trueHash, entry))
+      else pure (Just (trueHash, entry))
   poke :: Ptr (Maybe (Int, TTEntry)) -> Maybe (Int, TTEntry) -> IO ()
-  poke ptr Nothing = poke (castPtr ptr) (0 :: Int)
+  poke ptr Nothing = do
+    poke (castPtr ptr) (0 :: Int)
+    pokeByteOff ptr (sizeOf (undefined :: Int)) (TTEntry (NodeResult 0 ExactNode) NullMove 0 0)
   poke ptr (Just (trueHash, entry)) = do
-    let intPtr = castPtr ptr :: Ptr Int
-    poke intPtr 1
-    pokeElemOff intPtr 1 trueHash
-    pokeByteOff ptr (2 * sizeOf (undefined :: Int)) entry
+    poke (castPtr ptr) trueHash
+    pokeByteOff ptr (sizeOf (trueHash :: Int)) entry
 
 sizeOfEntry :: Int
 sizeOfEntry = sizeOf (undefined :: Maybe (Int, TTEntry))

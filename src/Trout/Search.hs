@@ -29,6 +29,7 @@ import Trout.Game
 import Trout.Game.Board (Board (..), addPiece, getPiece, pieceBitboard, pieceTypeBitboard, removePiece)
 import Trout.Game.Move (Move (..))
 import Trout.Piece (Color (..), Piece (..), PieceType (..), colorSign)
+import Trout.Search.Node (NodeResult (..), NodeType (..))
 import Trout.Search.PieceSquareTables (pstEval)
 import Trout.Search.TranspositionTable (STTranspositionTable, TTEntry (..))
 import Trout.Search.TranspositionTable qualified as TT
@@ -183,13 +184,23 @@ _aspirate depth !initialGuess !game = go 50 50
 nullReduction :: Int16
 nullReduction = 3
 
+mkNodeResult :: Int -> Int -> Int -> NodeResult
+mkNodeResult alpha beta score
+  | score <= alpha = NodeResult score AllNode
+  | score >= beta = NodeResult score CutNode
+  | otherwise = NodeResult score ExactNode
+
 searchPVS :: Int16 -> Int16 -> Int -> Int -> Bool -> Game -> ReaderT (SearchEnv s) (ST s) Int
 searchPVS startingDepth 0 !alpha !beta _ !game
   | isDrawn game && startingDepth /= 0 = pure 0
   | otherwise = do
       (SearchEnv {searchEnvTT = tt}) <- ask
       score <- quieSearch alpha beta game
-      lift $ TT.insert (gameBoard game) (TTEntry (gameHalfmove game) NullMove 0) tt
+      lift $
+        TT.insert
+          (gameBoard game)
+          (TTEntry (mkNodeResult alpha beta score) NullMove (gameHalfmove game) 0)
+          tt
       pure score
 searchPVS startingDepth depth !alpha !beta !isPV !game
   | depth < 0 = searchPVS startingDepth 0 alpha beta isPV game
@@ -211,8 +222,8 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
                       (100000, entryMove) : ((\m -> (seeOfCapture board m, m)) <$> filter (/= entryMove) gameMoves)
                     else (0,) <$> gameMoves
           (bResult, bMove) <- go True Nothing scoredMoves
-          lift (TT.insert board (TTEntry (gameHalfmove game) bMove depth) tt)
-          pure bResult
+          lift $ TT.insert board (TTEntry bResult bMove (gameHalfmove game) depth) tt
+          pure (nodeResScore bResult)
   where
     board = gameBoard game
 
@@ -227,15 +238,15 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
           else pure Nothing
       Nothing -> pure Nothing
 
-    go :: Bool -> Maybe (Int, Move) -> [(Int, Move)] -> ReaderT (SearchEnv s) (ST s) (Int, Move)
+    go :: Bool -> Maybe (Int, Move) -> [(Int, Move)] -> ReaderT (SearchEnv s) (ST s) (NodeResult, Move)
     -- no valid moves (stalemate, checkmate checks)
     -- bestScore is nothing if all moves are illegal
     go _ Nothing []
-      | inCheck (boardTurn board) (boardPieces board) = pure (lossWorth, NullMove)
-      | otherwise = pure (drawWorth, NullMove)
+      | inCheck (boardTurn board) (boardPieces board) = pure (NodeResult lossWorth AllNode, NullMove)
+      | otherwise = pure (mkNodeResult alpha beta drawWorth, NullMove)
     -- bestScore tracks the best score among moves, but separate from real alpha
     -- this way we keep track of realer score and not alpha cutoff (fail-soft)
-    go _ (Just (bestScore, bMove)) [] = pure (bestScore, bMove)
+    go _ (Just (bestScore, bMove)) [] = pure (mkNodeResult alpha beta bestScore, bMove)
     go leftmost best moves = case makeMove game move of
       Nothing -> go True best movesRest
       Just moveMade -> do
@@ -250,7 +261,7 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
                 then negate <$> searchPVS startingDepth (depth - 1) (-beta) (-trueAlpha) True moveMade
                 else pure score
         if nodeScore >= beta
-          then pure (nodeScore, move)
+          then pure (NodeResult nodeScore CutNode, move)
           else flip (go False) movesRest $
             case best of
               Just (bScore, _) ->
