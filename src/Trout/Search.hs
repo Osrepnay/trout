@@ -246,7 +246,7 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
               score <- negate <$> searchPVS startingDepth (depth - 1) (-trueAlpha - 1) (-trueAlpha) False moveMade
               -- don't research if non-pv branch, some older relative will research anyways
               if score >= (trueAlpha + 1) && isPV
-                then negate <$> searchPVS startingDepth (depth - 1) (-beta) (-trueAlpha) False moveMade
+                then negate <$> searchPVS startingDepth (depth - 1) (-beta) (-trueAlpha) True moveMade
                 else pure score
         if nodeScore >= beta
           then pure (nodeScore, move)
