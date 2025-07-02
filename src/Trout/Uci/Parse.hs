@@ -14,6 +14,7 @@ where
 import Data.Bifunctor (Bifunctor (first))
 import Data.Char (ord)
 import Data.Functor (($>), (<&>))
+import Data.Int (Int16)
 import Text.Parsec
   ( alphaNum,
     anyChar,
@@ -58,10 +59,10 @@ data CommGoArg
   | GoWinc Int
   | GoBtime Int
   | GoBinc Int
-  | GoMovestogo Int
-  | GoDepth Int
+  | GoMovestogo Int16
+  | GoDepth Int16
   | GoNodes Int
-  | GoMate Int
+  | GoMate Int16
   | GoMovetime Int
   | GoInfinite
   deriving (Eq, Show)
@@ -168,7 +169,7 @@ parsePosition =
 parseGo :: Parser UciCommand
 parseGo = string' "go" *> many (spaces1 *> parseArg) <&> CommGo
   where
-    parseIntArg :: String -> (Int -> CommGoArg) -> Parser CommGoArg
+    parseIntArg :: (Read a) => String -> (a -> CommGoArg) -> Parser CommGoArg
     parseIntArg n c =
       string' n
         *> spaces1

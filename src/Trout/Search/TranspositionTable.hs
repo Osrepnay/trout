@@ -13,6 +13,7 @@ import Control.Monad (when)
 import Control.Monad.ST (ST)
 import Data.Bifunctor (first)
 import Data.Hashable (hash)
+import Data.Int (Int16)
 import Data.Vector.Storable.Mutable (STVector)
 import Data.Vector.Storable.Mutable qualified as MSV
 import Foreign.Ptr (Ptr, castPtr, plusPtr)
@@ -24,9 +25,9 @@ import Prelude hiding (lookup)
 -- correct move for depth only guaranteed on exact nodes
 -- TODO consider moving entryMove into NodeResult
 data TTEntry = TTEntry
-  { entryHalfmove :: !Int,
+  { entryHalfmove :: !Int16,
     entryMove :: !Move,
-    entryDepth :: !Int
+    entryDepth :: !Int16
   }
   deriving (Eq, Show)
 

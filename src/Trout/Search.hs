@@ -13,6 +13,7 @@ import Control.Monad.ST (ST)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Reader (ReaderT, ask)
 import Data.Foldable (maximumBy)
+import Data.Int (Int16)
 import Data.Maybe (fromJust)
 import Data.Ord (comparing)
 import Trout.Bitboard (popCount, (.|.))
@@ -151,7 +152,7 @@ quieSearch !alpha !beta !game
       where
         (move, movesRest) = singleSelect moves
 
-bestMove :: Int -> Game -> ReaderT (SearchEnv s) (ST s) (Int, Move)
+bestMove :: Int16 -> Game -> ReaderT (SearchEnv s) (ST s) (Int, Move)
 bestMove depth game = do
   (SearchEnv {searchEnvTT = tt}) <- ask
   -- guess <- maybe 0 (nodeResScore . entryNode) <$> lift (TT.lookup (gameBoard game) tt)
@@ -163,7 +164,7 @@ bestMove depth game = do
       pure (score * colorSign (boardTurn (gameBoard game)), move)
     Nothing -> error "no entry"
 
-_aspirate :: Int -> Int -> Game -> ReaderT (SearchEnv s) (ST s) Int
+_aspirate :: Int16 -> Int -> Game -> ReaderT (SearchEnv s) (ST s) Int
 _aspirate depth !initialGuess !game = go 50 50
   where
     go :: Int -> Int -> ReaderT (SearchEnv s) (ST s) Int
@@ -179,10 +180,10 @@ _aspirate depth !initialGuess !game = go 50 50
         lower = initialGuess - lowerMargin
         upper = initialGuess + upperMargin
 
-nullReduction :: Int
+nullReduction :: Int16
 nullReduction = 3
 
-searchPVS :: Int -> Int -> Int -> Int -> Bool -> Game -> ReaderT (SearchEnv s) (ST s) Int
+searchPVS :: Int16 -> Int16 -> Int -> Int -> Bool -> Game -> ReaderT (SearchEnv s) (ST s) Int
 searchPVS startingDepth 0 !alpha !beta _ !game
   | isDrawn game && startingDepth /= 0 = pure 0
   | otherwise = do

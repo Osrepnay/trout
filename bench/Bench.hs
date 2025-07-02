@@ -4,6 +4,7 @@ import Control.DeepSeq (NFData (rnf))
 import Control.Monad.ST (RealWorld, stToIO)
 import Control.Monad.Trans.Reader (runReaderT)
 import Criterion.Main
+import Data.Int (Int16)
 import Data.Maybe
 import Trout.Game
 import Trout.Search
@@ -26,7 +27,7 @@ main = do
 createEnv :: IO (SearchEnv RealWorld)
 createEnv = stToIO (newEnv (16000000 `quot` sizeOfEntry))
 
-bestMoveWrapper :: Int -> Game -> SearchEnv RealWorld -> IO Int
+bestMoveWrapper :: Int16 -> Game -> SearchEnv RealWorld -> IO Int
 bestMoveWrapper depth game searchEnv =
   stToIO $
     flip runReaderT searchEnv $

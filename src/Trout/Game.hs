@@ -16,6 +16,7 @@ import Data.Bool (bool)
 import Data.Foldable (foldl')
 import Data.HashMap.Strict (HashMap)
 import Data.HashMap.Strict qualified as HM
+import Data.Int (Int16)
 import Data.Maybe (isJust)
 import Data.Vector.Primitive ((!))
 import Trout.Bitboard
@@ -78,9 +79,9 @@ import Trout.Piece
   )
 
 data Game = Game
-  { gameHalfmove :: !Int,
-    game50MovePlies :: !Int, -- halfmoves since last capture or pawn move
-    gameHistory :: !(HashMap Board Int),
+  { gameHalfmove :: !Int16,
+    game50MovePlies :: !Int16, -- halfmoves since last capture or pawn move
+    gameHistory :: !(HashMap Board Int16),
     gameBoard :: !Board
   }
   deriving (Eq, Show)

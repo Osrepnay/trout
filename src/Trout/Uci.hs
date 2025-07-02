@@ -19,6 +19,7 @@ import Control.Monad.Trans.Reader (ReaderT (runReaderT))
 import Data.Bifunctor (first, second)
 import Data.Foldable (foldl')
 import Data.Function ((&))
+import Data.Int (Int16)
 import Data.Maybe (fromMaybe)
 import System.IO (hFlush, hPutStrLn, stderr, stdout)
 import System.Timeout (timeout)
@@ -70,7 +71,7 @@ data GoSettings = GoSettings
   { goMovetime :: Maybe Int,
     goTimes :: (Int, Int),
     goIncs :: (Int, Int),
-    goMaxDepth :: Int
+    goMaxDepth :: Int16
   }
   deriving (Show)
 

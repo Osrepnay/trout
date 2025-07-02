@@ -6,6 +6,7 @@ import Data.Char (digitToInt, isDigit, ord)
 import Data.Foldable (Foldable (foldl'))
 import Data.Functor (($>), (<&>))
 import Data.HashMap.Strict qualified as HM
+import Data.Int (Int16)
 import Text.Parsec (char, oneOf, parse, spaces)
 import Text.Parsec.Char (digit)
 import Text.Parsec.Combinator (many1)
@@ -100,8 +101,8 @@ data Fen = Fen
     fenTurn :: Color,
     fenCastling :: Castling,
     fenEnPassant :: Maybe Int,
-    fenHalfmove :: Int,
-    fenFullmove :: Int
+    fenHalfmove :: Int16,
+    fenFullmove :: Int16
   }
   deriving (Eq, Show)
 
