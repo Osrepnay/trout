@@ -89,7 +89,12 @@ instance Storable (Maybe (Int, TTEntry)) where
     pokeByteOff ptr (sizeOf (trueHash :: Int)) entry
 
 sizeOfEntry :: Int
-sizeOfEntry = sizeOf (undefined :: Maybe (Int, TTEntry))
+sizeOfEntry =
+  sizeOf entryUndef
+    + alignment entryUndef
+    - (sizeOf entryUndef .&. (alignment entryUndef - 1))
+  where
+    entryUndef = undefined :: Maybe (Int, TTEntry)
 
 type STTranspositionTable s = STVector s (Maybe (Int, TTEntry))
 
