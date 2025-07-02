@@ -3,8 +3,7 @@
 module Trout.Game.Move
   ( SpecialMove (..),
     Move (.., NullMove),
-    uciShowMove,
-    nullMove,
+    uciShowMove
   )
 where
 
@@ -34,9 +33,6 @@ data Move = Move
 
 pattern NullMove :: Move
 pattern NullMove = Move Pawn Normal 0 0
-
-nullMove :: Move
-nullMove = NullMove
 
 -- show uci format of move
 uciShowMove :: Move -> String
