@@ -13,9 +13,9 @@ import Control.Monad.ST (ST)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Reader (ReaderT, ask)
 import Data.Foldable (maximumBy)
-import Data.HashMap.Strict (HashMap)
-import Data.HashMap.Strict qualified as HM
 import Data.Int (Int16)
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as M
 import Data.Maybe (fromJust, maybeToList)
 import Data.Ord (comparing)
 import Data.STRef (STRef, modifySTRef, newSTRef, readSTRef, writeSTRef)
@@ -40,19 +40,19 @@ import Trout.Search.Worthiness (drawWorth, lossWorth, pieceWorth, winWorth)
 
 data SearchEnv s = SearchEnv
   { searchEnvTT :: !(STTranspositionTable s),
-    searchEnvKillers :: !(STRef s (HashMap Int16 Move))
+    searchEnvKillers :: !(STRef s (Map Int16 Move))
   }
 
 newEnv :: Int -> ST s (SearchEnv s)
 newEnv n = do
   tt <- TT.new n
-  killers <- newSTRef HM.empty
+  killers <- newSTRef M.empty
   pure (SearchEnv tt killers)
 
 clearEnv :: SearchEnv s -> ST s ()
 clearEnv (SearchEnv tt killers) = do
   TT.clear tt
-  writeSTRef killers HM.empty
+  writeSTRef killers M.empty
 
 -- (attempt to) finid the pv (the tt might have been overwritten)
 pvWalk :: Game -> ReaderT (SearchEnv s) (ST s) [Move]
@@ -162,9 +162,17 @@ quieSearch !alpha !beta !game
       where
         (move, movesRest) = singleSelect moves
 
+cleanKillers :: Int16 -> Map Int16 Move -> Map Int16 Move
+cleanKillers currHalfmove killerMap = case M.lookupMin killerMap of
+  Just (minHalfmove, _) -> if minHalfmove < currHalfmove
+    then cleanKillers currHalfmove (M.delete minHalfmove killerMap)
+    else killerMap
+  Nothing -> killerMap
+
 bestMove :: Int16 -> Game -> ReaderT (SearchEnv s) (ST s) (Int, Move)
 bestMove depth game = do
-  (SearchEnv {searchEnvTT = tt}) <- ask
+  (SearchEnv {searchEnvTT = tt, searchEnvKillers = killersRef}) <- ask
+  lift $ modifySTRef killersRef (cleanKillers (gameHalfmove game))
   -- guess <- maybe 0 (nodeResScore . entryNode) <$> lift (TT.lookup (gameBoard game) tt)
   -- _ <- aspirate depth guess game
   score <- searchPVS depth depth lossWorth winWorth True game
@@ -222,8 +230,8 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
         Nothing -> do
           (SearchEnv {searchEnvTT = tt, searchEnvKillers = killers}) <- ask
           maybeTTMove <- lift (fmap entryMove <$> TT.lookup board tt)
-          killerHM <- lift (readSTRef killers)
-          let killerMoves = maybeToList $ HM.lookup (gameHalfmove game) killerHM
+          killerM <- lift (readSTRef killers)
+          let killerMoves = maybeToList $ M.lookup (gameHalfmove game) killerM
           let gameMoves = allMoves board
           let scoredMoves = moveOrderer maybeTTMove killerMoves gameMoves
           (bResult, bMove) <- go True Nothing scoredMoves
@@ -285,7 +293,7 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
         if nodeScore >= beta
           then do
             (SearchEnv {searchEnvKillers = killers}) <- ask
-            lift $ modifySTRef killers (HM.insert (gameHalfmove game) move)
+            lift $ modifySTRef killers (M.insert (gameHalfmove game) move)
             pure (NodeResult nodeScore CutNode, move)
           else flip (go False) movesRest $
             case best of
