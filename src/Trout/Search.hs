@@ -13,9 +13,12 @@ import Control.Monad.ST (ST)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Reader (ReaderT, ask)
 import Data.Foldable (maximumBy)
+import Data.HashMap.Strict (HashMap)
+import Data.HashMap.Strict qualified as HM
 import Data.Int (Int16)
 import Data.Maybe (fromJust)
 import Data.Ord (comparing)
+import Data.STRef (STRef, modifySTRef, newSTRef, readSTRef, writeSTRef)
 import Trout.Bitboard (popCount, (.|.))
 import Trout.Game
   ( Game (..),
@@ -35,15 +38,21 @@ import Trout.Search.TranspositionTable (STTranspositionTable, TTEntry (..))
 import Trout.Search.TranspositionTable qualified as TT
 import Trout.Search.Worthiness (drawWorth, lossWorth, pieceWorth, winWorth)
 
-newtype SearchEnv s = SearchEnv
-  { searchEnvTT :: STTranspositionTable s
+data SearchEnv s = SearchEnv
+  { searchEnvTT :: !(STTranspositionTable s),
+    searchEnvKillers :: !(STRef s (HashMap Int16 Move))
   }
 
 newEnv :: Int -> ST s (SearchEnv s)
-newEnv n = SearchEnv <$> TT.new n
+newEnv n = do
+  tt <- TT.new n
+  killers <- newSTRef HM.empty
+  pure (SearchEnv tt killers)
 
 clearEnv :: SearchEnv s -> ST s ()
-clearEnv (SearchEnv tt) = TT.clear tt
+clearEnv (SearchEnv tt killers) = do
+  TT.clear tt
+  writeSTRef killers HM.empty
 
 -- (attempt to) finid the pv (the tt might have been overwritten)
 pvWalk :: Game -> ReaderT (SearchEnv s) (ST s) [Move]
@@ -211,10 +220,12 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
       case nullMoveResult of
         Just res -> pure res
         Nothing -> do
-          (SearchEnv {searchEnvTT = tt}) <- ask
-          let gameMoves = allMoves board
+          (SearchEnv {searchEnvTT = tt, searchEnvKillers = killers}) <- ask
           maybeTTMove <- lift (fmap entryMove <$> TT.lookup board tt)
-          let scoredMoves = moveOrderer maybeTTMove gameMoves
+          killerHM <- lift (readSTRef killers)
+          let maybeKiller = HM.lookup (gameHalfmove game) killerHM
+          let gameMoves = allMoves board
+          let scoredMoves = moveOrderer maybeTTMove maybeKiller gameMoves
           (bResult, bMove) <- go True Nothing scoredMoves
           lift $ TT.insert board (TTEntry bResult bMove (gameHalfmove game) depth) tt
           pure (nodeResScore bResult)
@@ -232,16 +243,24 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
           else pure Nothing
       Nothing -> pure Nothing
 
-    moveOrderer :: Maybe Move -> [Move] -> [(Int, Move)]
-    moveOrderer _ [] = []
-    moveOrderer ttMoveMaybe (move : moves) = case ttMoveMaybe of
-      Just ttMove ->
-        if ttMove == move
-          then (100000, ttMove) : moveOrderer Nothing moves
-          else seeScored
-      Nothing -> seeScored
+    moveOrderer :: Maybe Move -> Maybe Move -> [Move] -> [(Int, Move)]
+    moveOrderer _ _ [] = []
+    moveOrderer ttMoveMaybe killerMoveMaybe (move : moves) = tt
       where
-        seeScored = (seeOfCapture board move, move) : moveOrderer ttMoveMaybe moves
+        -- first try tt, then killer, then static exchange eval
+        tt = case ttMoveMaybe of
+          Just ttMove ->
+            if ttMove == move
+              then (100000, ttMove) : moveOrderer Nothing killerMoveMaybe moves
+              else killer
+          Nothing -> killer
+        killer = case killerMoveMaybe of
+          Just killerMove ->
+            if killerMove == move
+              then (1, killerMove) : moveOrderer ttMoveMaybe Nothing moves
+              else seeScored
+          Nothing -> seeScored
+        seeScored = (seeOfCapture board move, move) : moveOrderer ttMoveMaybe killerMoveMaybe moves
 
     go :: Bool -> Maybe (Int, Move) -> [(Int, Move)] -> ReaderT (SearchEnv s) (ST s) (NodeResult, Move)
     -- no valid moves (stalemate, checkmate checks)
@@ -266,7 +285,10 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
                 then negate <$> searchPVS startingDepth (depth - 1) (-beta) (-trueAlpha) True moveMade
                 else pure score
         if nodeScore >= beta
-          then pure (NodeResult nodeScore CutNode, move)
+          then do
+            (SearchEnv {searchEnvKillers = killers}) <- ask
+            lift $ modifySTRef killers (HM.insert (gameHalfmove game) move)
+            pure (NodeResult nodeScore CutNode, move)
           else flip (go False) movesRest $
             case best of
               Just (bScore, _) ->
