@@ -213,14 +213,8 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
         Nothing -> do
           (SearchEnv {searchEnvTT = tt}) <- ask
           let gameMoves = allMoves board
-          maybeEntry <- lift (TT.lookup board tt)
-          let scoredMoves = case maybeEntry of
-                Nothing -> (0,) <$> gameMoves
-                Just (TTEntry {entryMove}) ->
-                  if entryMove /= NullMove
-                    then
-                      (100000, entryMove) : ((\m -> (seeOfCapture board m, m)) <$> filter (/= entryMove) gameMoves)
-                    else (0,) <$> gameMoves
+          maybeTTMove <- lift (fmap entryMove <$> TT.lookup board tt)
+          let scoredMoves = moveOrderer maybeTTMove gameMoves
           (bResult, bMove) <- go True Nothing scoredMoves
           lift $ TT.insert board (TTEntry bResult bMove (gameHalfmove game) depth) tt
           pure (nodeResScore bResult)
@@ -237,6 +231,17 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
               else pure Nothing
           else pure Nothing
       Nothing -> pure Nothing
+
+    moveOrderer :: Maybe Move -> [Move] -> [(Int, Move)]
+    moveOrderer _ [] = []
+    moveOrderer ttMoveMaybe (move : moves) = case ttMoveMaybe of
+      Just ttMove ->
+        if ttMove == move
+          then (100000, ttMove) : moveOrderer Nothing moves
+          else seeScored
+      Nothing -> seeScored
+      where
+        seeScored = (seeOfCapture board move, move) : moveOrderer ttMoveMaybe moves
 
     go :: Bool -> Maybe (Int, Move) -> [(Int, Move)] -> ReaderT (SearchEnv s) (ST s) (NodeResult, Move)
     -- no valid moves (stalemate, checkmate checks)
