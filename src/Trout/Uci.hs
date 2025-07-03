@@ -93,7 +93,7 @@ reportMove moveVar = do
 
 launchGo :: MVar Move -> MVar (SearchEnv RealWorld) -> Game -> GoSettings -> IO ()
 launchGo moveVar ssVar game (GoSettings movetime times incs maxDepth) = do
-  _ <- timeout (time * 1000) (searches 1)
+  _ <- timeout (time * 999) (searches 1)
   reportMove moveVar
   where
     searches depth
