@@ -16,7 +16,7 @@ import Data.Foldable (maximumBy)
 import Data.HashMap.Strict (HashMap)
 import Data.HashMap.Strict qualified as HM
 import Data.Int (Int16)
-import Data.Maybe (fromJust)
+import Data.Maybe (fromJust, maybeToList)
 import Data.Ord (comparing)
 import Data.STRef (STRef, modifySTRef, newSTRef, readSTRef, writeSTRef)
 import Trout.Bitboard (popCount, (.|.))
@@ -223,9 +223,9 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
           (SearchEnv {searchEnvTT = tt, searchEnvKillers = killers}) <- ask
           maybeTTMove <- lift (fmap entryMove <$> TT.lookup board tt)
           killerHM <- lift (readSTRef killers)
-          let maybeKiller = HM.lookup (gameHalfmove game) killerHM
+          let killerMoves = maybeToList $ HM.lookup (gameHalfmove game) killerHM
           let gameMoves = allMoves board
-          let scoredMoves = moveOrderer maybeTTMove maybeKiller gameMoves
+          let scoredMoves = moveOrderer maybeTTMove killerMoves gameMoves
           (bResult, bMove) <- go True Nothing scoredMoves
           lift $ TT.insert board (TTEntry bResult bMove (gameHalfmove game) depth) tt
           pure (nodeResScore bResult)
@@ -243,24 +243,22 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
           else pure Nothing
       Nothing -> pure Nothing
 
-    moveOrderer :: Maybe Move -> Maybe Move -> [Move] -> [(Int, Move)]
+    moveOrderer :: Maybe Move -> [Move] -> [Move] -> [(Int, Move)]
     moveOrderer _ _ [] = []
-    moveOrderer ttMoveMaybe killerMoveMaybe (move : moves) = tt
+    moveOrderer ttMoveMaybe killerMoves (move : moves) = tt
       where
         -- first try tt, then killer, then static exchange eval
         tt = case ttMoveMaybe of
           Just ttMove ->
             if ttMove == move
-              then (100000, ttMove) : moveOrderer Nothing killerMoveMaybe moves
+              then (100000, ttMove) : moveOrderer Nothing killerMoves moves
               else killer
           Nothing -> killer
-        killer = case killerMoveMaybe of
-          Just killerMove ->
-            if killerMove == move
-              then (1, killerMove) : moveOrderer ttMoveMaybe Nothing moves
-              else seeScored
-          Nothing -> seeScored
-        seeScored = (seeOfCapture board move, move) : moveOrderer ttMoveMaybe killerMoveMaybe moves
+        killer =
+          if move `elem` killerMoves
+            then (1, move) : moveOrderer ttMoveMaybe (filter (/= move) killerMoves) moves
+            else seeScored
+        seeScored = (seeOfCapture board move, move) : moveOrderer ttMoveMaybe killerMoves moves
 
     go :: Bool -> Maybe (Int, Move) -> [(Int, Move)] -> ReaderT (SearchEnv s) (ST s) (NodeResult, Move)
     -- no valid moves (stalemate, checkmate checks)
