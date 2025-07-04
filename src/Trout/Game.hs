@@ -129,7 +129,7 @@ startingGame =
 -- non-stalemate draws
 isDrawn :: Game -> Bool
 isDrawn (Game {game50MovePlies = plies, gameHistory = history, gameBoard = board}) =
-  plies >= 50 || maybe False (>= 1) (HM.lookup board history)
+  plies >= 50 * 2 || maybe False (>= 1) (HM.lookup board history)
 
 allMoves :: Board -> [Move]
 allMoves (Board pieces castling enPassant turn _) =
