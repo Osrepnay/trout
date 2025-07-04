@@ -9,6 +9,7 @@ module Trout.Search
   )
 where
 
+import Control.Monad (join, when)
 import Control.Monad.ST (ST)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Reader (ReaderT, ask)
@@ -16,7 +17,7 @@ import Data.Foldable (maximumBy)
 import Data.Int (Int16)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as M
-import Data.Maybe (fromJust, maybeToList)
+import Data.Maybe (fromJust, isNothing, maybeToList)
 import Data.Ord (comparing)
 import Data.STRef (STRef, modifySTRef, newSTRef, readSTRef, writeSTRef)
 import Trout.Bitboard (popCount, (.|.))
@@ -38,9 +39,14 @@ import Trout.Search.TranspositionTable (STTranspositionTable, TTEntry (..))
 import Trout.Search.TranspositionTable qualified as TT
 import Trout.Search.Worthiness (drawWorth, lossWorth, pieceWorth, winWorth)
 
+maxKillers :: Int
+maxKillers = 3
+
+type KillerMap = Map Int16 [Move]
+
 data SearchEnv s = SearchEnv
   { searchEnvTT :: !(STTranspositionTable s),
-    searchEnvKillers :: !(STRef s (Map Int16 Move))
+    searchEnvKillers :: !(STRef s KillerMap)
   }
 
 newEnv :: Int -> ST s (SearchEnv s)
@@ -162,11 +168,12 @@ quieSearch !alpha !beta !game
       where
         (move, movesRest) = singleSelect moves
 
-cleanKillers :: Int16 -> Map Int16 Move -> Map Int16 Move
+cleanKillers :: Int16 -> KillerMap -> KillerMap
 cleanKillers currHalfmove killerMap = case M.lookupMin killerMap of
-  Just (minHalfmove, _) -> if minHalfmove < currHalfmove
-    then cleanKillers currHalfmove (M.delete minHalfmove killerMap)
-    else killerMap
+  Just (minHalfmove, _) ->
+    if minHalfmove < currHalfmove
+      then cleanKillers currHalfmove (M.delete minHalfmove killerMap)
+      else killerMap
   Nothing -> killerMap
 
 bestMove :: Int16 -> Game -> ReaderT (SearchEnv s) (ST s) (Int, Move)
@@ -197,6 +204,22 @@ _aspirate depth !initialGuess !game = go 50 50
       where
         lower = initialGuess - lowerMargin
         upper = initialGuess + upperMargin
+
+-- may or may not actually add the killer, only attempts to add based on replacement strategy
+addKiller :: Int16 -> Move -> KillerMap -> KillerMap
+addKiller halfmove move =
+  M.alter
+    ( \maybeKillers ->
+        let killerList = join (maybeToList maybeKillers)
+         in if move `elem` killerList
+              then Just killerList
+              else Just $ move : trimEnd killerList
+    )
+    halfmove
+  where
+    trimEnd xs
+      | length xs == maxKillers = init xs
+      | otherwise = xs
 
 nullReduction :: Int16
 nullReduction = 3
@@ -231,7 +254,7 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
           (SearchEnv {searchEnvTT = tt, searchEnvKillers = killers}) <- ask
           maybeTTMove <- lift (fmap entryMove <$> TT.lookup board tt)
           killerM <- lift (readSTRef killers)
-          let killerMoves = maybeToList $ M.lookup (gameHalfmove game) killerM
+          let killerMoves = join $ maybeToList $ M.lookup (gameHalfmove game) killerM
           let gameMoves = allMoves board
           let scoredMoves = moveOrderer maybeTTMove killerMoves gameMoves
           (bResult, bMove) <- go True Nothing scoredMoves
@@ -293,7 +316,9 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
         if nodeScore >= beta
           then do
             (SearchEnv {searchEnvKillers = killers}) <- ask
-            lift $ modifySTRef killers (M.insert (gameHalfmove game) move)
+            when (isNothing (getPiece (moveTo move) (boardPieces board))) $
+              lift $
+                modifySTRef killers (addKiller (gameHalfmove game) move)
             pure (NodeResult nodeScore CutNode, move)
           else flip (go False) movesRest $
             case best of
