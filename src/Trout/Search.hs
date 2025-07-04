@@ -37,7 +37,7 @@ import Trout.Search.Node (NodeResult (..), NodeType (..))
 import Trout.Search.PieceSquareTables (pstEval)
 import Trout.Search.TranspositionTable (STTranspositionTable, TTEntry (..))
 import Trout.Search.TranspositionTable qualified as TT
-import Trout.Search.Worthiness (drawWorth, lossWorth, pieceWorth, winWorth)
+import Trout.Search.Worthiness (drawWorth, lossWorth, pieceWorth)
 
 maxKillers :: Int
 maxKillers = 3
@@ -180,26 +180,25 @@ bestMove :: Int16 -> Game -> ReaderT (SearchEnv s) (ST s) (Int, Move)
 bestMove depth game = do
   (SearchEnv {searchEnvTT = tt, searchEnvKillers = killersRef}) <- ask
   lift $ modifySTRef killersRef (cleanKillers (gameHalfmove game))
-  -- guess <- maybe 0 (nodeResScore . entryNode) <$> lift (TT.lookup (gameBoard game) tt)
-  -- _ <- aspirate depth guess game
-  score <- searchPVS depth depth lossWorth winWorth True game
+  guess <- maybe 0 (nodeResScore . entryScore) <$> lift (TT.lookup (gameBoard game) tt)
+  score <- aspirate depth guess game
   maybeEntry <- lift (TT.lookup (gameBoard game) tt)
   case maybeEntry of
     Just (TTEntry {entryMove = move}) ->
       pure (score * colorSign (boardTurn (gameBoard game)), move)
     Nothing -> error "no entry"
 
-_aspirate :: Int16 -> Int -> Game -> ReaderT (SearchEnv s) (ST s) Int
-_aspirate depth !initialGuess !game = go 50 50
+aspirate :: Int16 -> Int -> Game -> ReaderT (SearchEnv s) (ST s) Int
+aspirate depth !initialGuess !game = go 25 25
   where
     go :: Int -> Int -> ReaderT (SearchEnv s) (ST s) Int
     go lowerMargin upperMargin = do
       result <- searchPVS depth depth lower upper True game
       if result <= lower
-        then go (lowerMargin * 2) upperMargin
+        then go (lowerMargin * 4) upperMargin
         else
           if result >= upper
-            then go lowerMargin (upperMargin * 2)
+            then go lowerMargin (upperMargin * 4)
             else pure result
       where
         lower = initialGuess - lowerMargin
