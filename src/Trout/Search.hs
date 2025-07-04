@@ -9,15 +9,15 @@ module Trout.Search
   )
 where
 
-import Control.Monad (join, when)
+import Control.Monad (join, unless)
 import Control.Monad.ST (ST)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Reader (ReaderT, ask)
-import Data.Foldable (find, maximumBy)
+import Data.Foldable (find, maximumBy, traverse_)
 import Data.Int (Int16)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as M
-import Data.Maybe (fromJust, isNothing, maybeToList)
+import Data.Maybe (fromJust, isJust, maybeToList)
 import Data.Ord (comparing)
 import Data.STRef (STRef, modifySTRef, newSTRef, readSTRef, writeSTRef)
 import Data.Vector.Primitive.Mutable (STVector)
@@ -49,10 +49,12 @@ type KillerMap = Map Int16 [Move]
 maxHistory :: Int
 maxHistory = 1000000000
 
+type HistoryTable s = STVector s Int
+
 data SearchEnv s = SearchEnv
   { searchEnvTT :: !(STTranspositionTable s),
     searchEnvKillers :: !(STRef s KillerMap),
-    searchEnvHistory :: !(STVector s Int)
+    searchEnvHistory :: !(HistoryTable s)
   }
 
 newEnv :: Int -> ST s (SearchEnv s)
@@ -228,6 +230,20 @@ addKiller halfmove move =
       | length xs == maxKillers = init xs
       | otherwise = xs
 
+historyIdx :: Color -> Move -> Int
+historyIdx color move =
+  fromEnum color * 6 * 64
+    + fromEnum (movePiece move) * 64
+    + fromEnum (moveTo move)
+
+addHistory :: Int -> Int -> HistoryTable s -> ST s ()
+addHistory key bonus history =
+  MV.modify
+    history
+    -- curr + bonus * (1 - |curr| / maxHistory)
+    (\curr -> curr + bonus - (bonus * abs curr) `quot` maxHistory)
+    key
+
 nullReduction :: Int16
 nullReduction = 3
 
@@ -270,7 +286,7 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
                     maybeToList ((maxHistory + 100000,) <$> maybeTTMove)
                       ++ ((maxHistory + 1,) <$> killerMoves)
               scoredMoves <- lift $ moveOrderer staticScores history gameMoves
-              (bResult, bMove) <- go True Nothing scoredMoves
+              (bResult, bMove) <- go True scoredMoves [] Nothing
               lift $ TT.insert board (TTEntry bResult bMove (gameHalfmove game) depth) tt
               pure (nodeResScore bResult)
   where
@@ -302,7 +318,7 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
                 then Just (nodeResScore nodeScore)
                 else Nothing
 
-    moveOrderer :: [(Int, Move)] -> STVector s Int -> [Move] -> ST s [(Int, Move)]
+    moveOrderer :: [(Int, Move)] -> HistoryTable s -> [Move] -> ST s [(Int, Move)]
     moveOrderer _ _ [] = pure []
     moveOrderer targetMoves history (move : moves) = case targetMatch of
       Just match -> (match :) <$> moveOrderer (filter ((/= move) . snd) targetMoves) history moves
@@ -314,25 +330,20 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
         seeScore = seeOfCapture board move
         boringScore =
           if seeScore == 0
-            then MV.read history (historyIdx move)
+            then MV.read history (historyIdx (boardTurn board) move)
             else pure (seeScore + signum seeScore * maxHistory)
 
-    historyIdx move =
-      fromEnum (boardTurn board) * 6 * 64
-        + fromEnum (movePiece move) * 64
-        + fromEnum (moveTo move)
-
-    go :: Bool -> Maybe (Int, Move) -> [(Int, Move)] -> ReaderT (SearchEnv s) (ST s) (NodeResult, Move)
+    go :: Bool -> [(Int, Move)] -> [Move] -> Maybe (Int, Move) -> ReaderT (SearchEnv s) (ST s) (NodeResult, Move)
     -- no valid moves (stalemate, checkmate checks)
     -- bestScore is nothing if all moves are illegal
-    go _ Nothing []
+    go _ [] _ Nothing
       | inCheck (boardTurn board) (boardPieces board) = pure (NodeResult lossWorth AllNode, NullMove)
       | otherwise = pure (mkNodeResult alpha beta drawWorth, NullMove)
     -- bestScore tracks the best score among moves, but separate from real alpha
     -- this way we keep track of realer score and not alpha cutoff (fail-soft)
-    go _ (Just (bestScore, bMove)) [] = pure (mkNodeResult alpha beta bestScore, bMove)
-    go leftmost best moves = case makeMove game move of
-      Nothing -> go True best movesRest
+    go _ [] _ (Just (bestScore, bMove)) = pure (mkNodeResult alpha beta bestScore, bMove)
+    go leftmost moves quiets best = case makeMove game move of
+      Nothing -> go True movesRest quiets best
       Just moveMade -> do
         let trueAlpha = maybe alpha (max alpha . fst) best
         nodeScore <-
@@ -346,18 +357,27 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
                 else pure score
         if nodeScore >= beta
           then do
-            -- noncapture
-            when (isNothing (getPiece (moveTo move) (boardPieces board))) $ do
+            unless isCapture $ do
               (SearchEnv {searchEnvKillers = killers, searchEnvHistory = history}) <- ask
               lift $ modifySTRef killers (addKiller (gameHalfmove game) move)
-              lift $ MV.modify history (min maxHistory . (+ fromIntegral (depth * depth))) (historyIdx move)
+              let bonus = fromIntegral depth * fromIntegral depth
+              lift $
+                addHistory
+                  (historyIdx (boardTurn board) move)
+                  bonus
+                  history
+              -- penalize quiets that didn't fail high
+              lift $ traverse_ (\q -> addHistory (historyIdx (boardTurn board) q) (-bonus) history) quiets
             pure (NodeResult nodeScore CutNode, move)
-          else flip (go False) movesRest $
-            case best of
-              Just (bScore, _) ->
-                if bScore < nodeScore
-                  then Just (nodeScore, move)
-                  else best
-              Nothing -> Just (nodeScore, move)
+          else
+            let newQuiets = if isCapture then quiets else move : quiets
+             in go False movesRest newQuiets $
+                  case best of
+                    Just (bScore, _) ->
+                      if bScore < nodeScore
+                        then Just (nodeScore, move)
+                        else best
+                    Nothing -> Just (nodeScore, move)
       where
+        isCapture = isJust (getPiece (moveTo move) (boardPieces board))
         (move, movesRest) = singleSelect moves
