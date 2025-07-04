@@ -1,5 +1,7 @@
 # trout
 
+![](trout.png)
+
 A chess engine in Haskell. Haskell, as it turns out, is not the best language to write a chess engine in.
 
 ## Features
