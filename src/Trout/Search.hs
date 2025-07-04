@@ -47,7 +47,7 @@ maxKillers = 3
 type KillerMap = Map Int16 [Move]
 
 maxHistory :: Int
-maxHistory = 1000000000
+maxHistory = 1000
 
 type HistoryTable s = STVector s Int
 
@@ -240,8 +240,8 @@ addHistory :: Int -> Int -> HistoryTable s -> ST s ()
 addHistory key bonus history =
   MV.modify
     history
-    -- curr + bonus * (1 - |curr| / maxHistory)
-    (\curr -> curr + bonus - (bonus * abs curr) `quot` maxHistory)
+    -- curr + bonus * abs (signum bonus - curr `quot` maxHistory)
+    (\curr -> curr + signum bonus * abs (bonus - abs bonus * curr `quot` maxHistory))
     key
 
 nullReduction :: Int16
