@@ -252,14 +252,26 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
         Just res -> pure res
         Nothing -> do
           (SearchEnv {searchEnvTT = tt, searchEnvKillers = killers}) <- ask
-          maybeTTMove <- lift (fmap entryMove <$> TT.lookup board tt)
-          killerM <- lift (readSTRef killers)
-          let killerMoves = join $ maybeToList $ M.lookup (gameHalfmove game) killerM
-          let gameMoves = allMoves board
-          let scoredMoves = moveOrderer maybeTTMove killerMoves gameMoves
-          (bResult, bMove) <- go True Nothing scoredMoves
-          lift $ TT.insert board (TTEntry bResult bMove (gameHalfmove game) depth) tt
-          pure (nodeResScore bResult)
+          maybeTTEntry <- lift (TT.lookup board tt)
+          let maybeTTMove = entryMove <$> maybeTTEntry
+          if maybe
+            False
+            ( \entry ->
+                let t = nodeResType (entryScore entry)
+                    s = nodeResScore (entryScore entry)
+                    d = entryDepth entry
+                 in d >= depth && (t == ExactNode || t == AllNode && s <= alpha || t == CutNode && s >= beta)
+            )
+            maybeTTEntry
+            then pure $ nodeResScore $ entryScore $ fromJust maybeTTEntry
+            else do
+              killerM <- lift (readSTRef killers)
+              let killerMoves = join $ maybeToList $ M.lookup (gameHalfmove game) killerM
+              let gameMoves = allMoves board
+              let scoredMoves = moveOrderer maybeTTMove killerMoves gameMoves
+              (bResult, bMove) <- go True Nothing scoredMoves
+              lift $ TT.insert board (TTEntry bResult bMove (gameHalfmove game) depth) tt
+              pure (nodeResScore bResult)
   where
     board = gameBoard game
 
