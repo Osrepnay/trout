@@ -12,6 +12,7 @@ A chess engine in Haskell. Haskell, as it turns out, is not the best language to
 - Quiescence search
 - Transposition table move ordering
 - Killer heuristic move ordering
+- History heuristic move ordering
 - Static exchange evaluation move ordering
 - PeSTO eval
 - [En passant](https://en.wikipedia.org/wiki/En_passant)

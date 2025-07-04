@@ -264,9 +264,8 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
           case checkTTCut maybeTTEntry of
             Just score -> pure score
             Nothing -> do
-              killerM <- lift (readSTRef killers)
-              let killerMoves = join $ maybeToList $ M.lookup (gameHalfmove game) killerM
-              let gameMoves = allMoves board
+              killerMap <- lift (readSTRef killers)
+              let killerMoves = join $ maybeToList $ M.lookup (gameHalfmove game) killerMap
               let staticScores =
                     maybeToList ((maxHistory + 100000,) <$> maybeTTMove)
                       ++ ((maxHistory + 1,) <$> killerMoves)
@@ -276,6 +275,8 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
               pure (nodeResScore bResult)
   where
     board = gameBoard game
+
+    gameMoves = allMoves board
 
     checkNullMove = case makeMove game NullMove of
       Just nullGame -> do
@@ -295,7 +296,9 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
               t = nodeResType nodeScore
               s = nodeResScore nodeScore
               d = entryDepth entry
-           in if d >= depth && (t == ExactNode || t == AllNode && s <= alpha || t == CutNode && s >= beta)
+           in if entryMove entry `elem` gameMoves
+                && d >= depth
+                && (t == ExactNode || t == AllNode && s <= alpha || t == CutNode && s >= beta)
                 then Just (nodeResScore nodeScore)
                 else Nothing
 
@@ -314,7 +317,10 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
             then MV.read history (historyIdx move)
             else pure (seeScore + signum seeScore * maxHistory)
 
-    historyIdx move = fromEnum (boardTurn board) * 6 * 64 + fromEnum (movePiece move) * 64 + fromEnum (moveTo move)
+    historyIdx move =
+      fromEnum (boardTurn board) * 6 * 64
+        + fromEnum (movePiece move) * 64
+        + fromEnum (moveTo move)
 
     go :: Bool -> Maybe (Int, Move) -> [(Int, Move)] -> ReaderT (SearchEnv s) (ST s) (NodeResult, Move)
     -- no valid moves (stalemate, checkmate checks)
@@ -343,8 +349,7 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
             -- noncapture
             when (isNothing (getPiece (moveTo move) (boardPieces board))) $ do
               (SearchEnv {searchEnvKillers = killers, searchEnvHistory = history}) <- ask
-              lift $
-                modifySTRef killers (addKiller (gameHalfmove game) move)
+              lift $ modifySTRef killers (addKiller (gameHalfmove game) move)
               lift $ MV.modify history (min maxHistory . (+ fromIntegral (depth * depth))) (historyIdx move)
             pure (NodeResult nodeScore CutNode, move)
           else flip (go False) movesRest $
