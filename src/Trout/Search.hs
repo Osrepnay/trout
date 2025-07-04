@@ -13,7 +13,7 @@ import Control.Monad (join, when)
 import Control.Monad.ST (ST)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Reader (ReaderT, ask)
-import Data.Foldable (maximumBy)
+import Data.Foldable (find, maximumBy)
 import Data.Int (Int16)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as M
@@ -254,21 +254,13 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
           (SearchEnv {searchEnvTT = tt, searchEnvKillers = killers}) <- ask
           maybeTTEntry <- lift (TT.lookup board tt)
           let maybeTTMove = entryMove <$> maybeTTEntry
-          if maybe
-            False
-            ( \entry ->
-                let t = nodeResType (entryScore entry)
-                    s = nodeResScore (entryScore entry)
-                    d = entryDepth entry
-                 in d >= depth && (t == ExactNode || t == AllNode && s <= alpha || t == CutNode && s >= beta)
-            )
-            maybeTTEntry
-            then pure $ nodeResScore $ entryScore $ fromJust maybeTTEntry
-            else do
+          case checkTTCut maybeTTEntry of
+            Just score -> pure score
+            Nothing -> do
               killerM <- lift (readSTRef killers)
               let killerMoves = join $ maybeToList $ M.lookup (gameHalfmove game) killerM
               let gameMoves = allMoves board
-              let scoredMoves = moveOrderer maybeTTMove killerMoves gameMoves
+              let scoredMoves = moveOrderer (maybeToList ((100000,) <$> maybeTTMove) ++ ((1,) <$> killerMoves)) gameMoves
               (bResult, bMove) <- go True Nothing scoredMoves
               lift $ TT.insert board (TTEntry bResult bMove (gameHalfmove game) depth) tt
               pure (nodeResScore bResult)
@@ -286,22 +278,24 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
           else pure Nothing
       Nothing -> pure Nothing
 
-    moveOrderer :: Maybe Move -> [Move] -> [Move] -> [(Int, Move)]
-    moveOrderer _ _ [] = []
-    moveOrderer ttMoveMaybe killerMoves (move : moves) = tt
+    checkTTCut maybeEntry =
+      maybeEntry
+        >>= \entry ->
+          let nodeScore = entryScore entry
+              t = nodeResType nodeScore
+              s = nodeResScore nodeScore
+              d = entryDepth entry
+           in if d >= depth && (t == ExactNode || t == AllNode && s <= alpha || t == CutNode && s >= beta)
+                then Just (nodeResScore nodeScore)
+                else Nothing
+
+    moveOrderer :: [(Int, Move)] -> [Move] -> [(Int, Move)]
+    moveOrderer _ [] = []
+    moveOrderer targetMoves (move : moves) = case targetMatch of
+      Just match -> match : moveOrderer (filter ((/= move) . snd) targetMoves) moves
+      Nothing -> (seeOfCapture board move, move) : moveOrderer targetMoves moves
       where
-        -- first try tt, then killer, then static exchange eval
-        tt = case ttMoveMaybe of
-          Just ttMove ->
-            if ttMove == move
-              then (100000, ttMove) : moveOrderer Nothing killerMoves moves
-              else killer
-          Nothing -> killer
-        killer =
-          if move `elem` killerMoves
-            then (1, move) : moveOrderer ttMoveMaybe (filter (/= move) killerMoves) moves
-            else seeScored
-        seeScored = (seeOfCapture board move, move) : moveOrderer ttMoveMaybe killerMoves moves
+        targetMatch = find ((== move) . snd) targetMoves
 
     go :: Bool -> Maybe (Int, Move) -> [(Int, Move)] -> ReaderT (SearchEnv s) (ST s) (NodeResult, Move)
     -- no valid moves (stalemate, checkmate checks)
