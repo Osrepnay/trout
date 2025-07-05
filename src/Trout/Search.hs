@@ -281,12 +281,12 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
             Just score -> pure score
             Nothing -> do
               killerMap <- lift (readSTRef killers)
-              let killerMoves = join $ maybeToList $ M.lookup (gameHalfmove game) killerMap
+              let killerMoves = join $ maybeToList (M.lookup (gameHalfmove game) killerMap)
               let staticScores =
                     maybeToList ((maxHistory + 100000,) <$> maybeTTMove)
-                      ++ ((maxHistory + 1,) <$> killerMoves)
+                      ++ ((maxHistory + 2,) <$> killerMoves)
               scoredMoves <- lift $ moveOrderer staticScores history gameMoves
-              (bResult, bMove) <- go True scoredMoves [] Nothing
+              (bResult, bMove) <- go 0 scoredMoves [] Nothing
               lift $ TT.insert board (TTEntry bResult bMove (gameHalfmove game) depth) tt
               pure (nodeResScore bResult)
   where
@@ -333,7 +333,7 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
             then MV.read history (historyIdx (boardTurn board) move)
             else pure (seeScore + signum seeScore * maxHistory)
 
-    go :: Bool -> [(Int, Move)] -> [Move] -> Maybe (Int, Move) -> ReaderT (SearchEnv s) (ST s) (NodeResult, Move)
+    go :: Int -> [(Int, Move)] -> [Move] -> Maybe (Int, Move) -> ReaderT (SearchEnv s) (ST s) (NodeResult, Move)
     -- no valid moves (stalemate, checkmate checks)
     -- bestScore is nothing if all moves are illegal
     go _ [] _ Nothing
@@ -342,18 +342,19 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
     -- bestScore tracks the best score among moves, but separate from real alpha
     -- this way we keep track of realer score and not alpha cutoff (fail-soft)
     go _ [] _ (Just (bestScore, bMove)) = pure (mkNodeResult alpha beta bestScore, bMove)
-    go leftmost moves quiets best = case makeMove game move of
-      Nothing -> go True movesRest quiets best
+    go nth moves quiets best = case makeMove game move of
+      Nothing -> go nth movesRest quiets best
       Just moveMade -> do
         let trueAlpha = maybe alpha (max alpha . fst) best
+        let newDepth = if nth > 3 then depth - 2 else depth - 1
         nodeScore <-
-          if leftmost
-            then negate <$> searchPVS startingDepth (depth - 1) (-beta) (-trueAlpha) isPV moveMade
+          if nth == 0
+            then negate <$> searchPVS startingDepth newDepth (-beta) (-trueAlpha) isPV moveMade
             else do
-              score <- negate <$> searchPVS startingDepth (depth - 1) (-trueAlpha - 1) (-trueAlpha) False moveMade
+              score <- negate <$> searchPVS startingDepth newDepth (-trueAlpha - 1) (-trueAlpha) False moveMade
               -- don't research if non-pv branch, some older relative will research anyways
               if score >= (trueAlpha + 1) && isPV
-                then negate <$> searchPVS startingDepth (depth - 1) (-beta) (-trueAlpha) True moveMade
+                then negate <$> searchPVS startingDepth newDepth (-beta) (-trueAlpha) True moveMade
                 else pure score
         if nodeScore >= beta
           then do
@@ -371,7 +372,7 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
             pure (NodeResult nodeScore CutNode, move)
           else
             let newQuiets = if isCapture then quiets else move : quiets
-             in go False movesRest newQuiets $
+             in go (nth + 1) movesRest newQuiets $
                   case best of
                     Just (bScore, _) ->
                       if bScore < nodeScore
