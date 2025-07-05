@@ -346,15 +346,19 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
       Nothing -> go nth movesRest quiets best
       Just moveMade -> do
         let trueAlpha = maybe alpha (max alpha . fst) best
-        let newDepth = if nth > 3 then depth - 2 else depth - 1
         nodeScore <-
           if nth == 0
-            then negate <$> searchPVS startingDepth newDepth (-beta) (-trueAlpha) isPV moveMade
+            then negate <$> searchPVS startingDepth (depth - 1) (-beta) (-trueAlpha) isPV moveMade
             else do
+              let isLMR = nth > 3 && depth >= 2
+              let newDepth =
+                    if isLMR
+                      then depth - 2
+                      else depth - 1
               score <- negate <$> searchPVS startingDepth newDepth (-trueAlpha - 1) (-trueAlpha) False moveMade
               -- don't research if non-pv branch, some older relative will research anyways
-              if score >= (trueAlpha + 1) && isPV
-                then negate <$> searchPVS startingDepth newDepth (-beta) (-trueAlpha) True moveMade
+              if score >= (trueAlpha + 1) && (isPV || isLMR)
+                then negate <$> searchPVS startingDepth (depth - 1) (-beta) (-trueAlpha) True moveMade
                 else pure score
         if nodeScore >= beta
           then do
