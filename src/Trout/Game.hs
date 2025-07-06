@@ -45,6 +45,7 @@ import Trout.Game.Board
     getPiece,
     occupancy,
     pieceBitboard,
+    pieceTypeBitboard,
     removePiece,
   )
 import Trout.Game.Move (Move (..), SpecialMove (..))
@@ -131,7 +132,17 @@ startingGame =
 -- non-stalemate draws
 isDrawn :: Game -> Bool
 isDrawn (Game {game50MovePlies = plies, gameHistory = history, gameBoard = board}) =
-  plies >= 50 * 2 || maybe False (>= 1) (HM.lookup board history)
+  plies >= 50 * 2
+    || maybe False (>= 1) (HM.lookup board history)
+    || insufficient
+  where
+    pieces = boardPieces board
+    insufficient =
+      pieceTypeBitboard Pawn pieces == 0
+        && pieceTypeBitboard Rook pieces == 0
+        && pieceTypeBitboard Queen pieces == 0
+        && popCount (pieceBitboard (Piece White Knight) pieces .|. pieceBitboard (Piece White Bishop) pieces) == 1
+        && popCount (pieceBitboard (Piece Black Knight) pieces .|. pieceBitboard (Piece Black Bishop) pieces) == 1
 
 allMoves :: Board -> [Move]
 allMoves (Board pieces castling enPassant turn _) =

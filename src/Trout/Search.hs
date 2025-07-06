@@ -120,8 +120,8 @@ seeOfCapture board move = case getPiece (moveTo move) (boardPieces board) of
 -- 24: all pieces, 0: none
 -- pawns don't count, bishops and knights count 1, rooks 2, queens 4
 -- taken from pesto/ethereal/fruit
-gamePhase :: Game -> Int
-gamePhase game =
+totalMaterialScore :: Game -> Int
+totalMaterialScore game =
   popCount (pieceTypeBitboard Knight pieces .|. pieceTypeBitboard Bishop pieces)
     + 2 * popCount (pieceTypeBitboard Rook pieces)
     + 4 * popCount (pieceTypeBitboard Queen pieces)
@@ -129,13 +129,25 @@ gamePhase game =
     board = gameBoard game
     pieces = boardPieces board
 
+-- for current side
+materialScore :: Game -> Int
+materialScore game =
+  popCount (getBB Knight .|. getBB Bishop)
+    + 2 * popCount (getBB Rook)
+    + 4 * popCount (getBB Queen)
+  where
+    getBB p = pieceBitboard (Piece turn p) pieces
+    board = gameBoard game
+    pieces = boardPieces board
+    turn = boardTurn board
+
 eval :: Game -> Int
 eval game = colorSign (boardTurn board) * (pstEvalValue + mobilityValue)
   where
     board = gameBoard game
     pieces = boardPieces board
     getBB color = ($ pieces) . pieceBitboard . Piece color
-    mgPhase = gamePhase game
+    mgPhase = totalMaterialScore game
     egPhase = 24 - mgPhase
     pst bb p = pstEval bb p mgPhase egPhase
     pstEvalValue =
@@ -309,7 +321,7 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
 
     checkNullMove = case makeMove game NullMove of
       Just nullGame -> do
-        if gamePhase game >= 1 && not isPV
+        if materialScore game >= 1 && not isPV
           then do
             nullScore <- negate <$> searchPVS startingDepth (depth - nullReduction) (-beta) (-beta + 1) isPV nullGame
             if nullScore >= beta
