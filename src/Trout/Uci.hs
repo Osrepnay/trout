@@ -24,6 +24,7 @@ import Data.Maybe (fromMaybe)
 import System.IO (hFlush, hPutStrLn, stderr, stdout)
 import System.Timeout (timeout)
 import Text.Printf (printf)
+import Text.Read (readEither)
 import Trout.Fen.Parse (fenToGame)
 import Trout.Game
   ( Game (..),
@@ -60,6 +61,12 @@ newUciState :: IO UciState
 newUciState =
   UciState startingGame False Nothing
     <$> (stToIO (newEnv (16000000 `quot` sizeOfEntry)) >>= newMVar)
+
+modUciStateHash :: Int -> UciState -> IO UciState
+modUciStateHash hashMB state = do
+  newSearchEnv <- stToIO (newEnv (hashMB * 1000000 `quot` sizeOfEntry))
+  var <- newMVar newSearchEnv
+  pure $ state {uciSearchEnv = var}
 
 data PlayerTime = PlayerTime
   { playerTime :: Int,
@@ -127,6 +134,8 @@ doUci uciState = do
     Right CommUci -> do
       putStrLn "id name Trout"
       putStrLn "id author Osrepnay"
+      putStrLn $ "option name Hash type spin default 16 min 1 max " ++ show (maxBound :: Int)
+      putStrLn "option"
       putStrLn "uciok"
       hFlush stdout
       doUci uciState
@@ -139,10 +148,18 @@ doUci uciState = do
       putStrLn "readyok"
       hFlush stdout
       doUci uciState
-    Right (CommSetoption _ _) -> do
-      hPutStrLn stderr "option not supported"
-      hFlush stderr
-      doUci uciState
+    Right (CommSetoption name value) -> do
+      uciState' <- case name of
+        "Hash" -> case readEither value of
+          Left err -> do
+            hPutStrLn stderr err
+            pure uciState
+          Right hashMB -> modUciStateHash hashMB uciState
+        _ -> do
+          hPutStrLn stderr $ "option not supported" ++ name
+          hFlush stderr
+          pure uciState
+      doUci uciState'
     Right (CommRegister _) -> doUci uciState
     Right CommUcinewgame -> do
       let envMVar = uciSearchEnv uciState

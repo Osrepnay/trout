@@ -116,9 +116,10 @@ parseSetoption =
     <$> ( string' "setoption"
             *> spaces1
             *> string "name"
-            *> manyTill anyChar (string' "value")
+            *> spaces1
+            *> manyTill anyChar (try (spaces1 *> string' "value"))
         )
-    <*> many anyChar
+    <*> (spaces1 *> many anyChar)
     <* commBreak
 
 -- garbage command for normie engines!
