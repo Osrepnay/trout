@@ -6,6 +6,7 @@ module Trout.Game
     isDrawn,
     allMoves,
     allCaptures,
+    mobility,
     squareAttackers,
     inCheck,
     makeMove,
@@ -24,6 +25,7 @@ import Trout.Bitboard
     countTrailingZeros,
     fileA,
     fileH,
+    popCount,
     toSqs,
     (!<<.),
     (!>>.),
@@ -164,6 +166,25 @@ allCaptures (Board pieces _ enPassant turn _) =
     myBlock = colorOccupancy turn pieces
     pieceBB = ($ pieces) . pieceBitboard . Piece turn
     moveSqs mover = mapOnes (mover block myBlock)
+
+-- these all pretend players can capture their own pieces because that's good for protection
+-- it's untested if this is actually better though
+-- it's definitely easier
+mobility :: Board -> Piece -> Int
+mobility (Board {boardPieces = pieces, boardEnPassant = enP}) (Piece color pieceType) = case pieceType of
+  -- TODO not as efficient because generates moves but it's small (?)
+  Pawn -> length $ pawnsMoves enP color block 0 (pieceBB Pawn) []
+  Knight -> sum $ popCount <$> mapOnes (knightTable !) (pieceBB Knight) []
+  Bishop -> sum $ popCount <$> mapOnes (bishopMovesMagic block) (pieceBB Bishop) []
+  Rook -> sum $ popCount <$> mapOnes (rookMovesMagic block) (pieceBB Rook) []
+  Queen ->
+    sum $
+      popCount
+        <$> mapOnes (\sq -> bishopMovesMagic block sq .|. rookMovesMagic block sq) (pieceBB Queen) []
+  King -> sum $ popCount <$> mapOnes (kingTable !) (pieceBB King) []
+  where
+    block = occupancy pieces
+    pieceBB = ($ pieces) . pieceBitboard . Piece color
 
 -- smallest first, for SEE
 squareAttackers :: Color -> Pieces -> Int -> [Int]

@@ -30,6 +30,7 @@ import Trout.Game
     inCheck,
     isDrawn,
     makeMove,
+    mobility,
     squareAttackers,
   )
 import Trout.Game.Board (Board (..), addPiece, getPiece, pieceBitboard, pieceTypeBitboard, removePiece)
@@ -129,7 +130,7 @@ gamePhase game =
     pieces = boardPieces board
 
 eval :: Game -> Int
-eval game = colorSign (boardTurn board) * pstEvalValue
+eval game = colorSign (boardTurn board) * (pstEvalValue + mobilityValue)
   where
     board = gameBoard game
     pieces = boardPieces board
@@ -150,6 +151,14 @@ eval game = colorSign (boardTurn board) * pstEvalValue
         - pst (getBB Black Queen) Queen 56
         + pst (getBB White King) King 0
         - pst (getBB Black King) King 56
+
+    mobilityPieces = [Knight, Bishop, Rook]
+    mobilityValue =
+      sum
+        [ colorSign c * mobility board (Piece c p)
+        | c <- [White, Black],
+          p <- mobilityPieces
+        ]
 
 -- selection for move ordering
 singleSelect :: [(Int, Move)] -> (Move, [(Int, Move)])
