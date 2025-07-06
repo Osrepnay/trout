@@ -14,6 +14,7 @@ import Control.Monad.ST (ST)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Reader (ReaderT, ask)
 import Data.Foldable (find, maximumBy, traverse_)
+import Data.Functor ((<&>))
 import Data.Int (Int16)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as M
@@ -34,13 +35,13 @@ import Trout.Game
     squareAttackers,
   )
 import Trout.Game.Board (Board (..), addPiece, getPiece, pieceBitboard, pieceTypeBitboard, removePiece)
-import Trout.Game.Move (Move (..))
+import Trout.Game.Move (Move (..), SpecialMove (EnPassant))
 import Trout.Piece (Color (..), Piece (..), PieceType (..), colorSign)
 import Trout.Search.Node (NodeResult (..), NodeType (..))
 import Trout.Search.PieceSquareTables (pstEval)
 import Trout.Search.TranspositionTable (STTranspositionTable, TTEntry (..))
 import Trout.Search.TranspositionTable qualified as TT
-import Trout.Search.Worthiness (drawWorth, lossWorth, pieceWorth)
+import Trout.Search.Worthiness (drawWorth, lossWorth, pawnWorth, pieceWorth)
 
 maxKillers :: Int
 maxKillers = 3
@@ -105,15 +106,30 @@ staticExchEval board sq = case getPiece sq pieces of
     attackers = squareAttackers (boardTurn board) pieces sq
 
 -- static exchange eval
-seeOfCapture :: Board -> Move -> Int
-seeOfCapture board move = case getPiece (moveTo move) (boardPieces board) of
-  Just captured ->
-    let pieceAttacker = fromJust (getPiece (moveFrom move) pieces)
-        newPieces = addPiece pieceAttacker (moveTo move) (removePiece (moveFrom move) pieces)
-        newBoard = board {boardPieces = newPieces}
-        worthCaptured = pieceWorth (pieceType captured)
-     in max (worthCaptured - staticExchEval newBoard (moveTo move)) 0
-  Nothing -> 0
+seeOfCapture :: Board -> Move -> Maybe Int
+-- en passant doesn't capture on the square
+-- this is a little fragile because staticExchEval doesn't recognize en passant
+-- but because this is always called first and en passant can't happen after a capture
+-- it should be technically safe
+seeOfCapture board (Move Pawn (EnPassant target) from to) =
+  Just $
+    max (pawnWorth - staticExchEval newBoard to) 0
+  where
+    pieces = boardPieces board
+    pieceAttacker = fromJust (getPiece from pieces)
+    newPieces =
+      removePiece target $
+        addPiece pieceAttacker to $
+          removePiece from pieces
+    newBoard = board {boardPieces = newPieces}
+seeOfCapture board move =
+  getPiece (moveTo move) (boardPieces board)
+    <&> \captured ->
+      let pieceAttacker = fromJust (getPiece (moveFrom move) pieces)
+          newPieces = addPiece pieceAttacker (moveTo move) (removePiece (moveFrom move) pieces)
+          newBoard = board {boardPieces = newPieces}
+          worthCaptured = pieceWorth (pieceType captured)
+       in max (worthCaptured - staticExchEval newBoard (moveTo move)) 0
   where
     pieces = boardPieces board
 
@@ -182,7 +198,11 @@ quieSearch :: Int -> Int -> Game -> ReaderT (SearchEnv s) (ST s) Int
 quieSearch !alpha !beta !game
   -- stand-pat from null-move observation (eval immediately = not moving)
   | staticEval >= beta = pure staticEval
-  | otherwise = go staticEval (filter ((>= 0) . fst) ((\m -> (seeOfCapture board m, m)) <$> allCaptures board))
+  | otherwise =
+      go
+        staticEval
+        -- seeOfCapture should never be maybe because it's captures only
+        (filter ((>= 0) . fst) ((\m -> (fromJust (seeOfCapture board m), m)) <$> allCaptures board))
   where
     staticEval = eval game
     board = gameBoard game
@@ -275,8 +295,9 @@ mkNodeResult alpha beta score
   | otherwise = NodeResult score ExactNode
 
 searchPVS :: Int16 -> Int16 -> Int -> Int -> Bool -> Game -> ReaderT (SearchEnv s) (ST s) Int
-searchPVS startingDepth 0 !alpha !beta _ !game
+searchPVS startingDepth 0 !alpha !beta !isPV !game
   | isDrawn game && startingDepth /= 0 = pure 0
+  | inCheck (boardTurn board) (boardPieces board) = searchPVS startingDepth 1 alpha beta isPV game
   | otherwise = do
       (SearchEnv {searchEnvTT = tt}) <- ask
       score <- quieSearch alpha beta game
@@ -286,6 +307,8 @@ searchPVS startingDepth 0 !alpha !beta _ !game
           (TTEntry (mkNodeResult alpha beta score) NullMove (gameHalfmove game) 0)
           tt
       pure score
+  where
+    board = gameBoard game
 searchPVS startingDepth depth !alpha !beta !isPV !game
   | depth < 0 = searchPVS startingDepth 0 alpha beta isPV game
   | isDrawn game && startingDepth /= depth = pure 0
@@ -305,7 +328,7 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
               let killerMoves = join $ maybeToList (M.lookup (gameHalfmove game) killerMap)
               let staticScores =
                     maybeToList ((maxHistory + 100000,) <$> maybeTTMove)
-                      ++ ((maxHistory + 2,) <$> killerMoves)
+                      ++ ((maxHistory + 1,) <$> killerMoves)
               scoredMoves <- lift $ moveOrderer staticScores history gameMoves
               (bResult, bMove) <- go 0 scoredMoves [] Nothing
               let newEntry = TTEntry bResult bMove (gameHalfmove game) depth
@@ -343,6 +366,7 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
                 then Just (nodeResScore nodeScore)
                 else Nothing
 
+    -- ordering: tt, neutral and positive captures, quiets (killer then history), negative captures
     moveOrderer :: [(Int, Move)] -> HistoryTable s -> [Move] -> ST s [(Int, Move)]
     moveOrderer _ _ [] = pure []
     moveOrderer targetMoves history (move : moves) = case targetMatch of
@@ -352,7 +376,8 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
         ((boring, move) :) <$> moveOrderer targetMoves history moves
       where
         targetMatch = find ((== move) . snd) targetMoves
-        seeScore = seeOfCapture board move
+        -- put neutral captures ahead of noncaptures and killers (1)
+        seeScore = maybe 0 (+ 2) (seeOfCapture board move)
         boringScore =
           if seeScore == 0
             then MV.read history (historyIdx (boardTurn board) move)
