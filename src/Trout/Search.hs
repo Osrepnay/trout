@@ -204,7 +204,7 @@ bestMove depth game = do
   maybeEntry <- lift (TT.lookup (gameBoard game) tt)
   case maybeEntry of
     Just (TTEntry {entryMove = move}) ->
-      pure (score * colorSign (boardTurn (gameBoard game)), move)
+      pure (score, move)
     Nothing -> error "no entry"
 
 aspirate :: Int16 -> Int -> Game -> ReaderT (SearchEnv s) (ST s) Int
@@ -296,7 +296,11 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
                       ++ ((maxHistory + 2,) <$> killerMoves)
               scoredMoves <- lift $ moveOrderer staticScores history gameMoves
               (bResult, bMove) <- go 0 scoredMoves [] Nothing
-              lift $ TT.insert board (TTEntry bResult bMove (gameHalfmove game) depth) tt
+              let newEntry = TTEntry bResult bMove (gameHalfmove game) depth
+              -- make sure to save bestmove if root
+              if depth == startingDepth
+                then lift $ TT.basicInsert board newEntry tt
+                else lift $ TT.insert board newEntry tt
               pure (nodeResScore bResult)
   where
     board = gameBoard game

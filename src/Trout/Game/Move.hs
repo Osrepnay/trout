@@ -36,6 +36,7 @@ pattern NullMove = Move Pawn Normal 0 0
 
 -- show uci format of move
 uciShowMove :: Move -> String
+uciShowMove NullMove = "0000"
 uciShowMove (Move _ special from to) =
   uciShowSquare from
     ++ uciShowSquare to

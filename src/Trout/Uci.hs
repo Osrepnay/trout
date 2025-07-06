@@ -87,7 +87,7 @@ defaultSettings =
 reportMove :: MVar Move -> IO ()
 reportMove moveVar = do
   moveMaybe <- tryTakeMVar moveVar
-  let move = maybe "0000" uciShowMove moveMaybe
+  let move = uciShowMove (fromMaybe NullMove moveMaybe)
   putStrLn ("bestmove " ++ move)
   hFlush stdout
 

@@ -4,6 +4,7 @@ module Trout.Search.TranspositionTable
     new,
     clear,
     lookup,
+    basicInsert,
     insert,
     sizeOfEntry,
   )
