@@ -2,19 +2,30 @@
 
 ![](trout.png)
 
-A chess engine in Haskell. Haskell, as it turns out, is not the best language to write a chess engine in.
+A chess engine in Haskell.
+
+If you check the commit history you can see this was started a long, long time ago.
+When I first started this engine I spent way too much time on making the game-management (moving, move generation, etc.) part fast for perft.
+This was a terrible mistake because that section actually has a relatively small impact on overall strength.
+Most comes from search features like pruning, which actually makes a Haskell chess engine more viable than you might think.
+(Haskell is not usually used for extremely performance-sensitive/based applications like chess engines, and in my experience is relatively difficult to get predictable performance from.)
+
+The two other decent ones I've found are [turncoat](https://github.com/albertprz/turncoat) and [Barbarossa](https://github.com/nionita/Barbarossa), check them out!
 
 ## Features
 
 - Magic bitboards
 - Principal variation search
 - Null move pruning
+- Reverse futility pruning
+- Late move reductions
+- Check extensions
 - Quiescence search
 - Transposition table move ordering
 - Killer heuristic move ordering
 - History heuristic move ordering
 - Static exchange evaluation move ordering
-- PeSTO eval
+- PeSTO PST + mobility eval
 - [En passant](https://en.wikipedia.org/wiki/En_passant)
 
 ## Running
