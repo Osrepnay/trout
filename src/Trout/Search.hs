@@ -313,30 +313,33 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
   | depth < 0 = searchPVS startingDepth 0 alpha beta isPV game
   | isDrawn game && startingDepth /= depth = pure 0
   | otherwise = do
-      -- null move pruning
-      nullMoveResult <- checkNullMove
-      case nullMoveResult of
+      case checkFutility of
         Just res -> pure res
         Nothing -> do
-          (SearchEnv {searchEnvTT = tt, searchEnvKillers = killers, searchEnvHistory = history}) <- ask
-          maybeTTEntry <- lift (TT.lookup board tt)
-          let maybeTTMove = entryMove <$> maybeTTEntry
-          case checkTTCut maybeTTEntry of
-            Just score -> pure score
+          -- null move pruning
+          nullMoveResult <- checkNullMove
+          case nullMoveResult of
+            Just res -> pure res
             Nothing -> do
-              killerMap <- lift (readSTRef killers)
-              let killerMoves = join $ maybeToList (M.lookup (gameHalfmove game) killerMap)
-              let staticScores =
-                    maybeToList ((maxHistory + 100000,) <$> maybeTTMove)
-                      ++ ((maxHistory + 1,) <$> killerMoves)
-              scoredMoves <- lift $ moveOrderer staticScores history gameMoves
-              (bResult, bMove) <- go 0 scoredMoves [] Nothing
-              let newEntry = TTEntry bResult bMove (gameHalfmove game) depth
-              -- make sure to save bestmove if root
-              if depth == startingDepth
-                then lift $ TT.basicInsert board newEntry tt
-                else lift $ TT.insert board newEntry tt
-              pure (nodeResScore bResult)
+              (SearchEnv {searchEnvTT = tt, searchEnvKillers = killers, searchEnvHistory = history}) <- ask
+              maybeTTEntry <- lift (TT.lookup board tt)
+              let maybeTTMove = entryMove <$> maybeTTEntry
+              case checkTTCut maybeTTEntry of
+                Just score -> pure score
+                Nothing -> do
+                  killerMap <- lift (readSTRef killers)
+                  let killerMoves = join $ maybeToList (M.lookup (gameHalfmove game) killerMap)
+                  let staticScores =
+                        maybeToList ((maxHistory + 100000,) <$> maybeTTMove)
+                          ++ ((maxHistory + 1,) <$> killerMoves)
+                  scoredMoves <- lift $ moveOrderer staticScores history gameMoves
+                  (bResult, bMove) <- go 0 scoredMoves [] Nothing
+                  let newEntry = TTEntry bResult bMove (gameHalfmove game) depth
+                  -- make sure to save bestmove if root
+                  if depth == startingDepth
+                    then lift $ TT.basicInsert board newEntry tt
+                    else lift $ TT.insert board newEntry tt
+                  pure (nodeResScore bResult)
   where
     board = gameBoard game
 
@@ -352,6 +355,14 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
               else pure Nothing
           else pure Nothing
       Nothing -> pure Nothing
+
+    currentlyChecked = inCheck (boardTurn board) (boardPieces board)
+
+    staticEval = eval game
+
+    checkFutility
+      | not currentlyChecked && staticEval >= beta + fromIntegral depth * 150 = Just staticEval
+      | otherwise = Nothing
 
     checkTTCut maybeEntry =
       maybeEntry
@@ -387,7 +398,7 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
     -- no valid moves (stalemate, checkmate checks)
     -- bestScore is nothing if all moves are illegal
     go _ [] _ Nothing
-      | inCheck (boardTurn board) (boardPieces board) = pure (NodeResult lossWorth AllNode, NullMove)
+      | currentlyChecked = pure (NodeResult lossWorth AllNode, NullMove)
       | otherwise = pure (mkNodeResult alpha beta drawWorth, NullMove)
     -- bestScore tracks the best score among moves, but separate from real alpha
     -- this way we keep track of realer score and not alpha cutoff (fail-soft)
