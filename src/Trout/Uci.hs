@@ -135,7 +135,6 @@ doUci uciState = do
       putStrLn "id name Trout"
       putStrLn "id author Osrepnay"
       putStrLn $ "option name Hash type spin default 16 min 1 max " ++ show (maxBound :: Int)
-      putStrLn "option"
       putStrLn "uciok"
       hFlush stdout
       doUci uciState
