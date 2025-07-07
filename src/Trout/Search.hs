@@ -105,7 +105,7 @@ pvWalk game = go game Nothing
 
 -- no check detection, just sends it
 staticExchEval :: Board -> Int -> PieceType -> Int
-staticExchEval board sq = go (bishopMovesMagic occ sq) (rookMovesMagic occ sq) (boardTurn board) occ
+staticExchEval !board !sq = go (boardTurn board) occ
   where
     occ = occupancy (boardPieces board)
     pawnAtt c = pawnCaptureTable c ! sq
@@ -113,22 +113,17 @@ staticExchEval board sq = go (bishopMovesMagic occ sq) (rookMovesMagic occ sq) (
     kingAtt = kingTable ! sq
     pieces = boardPieces board
 
-    go :: Bitboard -> Bitboard -> Color -> Bitboard -> PieceType -> Int
-    go diagAtt orthoAtt color block victim = case allChecked of
+    go :: Color -> Bitboard -> PieceType -> Int
+    go color block victim = case allChecked of
       Just (attSq, attPiece) ->
         let worthCaptured = pieceWorth victim
             newBlock = clearBit block attSq
-            (newDiag, newOrtho) =
-              case attPiece of
-                Pawn -> (bishopMovesMagic newBlock sq, orthoAtt)
-                Bishop -> (bishopMovesMagic newBlock sq, orthoAtt)
-                Rook -> (diagAtt, rookMovesMagic newBlock sq)
-                Queen -> (bishopMovesMagic newBlock sq, rookMovesMagic newBlock sq)
-                _ -> (diagAtt, orthoAtt)
-         in max (worthCaptured - go newDiag newOrtho opp newBlock attPiece) 0
+         in max (worthCaptured - go opp newBlock attPiece) 0
       Nothing -> 0
       where
         opp = other color
+        diagAtt = bishopMovesMagic block sq
+        orthoAtt = bishopMovesMagic block sq
         mkCheck p bb =
           -- also & block to make sure it hasn't been cleared already (pieces isn't being updated)
           let masked = bb .&. pieceBitboard (Piece color p) pieces .&. block
@@ -149,7 +144,7 @@ seeOfCapture :: Board -> Move -> Maybe Int
 -- this is a little fragile because staticExchEval doesn't recognize en passant
 -- but because this is always called first and en passant can't happen after a capture
 -- it should be technically safe
-seeOfCapture board (Move Pawn (EnPassant target) from to) =
+seeOfCapture !board (Move Pawn (EnPassant target) from to) =
   Just $
     max (pawnWorth - staticExchEval newBoard to (pieceType pieceAttacker)) 0
   where
@@ -160,7 +155,7 @@ seeOfCapture board (Move Pawn (EnPassant target) from to) =
         addPiece pieceAttacker to $
           removePiece from pieces
     newBoard = board {boardPieces = newPieces, boardTurn = other (boardTurn board)}
-seeOfCapture board move =
+seeOfCapture !board move =
   getPiece (moveTo move) (boardPieces board)
     <&> \captured ->
       let pieceAttacker = fromJust (getPiece (moveFrom move) pieces)
