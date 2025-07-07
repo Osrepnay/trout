@@ -13,6 +13,7 @@ module Trout.Game.MoveGen
     rookCaptures,
     queenCaptures,
     kingCaptures,
+    pawnCaptureTable,
     SpecialMove (..),
     Move (..),
     DList,
@@ -265,6 +266,17 @@ pawnsCaptures enPSq Black block myBlock pawnBB =
       Nothing -> id
 {-# INLINE pawnsCaptures #-}
 
+pawnWhiteCaptureTable :: Vector Bitboard
+pawnWhiteCaptureTable = tableGen [(-1, 1), (1, 1)]
+
+pawnBlackCaptureTable :: Vector Bitboard
+pawnBlackCaptureTable = tableGen [(-1, -1), (1, -1)]
+
+pawnCaptureTable :: Color -> Vector Bitboard
+pawnCaptureTable White = pawnWhiteCaptureTable
+pawnCaptureTable Black = pawnBlackCaptureTable
+{-# INLINE pawnCaptureTable #-}
+
 knightTable :: Vector Bitboard
 knightTable =
   tableGen
@@ -366,7 +378,7 @@ kingMoves kAllowed qAllowed block myBlock sq =
 
 kingCaptures :: Bitboard -> Bitboard -> Int -> DList Move
 kingCaptures block myBlock sq =
-    mapOnes
-      (Move King Normal sq)
-      (kingTable `unsafeIndex` sq .&. complement myBlock .&. block)
+  mapOnes
+    (Move King Normal sq)
+    (kingTable `unsafeIndex` sq .&. complement myBlock .&. block)
 {-# INLINE kingCaptures #-}

@@ -3,12 +3,15 @@ module Trout.Search
     newEnv,
     clearEnv,
     pvWalk,
+    staticExchEval,
+    seeOfCapture,
     bestMove,
     searchPVS,
     eval,
   )
 where
 
+import Control.Applicative ((<|>))
 import Control.Monad (join, unless)
 import Control.Monad.ST (ST)
 import Control.Monad.Trans.Class (lift)
@@ -21,9 +24,10 @@ import Data.Map.Strict qualified as M
 import Data.Maybe (fromJust, isJust, maybeToList)
 import Data.Ord (comparing)
 import Data.STRef (STRef, modifySTRef, newSTRef, readSTRef, writeSTRef)
+import Data.Vector.Primitive ((!))
 import Data.Vector.Primitive.Mutable (STVector)
 import Data.Vector.Primitive.Mutable qualified as MV
-import Trout.Bitboard (countTrailingZeros, popCount, (.|.))
+import Trout.Bitboard (Bitboard, countTrailingZeros, popCount, (.&.), (.|.), clearBit)
 import Trout.Game
   ( Game (..),
     allCaptures,
@@ -32,7 +36,6 @@ import Trout.Game
     isDrawn,
     makeMove,
     mobility,
-    squareAttackers,
   )
 import Trout.Game.Board
   ( Board (..),
@@ -45,8 +48,9 @@ import Trout.Game.Board
     removePiece,
   )
 import Trout.Game.Move (Move (..), SpecialMove (EnPassant))
+import Trout.Game.MoveGen (kingTable, knightTable, pawnCaptureTable)
 import Trout.Game.MoveGen.Sliding.Magic (bishopMovesMagic, rookMovesMagic)
-import Trout.Piece (Color (..), Piece (..), PieceType (..), colorSign)
+import Trout.Piece (Color (..), Piece (..), PieceType (..), colorSign, other)
 import Trout.Search.Node (NodeResult (..), NodeType (..))
 import Trout.Search.PieceSquareTables (pstEval)
 import Trout.Search.TranspositionTable (STTranspositionTable, TTEntry (..))
@@ -100,20 +104,44 @@ pvWalk game = go game Nothing
         Nothing -> pure []
 
 -- no check detection, just sends it
-staticExchEval :: Board -> Int -> Int
-staticExchEval board sq = case getPiece sq pieces of
-  Just pieceVictim -> case attackers of
-    (attackerSq : _) ->
-      let pieceAttacker = fromJust (getPiece attackerSq pieces)
-          newPieces = addPiece pieceAttacker sq (removePiece attackerSq pieces)
-          newBoard = board {boardPieces = newPieces}
-          worthCaptured = pieceWorth (pieceType pieceVictim)
-       in max (worthCaptured - staticExchEval newBoard sq) 0
-    [] -> 0
-  Nothing -> 0
+staticExchEval :: Board -> Int -> PieceType -> Int
+staticExchEval board sq = go (bishopMovesMagic occ sq) (rookMovesMagic occ sq) (boardTurn board) occ
   where
+    occ = occupancy (boardPieces board)
+    pawnAtt c = pawnCaptureTable c ! sq
+    knightAtt = knightTable ! sq
+    kingAtt = kingTable ! sq
     pieces = boardPieces board
-    attackers = squareAttackers (boardTurn board) pieces sq
+
+    go :: Bitboard -> Bitboard -> Color -> Bitboard -> PieceType -> Int
+    go diagAtt orthoAtt color block victim = case allChecked of
+      Just (attSq, attPiece) ->
+        let worthCaptured = pieceWorth victim
+            newBlock = clearBit block attSq
+            (newDiag, newOrtho) =
+              case attPiece of
+                Pawn -> (bishopMovesMagic newBlock sq, orthoAtt)
+                Bishop -> (bishopMovesMagic newBlock sq, orthoAtt)
+                Rook -> (diagAtt, rookMovesMagic newBlock sq)
+                Queen -> (bishopMovesMagic newBlock sq, rookMovesMagic newBlock sq)
+                _ -> (diagAtt, orthoAtt)
+         in max (worthCaptured - go newDiag newOrtho opp newBlock attPiece) 0
+      Nothing -> 0
+      where
+        opp = other color
+        mkCheck p bb =
+          -- also & block to make sure it hasn't been cleared already (pieces isn't being updated)
+          let masked = bb .&. pieceBitboard (Piece color p) pieces .&. block
+           in if masked /= 0
+                then Just (countTrailingZeros masked, p)
+                else Nothing
+        allChecked =
+          mkCheck Pawn (pawnAtt opp)
+            <|> mkCheck Knight knightAtt
+            <|> mkCheck Bishop diagAtt
+            <|> mkCheck Rook orthoAtt
+            <|> mkCheck Queen (diagAtt .|. orthoAtt)
+            <|> mkCheck King kingAtt
 
 -- static exchange eval
 seeOfCapture :: Board -> Move -> Maybe Int
@@ -123,7 +151,7 @@ seeOfCapture :: Board -> Move -> Maybe Int
 -- it should be technically safe
 seeOfCapture board (Move Pawn (EnPassant target) from to) =
   Just $
-    max (pawnWorth - staticExchEval newBoard to) 0
+    max (pawnWorth - staticExchEval newBoard to (pieceType pieceAttacker)) 0
   where
     pieces = boardPieces board
     pieceAttacker = fromJust (getPiece from pieces)
@@ -131,15 +159,15 @@ seeOfCapture board (Move Pawn (EnPassant target) from to) =
       removePiece target $
         addPiece pieceAttacker to $
           removePiece from pieces
-    newBoard = board {boardPieces = newPieces}
+    newBoard = board {boardPieces = newPieces, boardTurn = other (boardTurn board)}
 seeOfCapture board move =
   getPiece (moveTo move) (boardPieces board)
     <&> \captured ->
       let pieceAttacker = fromJust (getPiece (moveFrom move) pieces)
           newPieces = addPiece pieceAttacker (moveTo move) (removePiece (moveFrom move) pieces)
-          newBoard = board {boardPieces = newPieces}
+          newBoard = board {boardPieces = newPieces, boardTurn = other (boardTurn board)}
           worthCaptured = pieceWorth (pieceType captured)
-       in max (worthCaptured - staticExchEval newBoard (moveTo move)) 0
+       in max (worthCaptured - staticExchEval newBoard (moveTo move) (pieceType pieceAttacker)) 0
   where
     pieces = boardPieces board
 
