@@ -23,7 +23,7 @@ import Data.Ord (comparing)
 import Data.STRef (STRef, modifySTRef, newSTRef, readSTRef, writeSTRef)
 import Data.Vector.Primitive.Mutable (STVector)
 import Data.Vector.Primitive.Mutable qualified as MV
-import Trout.Bitboard (popCount, (.|.))
+import Trout.Bitboard (countTrailingZeros, popCount, (.|.))
 import Trout.Game
   ( Game (..),
     allCaptures,
@@ -34,8 +34,18 @@ import Trout.Game
     mobility,
     squareAttackers,
   )
-import Trout.Game.Board (Board (..), addPiece, getPiece, pieceBitboard, pieceTypeBitboard, removePiece)
+import Trout.Game.Board
+  ( Board (..),
+    Pieces,
+    addPiece,
+    getPiece,
+    occupancy,
+    pieceBitboard,
+    pieceTypeBitboard,
+    removePiece,
+  )
 import Trout.Game.Move (Move (..), SpecialMove (EnPassant))
+import Trout.Game.MoveGen.Sliding.Magic (bishopMovesMagic, rookMovesMagic)
 import Trout.Piece (Color (..), Piece (..), PieceType (..), colorSign)
 import Trout.Search.Node (NodeResult (..), NodeType (..))
 import Trout.Search.PieceSquareTables (pstEval)
@@ -157,8 +167,16 @@ materialScore game =
     pieces = boardPieces board
     turn = boardTurn board
 
+virtMobile :: Color -> Pieces -> Int
+virtMobile color pieces = popCount movez
+  where
+    block = occupancy pieces
+    king = pieceBitboard (Piece color King) pieces
+    kingSq = countTrailingZeros king
+    movez = bishopMovesMagic block kingSq .|. rookMovesMagic block kingSq
+
 eval :: Game -> Int
-eval game = colorSign (boardTurn board) * (pstEvalValue + mobilityValue)
+eval game = colorSign (boardTurn board) * (pstEvalValue + mobilityValue + scaledKingSafety)
   where
     board = gameBoard game
     pieces = boardPieces board
@@ -187,6 +205,9 @@ eval game = colorSign (boardTurn board) * (pstEvalValue + mobilityValue)
         | c <- [White, Black],
           p <- mobilityPieces
         ]
+
+    kingSafety = virtMobile Black pieces - virtMobile White pieces
+    scaledKingSafety = kingSafety * mgPhase `quot` 24 * 3
 
 -- selection for move ordering
 singleSelect :: [(Int, Move)] -> (Move, [(Int, Move)])

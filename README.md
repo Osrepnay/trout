@@ -25,7 +25,7 @@ The two other decent ones I've found are [turncoat](https://github.com/albertprz
 - Killer heuristic move ordering
 - History heuristic move ordering
 - Static exchange evaluation move ordering
-- PeSTO PST + mobility eval
+- PeSTO PST + mobility + king safety eval
 - [En passant](https://en.wikipedia.org/wiki/En_passant)
 
 ## Running
