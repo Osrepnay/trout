@@ -27,7 +27,7 @@ import Data.STRef (STRef, modifySTRef, newSTRef, readSTRef, writeSTRef)
 import Data.Vector.Primitive ((!))
 import Data.Vector.Primitive.Mutable (STVector)
 import Data.Vector.Primitive.Mutable qualified as MV
-import Trout.Bitboard (Bitboard, countTrailingZeros, popCount, (.&.), (.|.), clearBit)
+import Trout.Bitboard (Bitboard, clearBit, countTrailingZeros, popCount, (.&.), (.|.))
 import Trout.Game
   ( Game (..),
     allCaptures,
@@ -41,6 +41,7 @@ import Trout.Game.Board
   ( Board (..),
     Pieces,
     addPiece,
+    colorOccupancy,
     getPiece,
     occupancy,
     pieceBitboard,
@@ -193,7 +194,7 @@ materialScore game =
 virtMobile :: Color -> Pieces -> Int
 virtMobile color pieces = popCount movez
   where
-    block = occupancy pieces
+    block = colorOccupancy color pieces
     king = pieceBitboard (Piece color King) pieces
     kingSq = countTrailingZeros king
     movez = bishopMovesMagic block kingSq .|. rookMovesMagic block kingSq
