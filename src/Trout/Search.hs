@@ -406,7 +406,7 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
     staticEval = eval game
 
     checkFutility
-      | not currentlyChecked && staticEval >= beta + fromIntegral depth * 150 = Just staticEval
+      | not currentlyChecked && not isPV && staticEval >= beta + fromIntegral depth * 150 = Just staticEval
       | otherwise = Nothing
 
     checkTTCut maybeEntry =
