@@ -124,7 +124,7 @@ staticExchEval !board !sq = go (boardTurn board) occ
       where
         opp = other color
         diagAtt = bishopMovesMagic block sq
-        orthoAtt = bishopMovesMagic block sq
+        orthoAtt = rookMovesMagic block sq
         mkCheck p bb =
           -- also & block to make sure it hasn't been cleared already (pieces isn't being updated)
           let masked = bb .&. pieceBitboard (Piece color p) pieces .&. block
@@ -234,8 +234,8 @@ eval game = colorSign (boardTurn board) * (pstEvalValue + mobilityValue + scaled
     scaledKingSafety = kingSafety * mgPhase `quot` 24 * 3
 
 -- selection for move ordering
-singleSelect :: [(Int, Move)] -> (Move, [(Int, Move)])
-singleSelect moves = (snd best, filter (/= best) moves)
+singleSelect :: [(Int, Move)] -> ((Int, Move), [(Int, Move)])
+singleSelect moves = (best, filter (/= best) moves)
   where
     best = maximumBy (comparing fst) moves
 
@@ -262,7 +262,7 @@ quieSearch !alpha !beta !game
           else go (max score bestScore) movesRest
       Nothing -> go bestScore movesRest
       where
-        (move, movesRest) = singleSelect moves
+        ((_, move), movesRest) = singleSelect moves
 
 cleanKillers :: Int16 -> KillerMap -> KillerMap
 cleanKillers currHalfmove killerMap = case M.lookupMin killerMap of
@@ -456,10 +456,12 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
           if nth == 0
             then negate <$> searchPVS startingDepth (depth - 1) (-beta) (-trueAlpha) isPV moveMade
             else do
-              let isLMR = nth > 3 && depth >= 2
+              let isLMR = nth > 2 && depth >= 2
               let newDepth =
                     if isLMR
-                      then depth - 2
+                      then if moveScore > maxHistory
+                        then depth - 2
+                        else depth - 3
                       else depth - 1
               score <- negate <$> searchPVS startingDepth newDepth (-trueAlpha - 1) (-trueAlpha) False moveMade
               -- don't research if non-pv branch, some older relative will research anyways
@@ -491,4 +493,4 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
                     Nothing -> Just (nodeScore, move)
       where
         isCapture = isJust (getPiece (moveTo move) (boardPieces board))
-        (move, movesRest) = singleSelect moves
+        ((moveScore, move), movesRest) = singleSelect moves
