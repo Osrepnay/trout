@@ -114,7 +114,7 @@ parseFen =
     <*> (parseCastling <* spaces)
     <*> (parseEnPassant <* spaces)
     <*> (read <$> many1 digit <* spaces)
-    <*> (read <$> many1 digit <* spaces)
+    <*> (read <$> many1 digit)
 
 readFen :: String -> Either String Fen
 readFen = first show . parse parseFen ""
