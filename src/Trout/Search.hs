@@ -56,7 +56,7 @@ import Trout.Search.Node (NodeResult (..), NodeType (..))
 import Trout.Search.PieceSquareTables (pstEval)
 import Trout.Search.TranspositionTable (STTranspositionTable, TTEntry (..))
 import Trout.Search.TranspositionTable qualified as TT
-import Trout.Search.Worthiness (drawWorth, lossWorth, pawnWorth, pieceWorth)
+import Trout.Search.Worthiness (drawWorth, lossWorth, pawnWorth, pieceWorth, winWorth)
 
 maxKillers :: Int
 maxKillers = 3
@@ -411,16 +411,22 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
 
     checkTTCut maybeEntry =
       maybeEntry
-        >>= \entry ->
-          let nodeScore = entryScore entry
-              t = nodeResType nodeScore
-              s = nodeResScore nodeScore
-              d = entryDepth entry
-           in if entryMove entry `elem` gameMoves
-                && d >= depth
-                && (t == ExactNode || t == AllNode && s <= alpha || t == CutNode && s >= beta)
-                then Just (nodeResScore nodeScore)
-                else Nothing
+        >>= \( TTEntry
+                 { entryScore = (NodeResult {nodeResType = t, nodeResScore = s}),
+                   entryMove = move,
+                   entryHalfmove = halfmove,
+                   entryDepth = d
+                 }
+               ) ->
+            let -- unfortunately this breaks on games with length over 100k! oh no!
+                winningScore = abs (abs s - winWorth) < 100000
+             in if move `elem` gameMoves
+                  && d >= depth
+                  && (t == ExactNode || t == AllNode && s <= alpha || t == CutNode && s >= beta)
+                  -- prevents stalling in endgame by making sure halfmove penalty gets applied
+                  && not (winningScore && halfmove /= gameHalfmove game)
+                  then Just s
+                  else Nothing
 
     -- ordering: tt, neutral and positive captures, quiets (killer then history), negative captures
     moveOrderer :: [(Int, Move)] -> HistoryTable s -> [Move] -> ST s [(Int, Move)]
@@ -459,9 +465,10 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
               let isLMR = nth > 2 && depth >= 2
               let newDepth =
                     if isLMR
-                      then if moveScore > maxHistory
-                        then depth - 2
-                        else depth - 3
+                      then
+                        if moveScore > maxHistory
+                          then depth - 2
+                          else depth - 3
                       else depth - 1
               score <- negate <$> searchPVS startingDepth newDepth (-trueAlpha - 1) (-trueAlpha) False moveMade
               -- don't research if non-pv branch, some older relative will research anyways
