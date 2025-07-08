@@ -27,7 +27,7 @@ import Data.STRef (STRef, modifySTRef, newSTRef, readSTRef, writeSTRef)
 import Data.Vector.Primitive ((!))
 import Data.Vector.Primitive.Mutable (STVector)
 import Data.Vector.Primitive.Mutable qualified as MV
-import Trout.Bitboard (Bitboard, clearBit, countTrailingZeros, popCount, (.&.), (.|.))
+import Trout.Bitboard (Bitboard, clearBit, countTrailingZeros, popCount, (.&.), (.|.), (!<<.), (!>>.))
 import Trout.Game
   ( Game (..),
     allCaptures,
@@ -199,8 +199,16 @@ virtMobile color pieces = popCount movez
     kingSq = countTrailingZeros king
     movez = bishopMovesMagic block kingSq .|. rookMovesMagic block kingSq
 
+blockedPawns :: Color -> Pieces -> Int
+blockedPawns color pieces = popCount (pieceBitboard (Piece color Pawn) pieces `shiftOp` 8 .&. occ)
+  where
+    occ = occupancy pieces
+    shiftOp = case color of
+      White -> (!<<.)
+      Black -> (!>>.)
+
 eval :: Game -> Int
-eval game = colorSign (boardTurn board) * (pstEvalValue + mobilityValue + scaledKingSafety)
+eval game = colorSign (boardTurn board) * (pstEvalValue + mobilityValue + scaledKingSafety + blockedPawnsValue)
   where
     board = gameBoard game
     pieces = boardPieces board
@@ -232,6 +240,8 @@ eval game = colorSign (boardTurn board) * (pstEvalValue + mobilityValue + scaled
 
     kingSafety = virtMobile Black pieces - virtMobile White pieces
     scaledKingSafety = kingSafety * mgPhase `quot` 24 * 3
+
+    blockedPawnsValue = 5 * (blockedPawns Black pieces - blockedPawns White pieces)
 
 -- selection for move ordering
 singleSelect :: [(Int, Move)] -> ((Int, Move), [(Int, Move)])
