@@ -443,7 +443,7 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
     -- no valid moves (stalemate, checkmate checks)
     -- bestScore is nothing if all moves are illegal
     go _ [] _ Nothing
-      | currentlyChecked = pure (NodeResult lossWorth AllNode, NullMove)
+      | currentlyChecked = pure (NodeResult (lossWorth + fromIntegral (gameHalfmove game)) AllNode, NullMove)
       | otherwise = pure (mkNodeResult alpha beta drawWorth, NullMove)
     -- bestScore tracks the best score among moves, but separate from real alpha
     -- this way we keep track of realer score and not alpha cutoff (fail-soft)
