@@ -405,8 +405,16 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
 
     staticEval = eval game
 
+    -- unfortunately this breaks on games with length over 100k! oh no!
+    scoreIsWinning score = abs (abs score - winWorth) < 100000
+
     checkFutility
-      | not currentlyChecked && not isPV && staticEval >= beta + fromIntegral depth * 150 = Just staticEval
+      | not isPV
+          -- futility if beta is already checkmate is nonsensical
+          && not (scoreIsWinning beta)
+          && staticEval >= beta + fromIntegral depth * 150
+          && not currentlyChecked =
+          Just staticEval
       | otherwise = Nothing
 
     checkTTCut maybeEntry =
@@ -418,15 +426,13 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
                    entryDepth = d
                  }
                ) ->
-            let -- unfortunately this breaks on games with length over 100k! oh no!
-                winningScore = abs (abs s - winWorth) < 100000
-             in if move `elem` gameMoves
-                  && d >= depth
-                  && (t == ExactNode || t == AllNode && s <= alpha || t == CutNode && s >= beta)
-                  -- prevents stalling in endgame by making sure halfmove penalty gets applied
-                  && not (winningScore && halfmove /= gameHalfmove game)
-                  then Just s
-                  else Nothing
+            if move `elem` gameMoves
+              && d >= depth
+              && (t == ExactNode || t == AllNode && s <= alpha || t == CutNode && s >= beta)
+              -- prevents stalling in endgame by making sure halfmove penalty gets applied
+              && not (scoreIsWinning s && halfmove /= gameHalfmove game)
+              then Just s
+              else Nothing
 
     -- ordering: tt, neutral and positive captures, quiets (killer then history), negative captures
     moveOrderer :: [(Int, Move)] -> HistoryTable s -> [Move] -> ST s [(Int, Move)]
