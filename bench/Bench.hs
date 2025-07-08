@@ -17,11 +17,11 @@ main :: IO ()
 main = do
   -- probably better way to do this (env), cba read docs
   defaultMain
-    [ bench "perft(5)" $ whnf (perft 5) startingGame,
-      bench "bestMove depth 6" $
+    [ bench "bestMove depth 10" $
         perRunEnv
           createEnv
-          (bestMoveWrapper 6 startingGame)
+          (bestMoveWrapper 10 startingGame),
+      bench "perft(5)" $ whnf (perft 5) startingGame
     ]
 
 createEnv :: IO (SearchEnv RealWorld)
