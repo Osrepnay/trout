@@ -358,19 +358,19 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
   | depth < 0 = searchPVS startingDepth 0 alpha beta isPV game
   | isDrawn game && startingDepth /= depth = pure 0
   | otherwise = do
-      case checkFutility of
-        Just res -> pure res
+      (SearchEnv {searchEnvTT = tt, searchEnvKillers = killers, searchEnvHistory = history}) <- ask
+      maybeTTEntry <- lift (TT.lookup board tt)
+      let maybeTTMove = entryMove <$> maybeTTEntry
+      case checkTTCut maybeTTEntry of
+        Just score -> pure score
         Nothing -> do
-          -- null move pruning
-          nullMoveResult <- checkNullMove
-          case nullMoveResult of
+          case checkFutility of
             Just res -> pure res
             Nothing -> do
-              (SearchEnv {searchEnvTT = tt, searchEnvKillers = killers, searchEnvHistory = history}) <- ask
-              maybeTTEntry <- lift (TT.lookup board tt)
-              let maybeTTMove = entryMove <$> maybeTTEntry
-              case checkTTCut maybeTTEntry of
-                Just score -> pure score
+              -- null move pruning
+              nullMoveResult <- checkNullMove
+              case nullMoveResult of
+                Just res -> pure res
                 Nothing -> do
                   killerMap <- lift (readSTRef killers)
                   let killerMoves = join $ maybeToList (M.lookup (gameHalfmove game) killerMap)
@@ -392,9 +392,9 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
 
     checkNullMove = case makeMove game NullMove of
       Just nullGame -> do
-        if materialScore game >= 1 && not isPV
+        if not isPV && materialScore game >= 1
           then do
-            nullScore <- negate <$> searchPVS startingDepth (depth - nullReduction) (-beta) (-beta + 1) isPV nullGame
+            nullScore <- negate <$> searchPVS startingDepth (depth - nullReduction) (-beta) (-beta + 1) False nullGame
             if nullScore >= beta
               then pure (Just nullScore)
               else pure Nothing
@@ -477,9 +477,16 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
                           else depth - 3
                       else depth - 1
               score <- negate <$> searchPVS startingDepth newDepth (-trueAlpha - 1) (-trueAlpha) False moveMade
-              -- don't research if non-pv branch, some older relative will research anyways
-              if score >= (trueAlpha + 1) && (isPV || isLMR)
-                then negate <$> searchPVS startingDepth (depth - 1) (-beta) (-trueAlpha) True moveMade
+              if score >= (trueAlpha + 1)
+                then
+                  if isPV
+                    then negate <$> searchPVS startingDepth (depth - 1) (-beta) (-trueAlpha) True moveMade
+                    -- don't research with full window if non-pv branch, some older relative will research anyways
+                    -- (if not pv, this means we are on a null window so -trueAlpha - 1 == -beta)
+                    else
+                      if isLMR
+                        then negate <$> searchPVS startingDepth (depth - 1) (-trueAlpha - 1) (-trueAlpha) False moveMade
+                        else pure score
                 else pure score
         if nodeScore >= beta
           then do
