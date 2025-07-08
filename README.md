@@ -2,15 +2,14 @@
 
 ![](trout.png)
 
-A chess engine in Haskell.
+[Challenge me on Lichess!](https://lichess.org/@/TroutBot)
 
-If you check the commit history you can see this was started a long, long time ago.
-When I first started this engine I spent way too much time on making the game-management (moving, move generation, etc.) part fast for perft.
-This was a terrible mistake because that section actually has a relatively small impact on overall strength.
-Most comes from search features like pruning, which actually makes a Haskell chess engine more viable than you might think.
-(Haskell is not usually used for extremely performance-sensitive/based applications like chess engines, and in my experience is relatively difficult to get predictable performance from.)
+A chess engine (my third attempt) in Haskell.
+Two other decent Haskell engines I've found are [turncoat](https://github.com/albertprz/turncoat) and [Barbarossa](https://github.com/nionita/Barbarossa), check them out!
 
-The two other decent ones I've found are [turncoat](https://github.com/albertprz/turncoat) and [Barbarossa](https://github.com/nionita/Barbarossa), check them out!
+The end goal for this engines is for it to be "superhuman", but that's still a ways away.
+It can beat me though.
+Does that speak to my weakness or the engine's strength? Who knows? (it's my weakness)
 
 ## Features
 
@@ -39,5 +38,5 @@ It should work but I don't use cabal personally so YMMV.
 
 ## Limitations
 
-- Very limited subset of UCI supported for now (e.g. no options yet)
-- Sometimes times out with `go movetime <time>` or under time pressure because it is slow and not very accurate when terminating the search thread
+- Plays weird
+- Bad time management; isn't super precise with stopping search and simplistic time management "algorithm"
