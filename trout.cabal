@@ -5,7 +5,7 @@ cabal-version: 1.12
 -- see: https://github.com/sol/hpack
 
 name:           trout
-version:        0.1.0.0
+version:        1.0.0.0
 description:    Please see the README on GitHub at <https://github.com/githubuser/trout#readme>
 homepage:       https://github.com/Osrepnay/trout#readme
 bug-reports:    https://github.com/Osrepnay/trout/issues
