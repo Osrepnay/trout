@@ -7,6 +7,10 @@
 A chess engine (my third attempt) in Haskell.
 Two other decent Haskell engines I've found are [turncoat](https://github.com/albertprz/turncoat) and [Barbarossa](https://github.com/nionita/Barbarossa), check them out!
 
+I think this is the second-strongest Haskell chess engine?
+It can beat turncoat pretty handily under my conditions but probably not Barbarossa.
+Not bad!
+
 The end goal for this engines is for it to be "superhuman", but that's still a ways away.
 It can beat me though.
 Does that speak to my weakness or the engine's strength? Who knows? (it's my weakness)
