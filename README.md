@@ -3,6 +3,7 @@
 ![](trout.png)
 
 [Challenge me on Lichess!](https://lichess.org/@/TroutBot)
+[Play me in the browser (locally)!](https://osrepnay.github.io/trout-web/)
 
 A chess engine (my third attempt) in Haskell.
 Two other decent Haskell engines I've found are [turncoat](https://github.com/albertprz/turncoat) and [Barbarossa](https://github.com/nionita/Barbarossa), check them out!
