@@ -92,7 +92,7 @@ parseCastling =
 parseEnPassant :: Parser (Maybe Int)
 parseEnPassant =
   char '-' $> Nothing
-    <|> (\c r -> Just (ord c - ord 'a' + ord r - ord '1'))
+    <|> (\c r -> Just (ord c - ord 'a' + 8 * (ord r - ord '1')))
       <$> oneOf "abcdefgh"
       <*> oneOf "12345678"
 
@@ -100,6 +100,8 @@ data Fen = Fen
   { fenPieces :: Pieces,
     fenTurn :: Color,
     fenCastling :: Castling,
+    -- DIFFERENT FROM BOARD ENPASSANT
+    -- it's the square the capturing pawn ends on, not of the pawn it captured
     fenEnPassant :: Maybe Int,
     fenHalfmove :: Int16,
     fenFullmove :: Int16
@@ -133,8 +135,11 @@ fenToGame fen =
     ( mkBoard
         (fenPieces fen)
         (fenCastling fen)
-        (fenEnPassant fen)
+        (correctEnPassant <$> fenEnPassant fen)
         turn
     )
   where
     turn = fenTurn fen
+    correctEnPassant sq = case turn of
+      White -> sq - 8
+      Black -> sq + 8
