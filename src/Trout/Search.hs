@@ -27,10 +27,10 @@ import Data.STRef (STRef, modifySTRef, newSTRef, readSTRef, writeSTRef)
 import Data.Vector.Primitive ((!))
 import Data.Vector.Primitive.Mutable (STVector)
 import Data.Vector.Primitive.Mutable qualified as MV
-import Trout.Bitboard (Bitboard, clearBit, countTrailingZeros, popCount, (.&.), (.|.), (!<<.), (!>>.))
+import Trout.Bitboard (Bitboard, clearBit, countTrailingZeros, popCount, (!<<.), (!>>.), (.&.), (.|.))
 import Trout.Game
   ( Game (..),
-    allCaptures,
+    allDisquiets,
     allMoves,
     inCheck,
     isDrawn,
@@ -49,7 +49,7 @@ import Trout.Game.Board
     removePiece,
   )
 import Trout.Game.Move (Move (..), SpecialMove (EnPassant))
-import Trout.Game.MoveGen (kingTable, knightTable, pawnCaptureTable)
+import Trout.Game.MoveGen (SpecialMove (Promotion), kingTable, knightTable, pawnCaptureTable)
 import Trout.Game.MoveGen.Sliding.Magic (bishopMovesMagic, rookMovesMagic)
 import Trout.Piece (Color (..), Piece (..), PieceType (..), colorSign, other)
 import Trout.Search.Node (NodeResult (..), NodeType (..))
@@ -257,10 +257,19 @@ quieSearch !alpha !beta !game
       go
         staticEval
         -- seeOfCapture should never be maybe because it's captures only
-        (filter ((>= 0) . fst) ((\m -> (fromJust (seeOfCapture board m), m)) <$> allCaptures board))
+        (filter ((>= 0) . fst) ((\m -> (scoreMove m, m)) <$> allDisquiets board))
   where
     staticEval = eval game
     board = gameBoard game
+
+    scoreMove m = case seeOfCapture board m of
+      Just s -> s
+      Nothing -> case moveSpecial m of
+        -- TODO there is room for actual SEE on the promotion
+        (Promotion p) -> pieceWorth p - pieceWorth Pawn
+        -- should be impossible
+        _ -> lossWorth
+
     go :: Int -> [(Int, Move)] -> ReaderT (SearchEnv s) (ST s) Int
     go bestScore [] = pure bestScore
     go bestScore moves = case makeMove game move of

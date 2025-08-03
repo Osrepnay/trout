@@ -7,7 +7,7 @@ module Trout.Game.MoveGen
     queenMoves,
     kingTable,
     kingMoves,
-    pawnsCaptures,
+    pawnsDisquiets,
     knightCaptures,
     bishopCaptures,
     rookCaptures,
@@ -185,24 +185,26 @@ pawnsMoves enPSq Black block myBlock pawnBB =
       Nothing -> id
 {-# INLINE pawnsMoves #-}
 
-pawnsCaptures ::
+pawnsDisquiets ::
   Maybe Int ->
   Color ->
   Bitboard ->
   Bitboard ->
   Bitboard ->
   DList Move
-pawnsCaptures enPSq White block myBlock pawnBB =
+pawnsDisquiets enPSq White block myBlock pawnBB =
   enPassant
     . concatDL
       ( promos
           <&> \p ->
-            mapOnes (\to -> Move Pawn (Promotion p) (to - 7) to) leftP
+            mapOnes (\to -> Move Pawn (Promotion p) (to - 8) to) normalP
+              . mapOnes (\to -> Move Pawn (Promotion p) (to - 7) to) leftP
               . mapOnes (\to -> Move Pawn (Promotion p) (to - 9) to) rightP
       )
     . mapOnes (\to -> Move Pawn Normal (to - 7) to) leftN
     . mapOnes (\to -> Move Pawn Normal (to - 9) to) rightN
   where
+    normals = pawnBB !<<. 8 .&. complement block
     leftCaptures =
       (pawnBB .&. complement fileA)
         !<<. 7
@@ -217,6 +219,7 @@ pawnsCaptures enPSq White block myBlock pawnBB =
     rightN = rightCaptures .&. complement rank8
     leftP = leftCaptures .&. rank8
     rightP = rightCaptures .&. rank8
+    normalP = normals .&. rank8
     enPassant = case enPSq of
       Just enP ->
         mapOnes
@@ -228,17 +231,19 @@ pawnsCaptures enPSq White block myBlock pawnBB =
               `setBit` (enP + 1)
           )
       Nothing -> id
-pawnsCaptures enPSq Black block myBlock pawnBB =
+pawnsDisquiets enPSq Black block myBlock pawnBB =
   enPassant
     . concatDL
       ( promos
           <&> \p ->
-            mapOnes (\to -> Move Pawn (Promotion p) (to + 9) to) leftP
+            mapOnes (\to -> Move Pawn (Promotion p) (to + 8) to) normalP
+              . mapOnes (\to -> Move Pawn (Promotion p) (to + 9) to) leftP
               . mapOnes (\to -> Move Pawn (Promotion p) (to + 7) to) rightP
       )
     . mapOnes (\to -> Move Pawn Normal (to + 9) to) leftN
     . mapOnes (\to -> Move Pawn Normal (to + 7) to) rightN
   where
+    normals = pawnBB !>>. 8 .&. complement block
     leftCaptures =
       (pawnBB .&. complement fileA)
         !>>. 9
@@ -253,6 +258,7 @@ pawnsCaptures enPSq Black block myBlock pawnBB =
     rightN = rightCaptures .&. complement rank1
     leftP = leftCaptures .&. rank1
     rightP = rightCaptures .&. rank1
+    normalP = normals .&. rank1
     enPassant = case enPSq of
       Just enP ->
         mapOnes
@@ -264,7 +270,7 @@ pawnsCaptures enPSq Black block myBlock pawnBB =
               `setBit` (enP + 1)
           )
       Nothing -> id
-{-# INLINE pawnsCaptures #-}
+{-# INLINE pawnsDisquiets #-}
 
 pawnWhiteCaptureTable :: Vector Bitboard
 pawnWhiteCaptureTable = tableGen [(-1, 1), (1, 1)]

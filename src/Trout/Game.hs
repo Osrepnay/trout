@@ -5,7 +5,7 @@ module Trout.Game
     startingGame,
     isDrawn,
     allMoves,
-    allCaptures,
+    allDisquiets,
     mobility,
     squareAttackers,
     inCheck,
@@ -60,7 +60,7 @@ import Trout.Game.MoveGen
     knightMoves,
     knightTable,
     mapOnes,
-    pawnsCaptures,
+    pawnsDisquiets,
     pawnsMoves,
     queenCaptures,
     queenMoves,
@@ -161,9 +161,9 @@ allMoves (Board pieces castling enPassant turn _) =
     pieceBB = ($ pieces) . pieceBitboard . Piece turn
     moveSqs mover = mapOnes (mover block myBlock)
 
-allCaptures :: Board -> [Move]
-allCaptures (Board pieces _ enPassant turn _) =
-  pawnsCaptures enPassant turn block myBlock (pieceBB Pawn) $
+allDisquiets :: Board -> [Move]
+allDisquiets (Board pieces _ enPassant turn _) =
+  pawnsDisquiets enPassant turn block myBlock (pieceBB Pawn) $
     concatDL
       ( moveSqs knightCaptures (pieceBB Knight) $
           moveSqs bishopCaptures (pieceBB Bishop) $
