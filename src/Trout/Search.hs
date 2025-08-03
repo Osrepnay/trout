@@ -159,11 +159,16 @@ seeOfCapture !board (Move Pawn (EnPassant target) from to) =
 seeOfCapture !board move =
   getPiece (moveTo move) (boardPieces board)
     <&> \captured ->
-      let pieceAttacker = fromJust (getPiece (moveFrom move) pieces)
+      let pieceAttacker = case moveSpecial move of
+            Promotion p -> Piece (boardTurn board) p
+            _ -> fromJust (getPiece (moveFrom move) pieces)
           newPieces = addPiece pieceAttacker (moveTo move) (removePiece (moveFrom move) pieces)
           newBoard = board {boardPieces = newPieces, boardTurn = other (boardTurn board)}
           worthCaptured = pieceWorth (pieceType captured)
-       in max (worthCaptured - staticExchEval newBoard (moveTo move) (pieceType pieceAttacker)) 0
+          promoBonus = case moveSpecial move of
+            Promotion p -> pieceWorth p - pieceWorth Pawn
+            _ -> 0
+       in max (promoBonus + worthCaptured - staticExchEval newBoard (moveTo move) (pieceType pieceAttacker)) 0
   where
     pieces = boardPieces board
 
@@ -265,7 +270,8 @@ quieSearch !alpha !beta !game
     scoreMove m = case seeOfCapture board m of
       Just s -> s
       Nothing -> case moveSpecial m of
-        -- TODO there is room for actual SEE on the promotion
+        -- non-capture promotions
+        -- TODO maybe throw SEE on here too?
         (Promotion p) -> pieceWorth p - pieceWorth Pawn
         -- should be impossible
         _ -> lossWorth
