@@ -2,9 +2,12 @@ tested
 vector based worthiness (no significant speed change)
 promotion quiesce (done)
 quiescence tt cut (huge)
+quiescence tt ordering (bust)
+switch to 6 bitboard pieces format (worse, not fully optimized)
 
 todo
 bail aspiration
 razoring
 tt replacement fiddling
-quiescence tt ordering
+switch to 14 bitboard pieces format
+see pruning (pzchessbot inspo)
