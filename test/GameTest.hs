@@ -43,5 +43,5 @@ drawTest =
                   moves
          in isDrawn game
       it "should return true for 50 move rule" $
-       let game = startingGame {game50MovePlies = 50}
+       let game = startingGame {game50MovePlies = 50 * 2}
         in isDrawn game
