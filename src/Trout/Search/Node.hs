@@ -1,7 +1,7 @@
-module Trout.Search.Node (NodeType (..), NodeResult (..)) where
+module Trout.Search.Node (NodeType (..), NodeResult (..), matchesBounds) where
 
+import Data.Bits (complement, (.&.))
 import Foreign (Ptr, Storable (..), castPtr)
-import Data.Bits ((.&.), complement)
 
 data NodeType
   = AllNode -- failed low, move is "too bad"
@@ -25,6 +25,12 @@ fromIbv ibv = NodeResult (rounded `quot` 4) (toEnum (diff + 1))
   where
     rounded = (ibv + 1) .&. complement 3
     diff = ibv - rounded
+
+matchesBounds :: Int -> Int -> NodeResult -> Bool
+matchesBounds alpha beta (NodeResult s t) =
+  t == ExactNode
+    || t == AllNode && s <= alpha
+    || t == CutNode && s >= beta
 
 instance Storable NodeResult where
   sizeOf :: NodeResult -> Int

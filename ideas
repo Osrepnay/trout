@@ -1,7 +1,10 @@
 tested
 vector based worthiness (no significant speed change)
 promotion quiesce (done)
+quiescence tt cut (huge)
 
 todo
 bail aspiration
 razoring
+tt replacement fiddling
+quiescence tt ordering

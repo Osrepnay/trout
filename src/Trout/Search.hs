@@ -52,7 +52,7 @@ import Trout.Game.Move (Move (..), SpecialMove (EnPassant))
 import Trout.Game.MoveGen (SpecialMove (Promotion), kingTable, knightTable, pawnCaptureTable)
 import Trout.Game.MoveGen.Sliding.Magic (bishopMovesMagic, rookMovesMagic)
 import Trout.Piece (Color (..), Piece (..), PieceType (..), colorSign, other)
-import Trout.Search.Node (NodeResult (..), NodeType (..))
+import Trout.Search.Node (NodeResult (..), NodeType (..), matchesBounds)
 import Trout.Search.PieceSquareTables (pstEval)
 import Trout.Search.TranspositionTable (STTranspositionTable, TTEntry (..))
 import Trout.Search.TranspositionTable qualified as TT
@@ -255,16 +255,27 @@ singleSelect moves = (best, filter (/= best) moves)
     best = maximumBy (comparing fst) moves
 
 quieSearch :: Int -> Int -> Game -> ReaderT (SearchEnv s) (ST s) Int
-quieSearch !alpha !beta !game
+quieSearch !alpha !beta !game = do
   -- stand-pat from null-move observation (eval immediately = not moving)
-  | staticEval >= beta = pure staticEval
-  | otherwise =
-      go
-        staticEval
-        -- seeOfCapture should never be maybe because it's captures only
-        (filter ((>= 0) . fst) ((\m -> (scoreMove m, m)) <$> allDisquiets board))
+  let staticEval = eval game
+  (SearchEnv {searchEnvTT = tt}) <- ask
+  maybeEntry <- lift (TT.lookup (gameBoard game) tt)
+  let earlyReturn =
+        maybeEntry >>= \(TTEntry {entryScore = s}) ->
+          if matchesBounds alpha beta s
+            then Just (nodeResScore s)
+            else Nothing
+  case earlyReturn of
+    Just s -> pure s
+    Nothing ->
+      if staticEval >= beta
+        then pure staticEval
+        else
+          go
+            staticEval
+            -- seeOfCapture should never be maybe because it's captures only
+            (filter ((>= 0) . fst) ((\m -> (scoreMove m, m)) <$> allDisquiets board))
   where
-    staticEval = eval game
     board = gameBoard game
 
     scoreMove m = case seeOfCapture board m of
@@ -445,7 +456,7 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
     checkTTCut maybeEntry =
       maybeEntry
         >>= \( TTEntry
-                 { entryScore = (NodeResult {nodeResType = t, nodeResScore = s}),
+                 { entryScore = res,
                    entryMove = move,
                    entryHalfmove = halfmove,
                    entryDepth = d
@@ -453,10 +464,10 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
                ) ->
             if move `elem` gameMoves
               && d >= depth
-              && (t == ExactNode || t == AllNode && s <= alpha || t == CutNode && s >= beta)
+              && matchesBounds alpha beta res
               -- prevents stalling in endgame by making sure halfmove penalty gets applied
-              && not (scoreIsWinning s && halfmove /= gameHalfmove game)
-              then Just s
+              && not (scoreIsWinning (nodeResScore res) && halfmove /= gameHalfmove game)
+              then Just (nodeResScore res)
               else Nothing
 
     -- ordering: tt, neutral and positive captures, quiets (killer then history), negative captures
