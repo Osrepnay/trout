@@ -4,6 +4,9 @@ promotion quiesce (done)
 quiescence tt cut (huge)
 quiescence tt ordering (bust)
 switch to 6 bitboard pieces format (worse, not fully optimized)
+more aggressive lmr on losing captures (might be slightly better to nothing)
+moving up losing capture priority past history (like neutral)
+basic losing captures reduction (kinda bad)
 
 todo
 bail aspiration
@@ -11,3 +14,4 @@ razoring
 tt replacement fiddling
 switch to 14 bitboard pieces format
 see pruning (pzchessbot inspo)
+quiescence checkmate detection

@@ -137,11 +137,9 @@ insert board entry vec = do
   case existing of
     Just (sameBoard, oldEntry) ->
       when
-        ( not sameBoard
-            && ( entryDepth entry >= entryDepth oldEntry
-                   || (entryHalfmove oldEntry + entryDepth oldEntry + 3 < entryHalfmove entry + entryDepth entry)
-               )
-            || sameBoard && entryDepth oldEntry <= entryDepth entry
+        ( entryDepth entry >= entryDepth oldEntry
+            || not sameBoard
+              && entryHalfmove oldEntry + entryDepth oldEntry + 3 < entryHalfmove entry + entryDepth entry
         )
         $ basicInsert board entry vec
     Nothing -> basicInsert board entry vec
