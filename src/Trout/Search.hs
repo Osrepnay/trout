@@ -261,6 +261,7 @@ quieSearch !alpha !beta !game = do
           if matchesBounds alpha beta s
             then Just (nodeResScore s)
             else Nothing
+  let seeReq = max 0 (alpha - staticEval - 2 * pieceWorth Pawn)
   case earlyReturn of
     Just s -> pure s
     Nothing ->
@@ -269,7 +270,7 @@ quieSearch !alpha !beta !game = do
         else
           go
             staticEval
-            (filter ((>= 0) . fst) ((\m -> (scoreMove m, m)) <$> allDisquiets board))
+            (filter ((>= seeReq) . fst) ((\m -> (scoreMove m, m)) <$> allDisquiets board))
   where
     board = gameBoard game
 
