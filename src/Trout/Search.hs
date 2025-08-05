@@ -269,7 +269,6 @@ quieSearch !alpha !beta !game = do
         else
           go
             staticEval
-            -- seeOfCapture should never be maybe because it's captures only
             (filter ((>= 0) . fst) ((\m -> (scoreMove m, m)) <$> allDisquiets board))
   where
     board = gameBoard game

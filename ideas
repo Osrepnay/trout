@@ -7,6 +7,7 @@ switch to 6 bitboard pieces format (worse, not fully optimized)
 more aggressive lmr on losing captures (might be slightly better to nothing)
 moving up losing capture priority past history (like neutral)
 basic losing captures reduction (kinda bad)
+quiescence check fiddling (don't stand-pat during checks) (neutralish to bad, fail)
 
 todo
 bail aspiration
