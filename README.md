@@ -25,6 +25,7 @@ Does that speak to my weakness or the engine's strength? Who knows? (it's my wea
 - Late move reductions
 - Check extensions
 - Quiescence search
+- Delta pruning
 - Transposition table move ordering
 - Killer heuristic move ordering
 - History heuristic move ordering

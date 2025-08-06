@@ -11,6 +11,8 @@ quiescence check fiddling (don't stand-pat during checks) (neutralish to bad, fa
 remove losing capture restriction in quiescence (fail, like -8 elo)
 delta pruning (margin 200, disallow negative see) (+26elo)
 pre-movegen quiescence pruning (negative, fail)
+don't use 0 as default in aspiration search (like neutral, fail)
+aspiration window change based on node type (solid flop, ~-11)
 
 todo
 bail aspiration
