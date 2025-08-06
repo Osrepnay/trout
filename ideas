@@ -13,12 +13,13 @@ delta pruning (margin 200, disallow negative see) (+26elo)
 pre-movegen quiescence pruning (negative, fail)
 don't use 0 as default in aspiration search (like neutral, fail)
 aspiration window change based on node type (solid flop, ~-11)
+razoring (+24elo)
 
 todo
 bail aspiration
-razoring
 tt replacement fiddling
 switch to 14 bitboard pieces format
 see pruning (pzchessbot inspo)
 quiescence checkmate detection
 pst tuning (remember to normalize!)
+quadratic futility

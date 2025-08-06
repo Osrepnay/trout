@@ -22,6 +22,7 @@ Does that speak to my weakness or the engine's strength? Who knows? (it's my wea
 - Principal variation search
 - Null move pruning
 - Reverse futility pruning
+- Razoring
 - Late move reductions
 - Check extensions
 - Quiescence search

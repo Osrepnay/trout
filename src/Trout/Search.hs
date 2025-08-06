@@ -402,6 +402,7 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
         runMaybeT $
           hoistMaybe (checkTTCut maybeTTEntry)
             <|> hoistMaybe checkFutility
+            <|> MaybeT checkRazor
             <|> MaybeT checkNullMove
       case prunes of
         Just score -> pure score
@@ -450,6 +451,16 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
           && not currentlyChecked =
           Just staticEval
       | otherwise = Nothing
+
+    checkRazor
+      | not isPV
+          && not (scoreIsWinning alpha)
+          && staticEval + fromIntegral depth * fromIntegral depth * 110 <= alpha = do
+          quieScore <- quieSearch alpha beta game
+          if quieScore <= alpha
+            then pure (Just quieScore)
+            else pure Nothing
+      | otherwise = pure Nothing
 
     checkTTCut maybeEntry =
       maybeEntry
