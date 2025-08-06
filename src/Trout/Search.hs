@@ -246,8 +246,12 @@ eval game = colorSign (boardTurn board) * (pstEvalValue + mobilityValue + scaled
 
 -- selection for move ordering
 singleSelect :: [(Int, Move)] -> ((Int, Move), [(Int, Move)])
-singleSelect moves = (best, filter (/= best) moves)
+singleSelect moves = (best, removeSingle best moves)
   where
+    removeSingle _ [] = []
+    removeSingle r (x : xs)
+      | r == x = xs
+      | otherwise = x : removeSingle r xs
     best = maximumBy (comparing fst) moves
 
 quieSearch :: Int -> Int -> Game -> ReaderT (SearchEnv s) (ST s) Int
