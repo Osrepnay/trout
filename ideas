@@ -21,3 +21,4 @@ tt replacement fiddling
 switch to 14 bitboard pieces format
 see pruning (pzchessbot inspo)
 quiescence checkmate detection
+pst tuning (remember to normalize!)

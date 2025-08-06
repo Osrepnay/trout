@@ -15,6 +15,7 @@ import Control.Applicative ((<|>))
 import Control.Monad (join, unless)
 import Control.Monad.ST (ST)
 import Control.Monad.Trans.Class (lift)
+import Control.Monad.Trans.Maybe (MaybeT (MaybeT), hoistMaybe, runMaybeT)
 import Control.Monad.Trans.Reader (ReaderT, ask)
 import Data.Foldable (find, maximumBy, traverse_)
 import Data.Functor ((<&>))
@@ -397,30 +398,27 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
       (SearchEnv {searchEnvTT = tt, searchEnvKillers = killers, searchEnvHistory = history}) <- ask
       maybeTTEntry <- lift (TT.lookup board tt)
       let maybeTTMove = entryMove <$> maybeTTEntry
-      case checkTTCut maybeTTEntry of
+      prunes <-
+        runMaybeT $
+          hoistMaybe (checkTTCut maybeTTEntry)
+            <|> hoistMaybe checkFutility
+            <|> MaybeT checkNullMove
+      case prunes of
         Just score -> pure score
         Nothing -> do
-          case checkFutility of
-            Just res -> pure res
-            Nothing -> do
-              -- null move pruning
-              nullMoveResult <- checkNullMove
-              case nullMoveResult of
-                Just res -> pure res
-                Nothing -> do
-                  killerMap <- lift (readSTRef killers)
-                  let killerMoves = join $ maybeToList (M.lookup (gameHalfmove game) killerMap)
-                  let staticScores =
-                        maybeToList ((maxHistory + 100000,) <$> maybeTTMove)
-                          ++ ((maxHistory + 1,) <$> killerMoves)
-                  scoredMoves <- lift $ moveOrderer staticScores history gameMoves
-                  (bResult, bMove) <- go 0 scoredMoves [] Nothing
-                  let newEntry = TTEntry bResult bMove (gameHalfmove game) depth
-                  -- make sure to save bestmove if root
-                  if depth == startingDepth
-                    then lift $ TT.basicInsert board newEntry tt
-                    else lift $ TT.insert board newEntry tt
-                  pure (nodeResScore bResult)
+          killerMap <- lift (readSTRef killers)
+          let killerMoves = join $ maybeToList (M.lookup (gameHalfmove game) killerMap)
+          let staticScores =
+                maybeToList ((maxHistory + 100000,) <$> maybeTTMove)
+                  ++ ((maxHistory + 1,) <$> killerMoves)
+          scoredMoves <- lift $ moveOrderer staticScores history gameMoves
+          (bResult, bMove) <- go 0 scoredMoves [] Nothing
+          let newEntry = TTEntry bResult bMove (gameHalfmove game) depth
+          -- make sure to save bestmove if root
+          if depth == startingDepth
+            then lift $ TT.basicInsert board newEntry tt
+            else lift $ TT.insert board newEntry tt
+          pure (nodeResScore bResult)
   where
     board = gameBoard game
 
