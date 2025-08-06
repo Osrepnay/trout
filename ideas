@@ -14,6 +14,7 @@ pre-movegen quiescence pruning (negative, fail)
 don't use 0 as default in aspiration search (like neutral, fail)
 aspiration window change based on node type (solid flop, ~-11)
 razoring (+24elo)
+mobility tuning (still room for improvement probably, i think can incorporate into texel) (+25elo)
 
 todo
 bail aspiration

@@ -230,15 +230,18 @@ eval game = colorSign (boardTurn board) * (pstEvalValue + mobilityValue + scaled
 
     mobilityValue =
       sum
-        [ m * colorSign c * mobility board (Piece c p)
+        [ (mgMult * mgPhase + egMult * egPhase)
+            * colorSign c
+            * mobility board (Piece c p)
+            `quot` 24
         | c <- [White, Black],
-          (p, m) <-
-            [ (Pawn, 5),
-              (Knight, 5),
-              (Bishop, 5),
-              (Rook, 5),
-              (Queen, 5),
-              (King, 5)
+          (p, mgMult, egMult) <-
+            [ (Pawn, 3, 7),
+              (Knight, 8, 6),
+              (Bishop, 6, 4),
+              (Rook, 4, 6),
+              (Queen, 5, 4),
+              (King, 2, 6)
             ]
         ]
 
