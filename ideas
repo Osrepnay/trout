@@ -8,8 +8,6 @@ more aggressive lmr on losing captures (might be slightly better to nothing)
 moving up losing capture priority past history (like neutral)
 basic losing captures reduction (kinda bad)
 quiescence check fiddling (don't stand-pat during checks) (neutralish to bad, fail)
-delta pruning (margin 200, disallow negative see) (+26elo)
-remove losing capture pruning, defer to delta (+17)
 
 todo
 bail aspiration
@@ -18,5 +16,3 @@ tt replacement fiddling
 switch to 14 bitboard pieces format
 see pruning (pzchessbot inspo)
 quiescence checkmate detection
-no movegen quiescence pruning
-see performance
