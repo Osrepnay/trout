@@ -15,6 +15,7 @@ don't use 0 as default in aspiration search (like neutral, fail)
 aspiration window change based on node type (solid flop, ~-11)
 razoring (+24elo)
 mobility tuning (still room for improvement probably, i think can incorporate into texel) (+25elo)
+change killer move replacement strategy from always-replace (small increase? but cba count it)
 
 todo
 bail aspiration

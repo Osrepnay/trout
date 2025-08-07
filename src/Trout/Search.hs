@@ -248,14 +248,16 @@ eval game = colorSign (boardTurn board) * (pstEvalValue + mobilityValue + scaled
     kingSafety = virtMobile Black pieces - virtMobile White pieces
     scaledKingSafety = kingSafety * mgPhase `quot` 24 * 3
 
+removeSingle :: (Eq a) => a -> [a] -> [a]
+removeSingle _ [] = []
+removeSingle r (x : xs)
+  | r == x = xs
+  | otherwise = x : removeSingle r xs
+
 -- selection for move ordering
 singleSelect :: [(Int, Move)] -> ((Int, Move), [(Int, Move)])
 singleSelect moves = (best, removeSingle best moves)
   where
-    removeSingle _ [] = []
-    removeSingle r (x : xs)
-      | r == x = xs
-      | otherwise = x : removeSingle r xs
     best = maximumBy (comparing fst) moves
 
 quieSearch :: Int -> Int -> Game -> ReaderT (SearchEnv s) (ST s) Int
@@ -347,7 +349,7 @@ addKiller halfmove move =
     ( \maybeKillers ->
         let killerList = join (maybeToList maybeKillers)
          in if move `elem` killerList
-              then Just killerList
+              then Just (move : removeSingle move killerList)
               else Just $ move : trimEnd killerList
     )
     halfmove
