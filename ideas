@@ -22,6 +22,7 @@ use old killers from two plies ago (neutralish - negative?)
 reduce max history to 500 (pretty big fail)
 see promotion (negativeish, fail)
 lmr log formula (like 14 elo)
+bishop pair bonus (like neutral, need to retry with tuning)
 
 todo
 bail aspiration
@@ -31,6 +32,7 @@ see pruning (pzchessbot inspo)
 quiescence checkmate detection
 pst tuning (remember to normalize!)
 quadratic futility
-lmr reduction function tuning
 stronger eval
 insert tt on prunes
+retry improving heuristic
+multicut
