@@ -521,10 +521,7 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
               let isLMR = nth > 2 && depth >= 2
               let newDepth =
                     if isLMR
-                      then
-                        if moveScore > maxHistory
-                          then depth - 2
-                          else depth - 3
+                      then depth - 1 - round (log (fromIntegral (depth + 1) :: Double) * log (fromIntegral nth) / 2)
                       else depth - 1
               score <- negate <$> searchPVS startingDepth newDepth (-trueAlpha - 1) (-trueAlpha) False moveMade
               if score >= (trueAlpha + 1)
@@ -563,4 +560,4 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
                     Nothing -> Just (nodeScore, move)
       where
         isCapture = isJust (getPiece (moveTo move) (boardPieces board))
-        ((moveScore, move), movesRest) = singleSelect moves
+        ((_, move), movesRest) = singleSelect moves

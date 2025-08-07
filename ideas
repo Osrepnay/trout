@@ -16,6 +16,12 @@ aspiration window change based on node type (solid flop, ~-11)
 razoring (+24elo)
 mobility tuning (still room for improvement probably, i think can incorporate into texel) (+25elo)
 change killer move replacement strategy from always-replace (small increase? but cba count it)
+change number of killers stored (nada)
+null move depth restriction (lower elo)
+use old killers from two plies ago (neutralish - negative?)
+reduce max history to 500 (pretty big fail)
+see promotion (negativeish, fail)
+lmr log formula (like 14 elo)
 
 todo
 bail aspiration
@@ -25,3 +31,6 @@ see pruning (pzchessbot inspo)
 quiescence checkmate detection
 pst tuning (remember to normalize!)
 quadratic futility
+lmr reduction function tuning
+stronger eval
+insert tt on prunes
