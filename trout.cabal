@@ -37,6 +37,7 @@ library
       Trout.Game.Zobrists
       Trout.Piece
       Trout.Search
+      Trout.Search.Eval
       Trout.Search.Node
       Trout.Search.PieceSquareTables
       Trout.Search.TranspositionTable
