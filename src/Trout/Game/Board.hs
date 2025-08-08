@@ -19,6 +19,7 @@ where
 
 import Data.Bits (Bits, clearBit, complement, testBit, (!<<.), (!>>.), (.&.), (.^.), (.|.))
 import Data.Hashable (Hashable (..))
+import Data.List (intersperse)
 import Trout.Bitboard (Bitboard)
 import Trout.Piece (Color (..), Piece (..), PieceType (..))
 
@@ -92,23 +93,25 @@ colorOccupancy Black (Pieces pw p0 p1 p2) = complement pw .&. (p0 .|. p1 .|. p2)
 piecesBoard :: Pieces -> String
 piecesBoard pcs =
   concat
-    [ [ case getPiece sq pcs of
-          Nothing -> '.'
-          Just (Piece White Pawn) -> 'P'
-          Just (Piece White Knight) -> 'N'
-          Just (Piece White Bishop) -> 'B'
-          Just (Piece White Rook) -> 'R'
-          Just (Piece White Queen) -> 'Q'
-          Just (Piece White King) -> 'K'
-          Just (Piece Black Pawn) -> 'p'
-          Just (Piece Black Knight) -> 'n'
-          Just (Piece Black Bishop) -> 'b'
-          Just (Piece Black Rook) -> 'r'
-          Just (Piece Black Queen) -> 'q'
-          Just (Piece Black King) -> 'k'
-      | c <- [0 .. 7],
-        let sq = r * 8 + c
-      ]
+    [ intersperse
+        ' '
+        [ case getPiece sq pcs of
+            Nothing -> '.'
+            Just (Piece White Pawn) -> 'P'
+            Just (Piece White Knight) -> 'N'
+            Just (Piece White Bishop) -> 'B'
+            Just (Piece White Rook) -> 'R'
+            Just (Piece White Queen) -> 'Q'
+            Just (Piece White King) -> 'K'
+            Just (Piece Black Pawn) -> 'p'
+            Just (Piece Black Knight) -> 'n'
+            Just (Piece Black Bishop) -> 'b'
+            Just (Piece Black Rook) -> 'r'
+            Just (Piece Black Queen) -> 'q'
+            Just (Piece Black King) -> 'k'
+        | c <- [0 .. 7],
+          let sq = r * 8 + c
+        ]
         ++ "\n"
     | r <- [7, 6 .. 0]
     ]

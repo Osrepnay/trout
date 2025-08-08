@@ -1,0 +1,74 @@
+cabal-version: 1.12
+
+-- This file has been generated from package.yaml by hpack version 0.37.0.
+--
+-- see: https://github.com/sol/hpack
+
+name:           texel-tuner
+version:        0.1.0.0
+description:    Please see the README on GitHub at <https://github.com/githubuser/texel-tuner#readme>
+homepage:       https://github.com/Osrepnay/trout#readme
+bug-reports:    https://github.com/Osrepnay/trout/issues
+author:         Osrepnay
+maintainer:     example@example.com
+copyright:      2025 Osrepnay
+license:        MIT
+license-file:   LICENSE
+build-type:     Simple
+extra-source-files:
+    README.md
+    CHANGELOG.md
+
+source-repository head
+  type: git
+  location: https://github.com/Osrepnay/trout
+
+library
+  exposed-modules:
+      Lib
+  other-modules:
+      Paths_texel_tuner
+  hs-source-dirs:
+      src
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints
+  build-depends:
+      base >=4.7 && <5
+    , megaparsec
+    , text
+    , trout
+    , vector
+  default-language: GHC2021
+
+executable texel-tuner-exe
+  main-is: Main.hs
+  other-modules:
+      PgnParse
+      Paths_texel_tuner
+  hs-source-dirs:
+      app
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      base >=4.7 && <5
+    , megaparsec
+    , texel-tuner
+    , text
+    , trout
+    , vector
+  default-language: GHC2021
+
+test-suite texel-tuner-test
+  type: exitcode-stdio-1.0
+  main-is: Spec.hs
+  other-modules:
+      Paths_texel_tuner
+  hs-source-dirs:
+      test
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      base >=4.7 && <5
+    , megaparsec
+    , texel-tuner
+    , text
+    , trout
+    , vector
+  default-language: GHC2021
