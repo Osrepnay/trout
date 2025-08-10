@@ -20,7 +20,7 @@ import Text.Megaparsec.Char (char, digitChar, space, space1, string')
 import Text.Megaparsec.Char.Lexer (charLiteral, decimal, float, signed)
 import Trout.Game (Game (..), allMoves, makeMove, startingGame)
 import Trout.Game.Move (Move (..), SpecialMove (..))
-import Trout.Piece (PieceType (..))
+import Trout.Piece (Color (..), PieceType (..))
 import Trout.Search.Worthiness (pieceWorth)
 
 type Parser = Parsec Void Text
@@ -121,47 +121,46 @@ parsePgnMove =
     *> (PgnMove <$> parseAlgebraic)
     <*> (space *> parseAnnotation)
 
-parseResult :: Parser ()
+parseResult :: Parser (Maybe Color)
 parseResult =
-  ( string' (T.pack "1-0")
-      <|> string' (T.pack "0-1")
-      <|> string' (T.pack "1/2-1/2")
-      <|> string' (T.pack "*")
-  )
-    $> ()
+  string' (T.pack "1-0") $> Just White
+    <|> string' (T.pack "0-1") $> Just Black
+    <|> string' (T.pack "1/2-1/2") $> Nothing
+    <|> string' (T.pack "*") $> Nothing
 
-parsePgn :: Parser [PgnMove]
-parsePgn = cleanHeaders *> many (parsePgnMove <* space) <* parseResult
+parsePgn :: Parser ([PgnMove], Maybe Color)
+parsePgn = cleanHeaders *> ((,) <$> many (parsePgnMove <* space) <*> parseResult)
 
-parsePgns :: Parser [[PgnMove]]
+parsePgns :: Parser [([PgnMove], Maybe Color)]
 parsePgns = many (parsePgn <* space)
 
 -- will crash at a moment's notice but honestly cba import safe.... etc.
 -- its fine for now, if it crashes its not the end of the worldb
 -- and could uncover bug in engine or fastchess
-playPgn :: [PgnMove] -> [(Game, Int)]
-playPgn =
-  tail
-    . reverse
-    . snd
-    . foldl'
-      ( \(lastGame, prevGames) pgnMove ->
-          -- pgn doesn't disambiguate for pins...
-          let candidates =
-                filter (moveValidator (pgnMoveAlg pgnMove)) $
-                  allMoves (gameBoard lastGame)
-              -- remove mate scores
-              realScore =
-                pgnMoveScore pgnMove
-                  >>= ( \score ->
-                          if abs score > 32 * pieceWorth Queen
-                            then Nothing
-                            else Just score
-                      )
-              !newGame = fromJust $ foldl' (<|>) Nothing (makeMove lastGame <$> candidates)
-           in (newGame, maybe prevGames (\score -> (newGame, score) : prevGames) realScore)
-      )
-      (startingGame, [])
+playPgn :: ([PgnMove], Maybe Color) -> [(Game, Double)]
+playPgn (moves, res) =
+  tail $
+    reverse $
+      snd $
+        foldl'
+          ( \(lastGame, prevGames) pgnMove ->
+              -- pgn doesn't disambiguate for pins...
+              let candidates =
+                    filter (moveValidator (pgnMoveAlg pgnMove)) $
+                      allMoves (gameBoard lastGame)
+                  -- remove mate scores
+                  realScore =
+                    pgnMoveScore pgnMove
+                      >>= ( \score ->
+                              if abs score > 32 * pieceWorth Queen
+                                then Nothing
+                                else Just score
+                          )
+                  !newGame = fromJust $ foldl' (<|>) Nothing (makeMove lastGame <$> candidates)
+               in (newGame, maybe prevGames (\_ -> (newGame, gameResDouble) : prevGames) realScore)
+          )
+          (startingGame, [])
+          moves
   where
     disamValidator disam sq =
       maybe True (== sq `quot` 8) (disamRow disam)
@@ -183,3 +182,7 @@ playPgn =
         && moveTo move == to
         && disamValidator disam (moveFrom move)
         && promoValidator maybePromo (moveSpecial move)
+    gameResDouble = case res of
+      Just White -> 1
+      Just Black -> 0
+      Nothing -> 0.5

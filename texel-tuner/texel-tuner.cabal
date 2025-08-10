@@ -13,7 +13,6 @@ author:         Osrepnay
 maintainer:     example@example.com
 copyright:      2025 Osrepnay
 license:        MIT
-license-file:   LICENSE
 build-type:     Simple
 extra-source-files:
     README.md
@@ -34,7 +33,9 @@ library
   build-depends:
       base >=4.7 && <5
     , megaparsec
+    , parallel
     , text
+    , transformers
     , trout
     , vector
   default-language: GHC2021
@@ -43,6 +44,7 @@ executable texel-tuner-exe
   main-is: Main.hs
   other-modules:
       PgnParse
+      Tuner
       Paths_texel_tuner
   hs-source-dirs:
       app
@@ -50,8 +52,10 @@ executable texel-tuner-exe
   build-depends:
       base >=4.7 && <5
     , megaparsec
+    , parallel
     , texel-tuner
     , text
+    , transformers
     , trout
     , vector
   default-language: GHC2021
@@ -67,8 +71,10 @@ test-suite texel-tuner-test
   build-depends:
       base >=4.7 && <5
     , megaparsec
+    , parallel
     , texel-tuner
     , text
+    , transformers
     , trout
     , vector
   default-language: GHC2021

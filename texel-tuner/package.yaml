@@ -25,6 +25,8 @@ dependencies:
 - vector
 - megaparsec
 - text
+- parallel
+- transformers
 
 language: GHC2021
 
