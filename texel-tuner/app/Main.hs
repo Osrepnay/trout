@@ -4,7 +4,10 @@ import Data.Text.IO qualified as TIO
 import PgnParse (parsePgns, playPgn)
 import System.Environment (getArgs)
 import Text.Megaparsec (errorBundlePretty, parse)
-import Tuner (newTunables, calcSigmoidShape)
+import Tuner (calcSigmoidK, newTunables, sgdStep, Tunables (..), steppin)
+import System.Random (mkStdGen)
+import System.Random.Shuffle (shuffle')
+import qualified Data.Vector.Primitive as PV
 
 main :: IO ()
 main = do
@@ -15,8 +18,14 @@ main = do
   case parsed of
     Left err -> putStrLn (errorBundlePretty err)
     Right pgnGames -> do
-      let res = pgnGames >>= playPgn
-      print $ foldr seq () res
-      print $ length res
-      print (calcSigmoidShape tunables res)
+      let allGames = pgnGames >>= playPgn
+      let generator = mkStdGen 69
+      let shuffledGames = shuffle' allGames (length allGames) generator
+      print $ foldr seq () shuffledGames
+      print $ length shuffledGames
+      let k = calcSigmoidK tunables shuffledGames
+      print k
+      putStrLn "k"
+      let stepped = steppin tunables shuffledGames k 50000 10
+      print stepped
       pure ()

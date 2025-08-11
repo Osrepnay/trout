@@ -27,6 +27,8 @@ dependencies:
 - text
 - parallel
 - transformers
+- random-shuffle
+- random
 
 language: GHC2021
 

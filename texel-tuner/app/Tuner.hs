@@ -1,4 +1,4 @@
-module Tuner (newTunables, tunedEval, tracingQuie, calcSigmoidShape) where
+module Tuner (Tunables (..), newTunables, tunedEval, tracingQuie, calcSigmoidK, sgdStep, steppin) where
 
 import Control.Parallel.Strategies (parListChunk, rseq, withStrategy)
 import Data.Bifunctor (first)
@@ -6,7 +6,7 @@ import Data.Foldable (maximumBy)
 import Data.Functor.Identity (Identity, runIdentity)
 import Data.Ord (comparing)
 import Data.Vector.Primitive qualified as PV
-import Debug.Trace
+import Debug.Trace (trace, traceShow, traceShowId)
 import Trout.Bitboard (Bitboard, foldSqs, (.^.))
 import Trout.Game (Game (..), allDisquiets, makeMove, mobility)
 import Trout.Game.Board (Board (..), pieceBitboard)
@@ -25,10 +25,10 @@ import Trout.Search.Worthiness
     winWorth,
   )
 
-pawnMPST :: PV.Vector Int
+pawnMPST :: PV.Vector Double
 pawnMPST =
   PV.fromList $
-    fmap (+ pawnWorth) $
+    fmap (+ fromIntegral pawnWorth) $
       concat $
         reverse
           [ [0, 0, 0, 0, 0, 0, 0, 0],
@@ -41,10 +41,10 @@ pawnMPST =
             [0, 0, 0, 0, 0, 0, 0, 0]
           ]
 
-knightMPST :: PV.Vector Int
+knightMPST :: PV.Vector Double
 knightMPST =
   PV.fromList $
-    fmap (+ knightWorth) $
+    fmap (+ fromIntegral knightWorth) $
       concat $
         reverse
           [ [-4, 0, 4, 2, 8, 3, 5, -4],
@@ -57,10 +57,10 @@ knightMPST =
             [-11, 1, -6, -3, -3, -2, 0, -11]
           ]
 
-bishopMPST :: PV.Vector Int
+bishopMPST :: PV.Vector Double
 bishopMPST =
   PV.fromList $
-    fmap (+ bishopWorth) $
+    fmap (+ fromIntegral bishopWorth) $
       concat $
         reverse
           [ [4, 3, 3, 3, 3, 3, 6, 7],
@@ -73,10 +73,10 @@ bishopMPST =
             [1, 8, 2, -1, -1, 1, 2, -2]
           ]
 
-rookMPST :: PV.Vector Int
+rookMPST :: PV.Vector Double
 rookMPST =
   PV.fromList $
-    fmap (+ rookWorth) $
+    fmap (+ fromIntegral rookWorth) $
       concat $
         reverse
           [ [8, 6, 8, 8, 9, 6, 7, 11],
@@ -89,10 +89,10 @@ rookMPST =
             [3, 5, 6, 7, 7, 5, 5, 2]
           ]
 
-queenMPST :: PV.Vector Int
+queenMPST :: PV.Vector Double
 queenMPST =
   PV.fromList $
-    fmap (+ queenWorth) $
+    fmap (+ fromIntegral queenWorth) $
       concat $
         reverse
           [ [9, 9, 11, 11, 12, 15, 16, 21],
@@ -105,7 +105,7 @@ queenMPST =
             [6, -1, -1, 2, 0, -2, -6, 0]
           ]
 
-kingMPST :: PV.Vector Int
+kingMPST :: PV.Vector Double
 kingMPST =
   PV.fromList $
     concat $
@@ -120,10 +120,10 @@ kingMPST =
           [3, 7, 7, -5, 1, -3, 6, 5]
         ]
 
-pawnEPST :: PV.Vector Int
+pawnEPST :: PV.Vector Double
 pawnEPST =
   PV.fromList $
-    fmap (+ pawnWorth) $
+    fmap (+ fromIntegral pawnWorth) $
       concat $
         reverse
           [ [0, 0, 0, 0, 0, 0, 0, 0],
@@ -136,10 +136,10 @@ pawnEPST =
             [0, 0, 0, 0, 0, 0, 0, 0]
           ]
 
-knightEPST :: PV.Vector Int
+knightEPST :: PV.Vector Double
 knightEPST =
   PV.fromList $
-    fmap (+ knightWorth) $
+    fmap (+ fromIntegral knightWorth) $
       concat $
         reverse
           [ [-4, 3, 9, 5, 9, 5, 9, -5],
@@ -152,10 +152,10 @@ knightEPST =
             [-8, 0, -3, -1, -1, -1, 0, -4]
           ]
 
-bishopEPST :: PV.Vector Int
+bishopEPST :: PV.Vector Double
 bishopEPST =
   PV.fromList $
-    fmap (+ bishopWorth) $
+    fmap (+ fromIntegral bishopWorth) $
       concat $
         reverse
           [ [4, 7, 9, 8, 8, 6, 9, 4],
@@ -168,10 +168,10 @@ bishopEPST =
             [0, 1, 0, 0, 0, 0, -1, 0]
           ]
 
-rookEPST :: PV.Vector Int
+rookEPST :: PV.Vector Double
 rookEPST =
   PV.fromList $
-    fmap (+ rookWorth) $
+    fmap (+ fromIntegral rookWorth) $
       concat $
         reverse
           [ [11, 11, 12, 11, 11, 10, 12, 12],
@@ -184,10 +184,10 @@ rookEPST =
             [0, 1, 2, 2, 2, 1, 2, 0]
           ]
 
-queenEPST :: PV.Vector Int
+queenEPST :: PV.Vector Double
 queenEPST =
   PV.fromList $
-    fmap (+ queenWorth) $
+    fmap (+ fromIntegral queenWorth) $
       concat $
         reverse
           [ [4, 7, 8, 10, 10, 12, 11, 10],
@@ -200,7 +200,7 @@ queenEPST =
             [2, 0, 0, 0, 0, 0, -2, -1]
           ]
 
-kingEPST :: PV.Vector Int
+kingEPST :: PV.Vector Double
 kingEPST =
   PV.fromList $
     concat $
@@ -215,37 +215,47 @@ kingEPST =
           [1, 3, 2, -2, 0, -1, 1, 2]
         ]
 
-mpstsBase :: PV.Vector Int
+mpstsBase :: PV.Vector Double
 mpstsBase = PV.concat [pawnMPST, knightMPST, bishopMPST, rookMPST, queenMPST, kingMPST]
 
-epstsBase :: PV.Vector Int
+epstsBase :: PV.Vector Double
 epstsBase = PV.concat [pawnEPST, knightEPST, bishopEPST, rookEPST, queenEPST, kingEPST]
 
-data Tunables = Tunables
-  { tunableMPST :: PV.Vector Int,
-    tunableEPST :: PV.Vector Int
+newtype Tunables = Tunables
+  { unTunables :: PV.Vector Double
   }
+  deriving (Show)
 
 newTunables :: Tunables
-newTunables = Tunables mpstsBase epstsBase
+newTunables = Tunables (PV.concat [mpstsBase, epstsBase])
 
-pstEval :: Tunables -> Bitboard -> PieceType -> Int -> Int -> Int -> Int
-pstEval (Tunables {tunableMPST = mpsts, tunableEPST = epsts}) bb piece !mgPhase !egPhase !mask =
+tunableMPST :: Tunables -> PV.Vector Double
+tunableMPST (Tunables vec) = PV.slice 0 (PV.length mpstsBase) vec
+
+tunableEPST :: Tunables -> PV.Vector Double
+tunableEPST (Tunables vec) = PV.slice (PV.length mpstsBase) (PV.length epstsBase) vec
+
+pstEval :: Tunables -> Bitboard -> PieceType -> Int -> Int -> Int -> Double
+pstEval tunables bb piece !mgPhase !egPhase !mask =
   foldSqs
     ( \score sqRaw ->
         let sq = sqRaw .^. mask
             m = mpsts PV.! (pieceOffset + sq)
             e = epsts PV.! (pieceOffset + sq)
-         in score + ((m * mgPhase + e * egPhase) `quot` 24)
+         in score + ((m * fromIntegral mgPhase + e * fromIntegral egPhase) / 24)
     )
     0
     bb
   where
     pieceOffset = fromEnum piece * 64
+    mpsts = tunableMPST tunables
+    epsts = tunableEPST tunables
 {-# INLINE pstEval #-}
 
-tunedEval :: Tunables -> Game -> Int
-tunedEval !tunables !game = colorSign (boardTurn board) * (pstEvalValue + mobilityValue + scaledKingSafety)
+tunedEval :: Tunables -> Game -> Double
+tunedEval !tunables !game =
+  fromIntegral (colorSign (boardTurn board))
+    * (pstEvalValue + mobilityValue + scaledKingSafety)
   where
     board = gameBoard game
     pieces = boardPieces board
@@ -271,24 +281,25 @@ tunedEval !tunables !game = colorSign (boardTurn board) * (pstEvalValue + mobili
         - pst Black King
 
     mobilityValue =
-      sum
-        [ (mgMult * mgPhase + egMult * egPhase)
-            * colorSign c
-            * mobility board (Piece c p)
-            `quot` 24
-        | c <- [White, Black],
-          (p, mgMult, egMult) <-
-            [ (Pawn, 3, 7),
-              (Knight, 8, 6),
-              (Bishop, 6, 4),
-              (Rook, 4, 6),
-              (Queen, 5, 4),
-              (King, 2, 6)
-            ]
-        ]
+      fromIntegral $
+        sum
+          [ (mgMult * mgPhase + egMult * egPhase)
+              * colorSign c
+              * mobility board (Piece c p)
+              `quot` 24
+          | c <- [White, Black],
+            (p, mgMult, egMult) <-
+              [ (Pawn, 3, 7),
+                (Knight, 8, 6),
+                (Bishop, 6, 4),
+                (Rook, 4, 6),
+                (Queen, 5, 4),
+                (King, 2, 6)
+              ]
+          ]
 
     kingSafety = virtMobile Black pieces - virtMobile White pieces
-    scaledKingSafety = kingSafety * mgPhase `quot` 24 * 3
+    scaledKingSafety = fromIntegral $ kingSafety * mgPhase `quot` 24 * 3
 
 removeSingle :: (Eq a) => a -> [a] -> [a]
 removeSingle _ [] = []
@@ -301,18 +312,20 @@ singleSelect moves = (best, removeSingle best moves)
   where
     best = maximumBy (comparing fst) moves
 
-tracingQuie :: Tunables -> Int -> Int -> Game -> Identity (Int, Game)
+-- it's in readert st monad in real quie
+-- and it was easier to jut wrap it in identity monad to keep the syntax
+tracingQuie :: Tunables -> Double -> Double -> Game -> Identity (Double, Game)
 tracingQuie !tunables !alpha !beta !game = do
   -- stand-pat from null-move observation (tunedEval immediately = not moving)
   let staticEval = tunedEval tunables game
-  let seeReq = max 0 (alpha - staticEval - 2 * pieceWorth Pawn)
+  let seeReq = max 0 (alpha - staticEval - 2 * fromIntegral (pieceWorth Pawn))
   if staticEval >= beta
     then pure (staticEval, game)
     else
       go
         staticEval
         game
-        (filter ((>= seeReq) . fst) ((\m -> (scoreMove m, m)) <$> allDisquiets board))
+        (filter ((>= seeReq) . fromIntegral . fst) ((\m -> (scoreMove m, m)) <$> allDisquiets board))
   where
     board = gameBoard game
 
@@ -340,33 +353,71 @@ tracingQuie !tunables !alpha !beta !game = do
       where
         ((_, move), movesRest) = singleSelect moves
 
-quieWrapper :: Tunables -> Game -> Int
+quieWrapper :: Tunables -> Game -> Double
 quieWrapper tunables game = runIdentity $ do
-  (res, _) <- tracingQuie tunables lossWorth winWorth game
-  pure (res * colorSign (boardTurn (gameBoard game)))
+  (res, _) <- tracingQuie tunables (fromIntegral (lossWorth :: Int)) (fromIntegral (winWorth :: Int)) game
+  pure (res * fromIntegral (colorSign (boardTurn (gameBoard game))))
+
+evalWrapper :: Tunables -> Game -> Double
+evalWrapper tunables game = tunedEval tunables game * fromIntegral (colorSign (boardTurn (gameBoard game)))
 
 sigmoid :: Double -> Double
 sigmoid x = 1.0 / (1 + exp 1 ** (-x))
 
-calcSigmoidShape :: Tunables -> [(Game, Double)] -> Double
-calcSigmoidShape tunables games = go 0.00665
-  where
-    numGames = length games
-    -- mean squared error
-    calcError fac =
-      let errParts =
-            ( \(g, res) ->
-                let rawScore = quieWrapper tunables g
-                 in (sigmoid (fromIntegral rawScore * fac) - res) ** 2
-            )
-              <$> games
-          errSum = sum $ withStrategy (parListChunk 10000 rseq) errParts
-       in (errSum / fromIntegral numGames)
+-- mean squared error
+calcError :: Tunables -> [(Game, Double)] -> Double -> Double
+calcError tunables games fac =
+  let errParts =
+        ( \(g, res) ->
+            let rawScore = evalWrapper tunables g
+             in (sigmoid (rawScore * fac) - res) ** 2
+        )
+          <$> games
+      errSum = sum $ withStrategy (parListChunk 1024 rseq) errParts
+   in (errSum / fromIntegral (length games))
 
-    go fac =
-      traceShow fac $
-        let nudgeLeft = calcError (fac - 0.00005)
-            nudgeRight = calcError (fac + 0.00005)
-         in if nudgeLeft < nudgeRight
-              then go (fac - 0.00005)
-              else go (fac + 0.00005)
+calcSigmoidK :: Tunables -> [(Game, Double)] -> Double
+calcSigmoidK tunables games
+  | rootError < nudgeRight = go (-kStep) initialK rootError
+  | otherwise = go kStep (initialK + kStep) nudgeRight
+  where
+    kStep = 0.00001
+    -- from previous runs
+    -- cache here to save time
+    -- initialK = 0.00665
+    initialK = 0.00665
+    rootError = calcError tunables games initialK
+    nudgeRight = calcError tunables games (initialK + kStep)
+
+    go delta k lastErr
+      | newErr > lastErr = k
+      | otherwise = go delta (k + delta) newErr
+      where
+        newErr = calcError tunables games (k + delta)
+
+paramDerivative :: Tunables -> [(Game, Double)] -> Double -> Double -> Int -> Double
+paramDerivative (Tunables vec) games k untunedErr idx = (retunedErr - untunedErr) / gradStep
+  where
+    gradStep = 5
+    retuned = Tunables (vec PV.// [(idx, vec PV.! idx + gradStep)])
+    retunedErr = calcError retuned games k
+
+sgdStep :: Tunables -> [(Game, Double)] -> Double -> Double -> Tunables
+sgdStep tunables games k step = Tunables fullRetuned
+  where
+    untunedErr = traceShowId $ calcError tunables games k
+    fullRetuned =
+      PV.imap
+        ( \i x ->
+            let d = paramDerivative tunables games k untunedErr i
+             in x + step * (-d)
+        )
+        (unTunables tunables)
+
+steppin :: Tunables -> [(Game, Double)] -> Double -> Double -> Int -> Tunables
+steppin startingTunables games k step times
+  | maxDelta < 0.1 = fullRetuned
+  | otherwise = traceShow maxDelta $ steppin fullRetuned games k step (times - 1)
+  where
+    fullRetuned = sgdStep startingTunables games k step
+    maxDelta = PV.foldl' max 0 (PV.zipWith (\a b -> abs (a - b)) (unTunables startingTunables) (unTunables fullRetuned))
