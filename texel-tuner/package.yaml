@@ -29,6 +29,7 @@ dependencies:
 - transformers
 - random-shuffle
 - random
+- split
 
 language: GHC2021
 

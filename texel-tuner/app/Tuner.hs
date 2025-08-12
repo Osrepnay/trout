@@ -1,15 +1,15 @@
-module Tuner (Tunables (..), newTunables, tunedEval, tracingQuie, calcSigmoidK, sgdStep, steppin) where
+module Tuner (Tunables (..), newTunables, tunedEval, tracingQuie, calcSigmoidK, calcError, sgdBatch, tuneEpoch) where
 
 import Control.Parallel.Strategies (parListChunk, rseq, withStrategy)
 import Data.Bifunctor (first)
-import Data.Foldable (maximumBy)
-import Data.Functor.Identity (Identity, runIdentity)
+import Data.Foldable (foldl', maximumBy)
+import Data.Functor.Identity (runIdentity)
+import Data.Maybe (maybeToList)
 import Data.Ord (comparing)
 import Data.Vector.Primitive qualified as PV
-import Debug.Trace (trace, traceShow, traceShowId)
 import Trout.Bitboard (Bitboard, foldSqs, (.^.))
 import Trout.Game (Game (..), allDisquiets, makeMove, mobility)
-import Trout.Game.Board (Board (..), pieceBitboard)
+import Trout.Game.Board (Board (..), getPiece, pieceBitboard)
 import Trout.Game.Move (Move (..), SpecialMove (..))
 import Trout.Piece (Color (..), Piece (..), PieceType (..), colorSign)
 import Trout.Search (seeOfCapture)
@@ -314,8 +314,8 @@ singleSelect moves = (best, removeSingle best moves)
 
 -- it's in readert st monad in real quie
 -- and it was easier to jut wrap it in identity monad to keep the syntax
-tracingQuie :: Tunables -> Double -> Double -> Game -> Identity (Double, Game)
-tracingQuie !tunables !alpha !beta !game = do
+tracingQuie :: Tunables -> Double -> Double -> Game -> (Double, Game)
+tracingQuie !tunables !alpha !beta !game = runIdentity $ do
   -- stand-pat from null-move observation (tunedEval immediately = not moving)
   let staticEval = tunedEval tunables game
   let seeReq = max 0 (alpha - staticEval - 2 * fromIntegral (pieceWorth Pawn))
@@ -342,7 +342,7 @@ tracingQuie !tunables !alpha !beta !game = do
     go bestScore bestGame moves = case makeMove game move of
       Just movedGame -> do
         let trueAlpha = max alpha bestScore
-        (score, endGame) <- first negate <$> tracingQuie tunables (-beta) (-trueAlpha) movedGame
+        let (score, endGame) = first negate $ tracingQuie tunables (-beta) (-trueAlpha) movedGame
         if score >= beta
           then pure (score, endGame)
           else
@@ -353,23 +353,28 @@ tracingQuie !tunables !alpha !beta !game = do
       where
         ((_, move), movesRest) = singleSelect moves
 
-quieWrapper :: Tunables -> Game -> Double
-quieWrapper tunables game = runIdentity $ do
-  (res, _) <- tracingQuie tunables (fromIntegral (lossWorth :: Int)) (fromIntegral (winWorth :: Int)) game
-  pure (res * fromIntegral (colorSign (boardTurn (gameBoard game))))
-
-evalWrapper :: Tunables -> Game -> Double
-evalWrapper tunables game = tunedEval tunables game * fromIntegral (colorSign (boardTurn (gameBoard game)))
+quieWrapper :: Tunables -> Game -> (Double, Game)
+quieWrapper tunables game =
+  first
+    (* fromIntegral (colorSign (boardTurn (gameBoard game))))
+    (tracingQuie tunables (fromIntegral (lossWorth :: Int)) (fromIntegral (winWorth :: Int)) game)
 
 sigmoid :: Double -> Double
 sigmoid x = 1.0 / (1 + exp 1 ** (-x))
+
+-- there's the sigmoid * (1 - sigmoid) nonsense but
+-- i cba derivate that
+sigmoidDerivative :: Double -> Double
+sigmoidDerivative x = ex / (1 + ex) ** 2
+  where
+    ex = exp 1 ** (-x)
 
 -- mean squared error
 calcError :: Tunables -> [(Game, Double)] -> Double -> Double
 calcError tunables games fac =
   let errParts =
         ( \(g, res) ->
-            let rawScore = evalWrapper tunables g
+            let (rawScore, _) = quieWrapper tunables g
              in (sigmoid (rawScore * fac) - res) ** 2
         )
           <$> games
@@ -395,29 +400,49 @@ calcSigmoidK tunables games
       where
         newErr = calcError tunables games (k + delta)
 
-paramDerivative :: Tunables -> [(Game, Double)] -> Double -> Double -> Int -> Double
-paramDerivative (Tunables vec) games k untunedErr idx = (retunedErr - untunedErr) / gradStep
-  where
-    gradStep = 5
-    retuned = Tunables (vec PV.// [(idx, vec PV.! idx + gradStep)])
-    retunedErr = calcError retuned games k
+batchSize :: Int
+batchSize = 1024
 
-sgdStep :: Tunables -> [(Game, Double)] -> Double -> Double -> Tunables
-sgdStep tunables games k step = Tunables fullRetuned
-  where
-    untunedErr = traceShowId $ calcError tunables games k
-    fullRetuned =
-      PV.imap
-        ( \i x ->
-            let d = paramDerivative tunables games k untunedErr i
-             in x + step * (-d)
-        )
+sgdBatch :: Tunables -> [(Game, Double)] -> Double -> Double -> Tunables
+sgdBatch tunables games k step =
+  Tunables
+    ( PV.zipWith
+        (\x d -> x - d / fromIntegral batchSize * step)
         (unTunables tunables)
-
-steppin :: Tunables -> [(Game, Double)] -> Double -> Double -> Int -> Tunables
-steppin startingTunables games k step times
-  | maxDelta < 0.1 = fullRetuned
-  | otherwise = traceShow maxDelta $ steppin fullRetuned games k step (times - 1)
+        derivativesSum
+    )
   where
-    fullRetuned = sgdStep startingTunables games k step
-    maxDelta = PV.foldl' max 0 (PV.zipWith (\a b -> abs (a - b)) (unTunables startingTunables) (unTunables fullRetuned))
+    batch = take batchSize games
+    updateSumD sumD (game, res) = PV.accum (+) sumD alterations
+      where
+        (endpointEval, quieEndpoint) = quieWrapper tunables game
+        mgPhaseFrac = fromIntegral (totalMaterialScore game) / 24
+        egPhaseFrac = 1 - mgPhaseFrac
+        commonD = 2 * (sigmoid (k * endpointEval) - res) * k * sigmoidDerivative (k * endpointEval)
+        pieces = boardPieces (gameBoard quieEndpoint)
+        sqAlterations rawSq =
+          maybeToList (getPiece rawSq pieces)
+            >>= \(Piece c p) ->
+              let (sq, existMult) = case c of
+                    White -> (rawSq, 1)
+                    Black -> (rawSq .^. 56, -1)
+                  mgIdx = sq + fromEnum p * 64
+                  egIdx = mgIdx + 64 * 6
+               in [ (mgIdx, commonD * mgPhaseFrac * existMult),
+                    (egIdx, commonD * egPhaseFrac * existMult)
+                  ]
+        alterations = [0 .. 64] >>= sqAlterations
+
+    -- TODO parallelize
+    derivativesSum =
+      foldl'
+        updateSumD
+        (PV.replicate (PV.length (unTunables tunables)) 0)
+        batch
+
+tuneEpoch :: Tunables -> [(Game, Double)] -> Double -> Double -> Tunables
+tuneEpoch startingTunables games k step
+  | length games < batchSize = startingTunables
+  | otherwise = tuneEpoch fullRetuned (drop batchSize games) k step
+  where
+    fullRetuned = sgdBatch startingTunables games k step
