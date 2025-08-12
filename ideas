@@ -24,6 +24,7 @@ see promotion (negativeish, fail)
 lmr log formula (like 14 elo)
 bishop pair bonus (like neutral, need to retry with tuning)
 pst tuning (big wins, 40 elo (on non tuned opening book) to 70 (on tuned opening book))
+check pesto without broken psts (kinda worse, good because that means tuning worked)
 
 todo
 bail aspiration
@@ -39,4 +40,3 @@ multicut
 make eval take a board instead of a game
 kill worthiness for pieces because of desync with psts
 make tuner support epd based pgns
-check pesto without broken psts

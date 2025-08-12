@@ -4,9 +4,9 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 
-name:           texel-tuner
+name:           pst-tuner
 version:        0.1.0.0
-description:    Please see the README on GitHub at <https://github.com/githubuser/texel-tuner#readme>
+description:    Please see the README on GitHub at <https://github.com/Osrepnay/trout#readme>
 homepage:       https://github.com/Osrepnay/trout#readme
 bug-reports:    https://github.com/Osrepnay/trout/issues
 author:         Osrepnay
@@ -26,7 +26,7 @@ library
   exposed-modules:
       Lib
   other-modules:
-      Paths_texel_tuner
+      Paths_pst_tuner
   hs-source-dirs:
       src
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints
@@ -43,12 +43,12 @@ library
     , vector
   default-language: GHC2021
 
-executable texel-tuner-exe
+executable pst-tuner-exe
   main-is: Main.hs
   other-modules:
       PgnParse
       Tuner
-      Paths_texel_tuner
+      Paths_pst_tuner
   hs-source-dirs:
       app
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
@@ -56,21 +56,21 @@ executable texel-tuner-exe
       base >=4.7 && <5
     , megaparsec
     , parallel
+    , pst-tuner
     , random
     , random-shuffle
     , split
-    , texel-tuner
     , text
     , transformers
     , trout
     , vector
   default-language: GHC2021
 
-test-suite texel-tuner-test
+test-suite pst-tuner-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
-      Paths_texel_tuner
+      Paths_pst_tuner
   hs-source-dirs:
       test
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
@@ -78,10 +78,10 @@ test-suite texel-tuner-test
       base >=4.7 && <5
     , megaparsec
     , parallel
+    , pst-tuner
     , random
     , random-shuffle
     , split
-    , texel-tuner
     , text
     , transformers
     , trout

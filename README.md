@@ -31,7 +31,8 @@ Does that speak to my weakness or the engine's strength? Who knows? (it's my wea
 - Killer heuristic move ordering
 - History heuristic move ordering
 - Static exchange evaluation move ordering
-- PeSTO PST + mobility + king safety eval
+- PST + mobility + king safety eval
+- PSTs tuned with stochastic gradient descent, based on Texel's method
 - [En passant](https://en.wikipedia.org/wiki/En_passant)
 
 ## Running
