@@ -60,7 +60,7 @@ maxKillers = 3
 type KillerMap = Map Int16 [Move]
 
 maxHistory :: Int
-maxHistory = 1000
+maxHistory = 500
 
 type HistoryTable s = STVector s Int
 
@@ -437,7 +437,10 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
               let isLMR = nth > 2 && depth >= 2
               let newDepth =
                     if isLMR
-                      then depth - 1 - round (log (fromIntegral (depth + 1) :: Double) * log (fromIntegral nth) / 2)
+                      then
+                        depth
+                          - 1
+                          - ceiling (log (fromIntegral (depth + 1) :: Double) * log (fromIntegral nth) / 2.5)
                       else depth - 1
               score <- negate <$> searchPVS startingDepth newDepth (-trueAlpha - 1) (-trueAlpha) False moveMade
               if score >= (trueAlpha + 1)
