@@ -347,16 +347,15 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
 
     gameMoves = allMoves board
 
-    checkNullMove = case makeMove game NullMove of
-      Just nullGame -> do
-        if not isPV && materialScore game >= 1
-          then do
+    checkNullMove
+      | not isPV && materialScore game >= 1 = case makeMove game NullMove of
+          Just nullGame -> do
             nullScore <- negate <$> searchPVS startingDepth (depth * 2 `quot` 3 - 2) (-beta) (-beta + 1) False nullGame
             if nullScore >= beta
               then pure (Just nullScore)
               else pure Nothing
-          else pure Nothing
-      Nothing -> pure Nothing
+          Nothing -> pure Nothing
+      | otherwise = pure Nothing
 
     currentlyChecked = inCheck (boardTurn board) (boardPieces board)
 
