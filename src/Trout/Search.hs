@@ -348,7 +348,7 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
     gameMoves = allMoves board
 
     checkNullMove
-      | not isPV && materialScore game >= 1 = case makeMove game NullMove of
+      | not isPV && materialScore game >= 1 && depth > 1 = case makeMove game NullMove of
           Just nullGame -> do
             nullScore <- negate <$> searchPVS startingDepth (depth * 2 `quot` 3 - 2) (-beta) (-beta + 1) False nullGame
             if nullScore >= beta
