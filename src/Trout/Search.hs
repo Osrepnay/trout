@@ -292,9 +292,6 @@ addHistory key bonus history =
     (\curr -> curr + signum bonus * abs (bonus - abs bonus * curr `quot` maxHistory))
     key
 
-nullReduction :: Int16
-nullReduction = 3
-
 mkNodeResult :: Int -> Int -> Int -> NodeResult
 mkNodeResult alpha beta score
   | score <= alpha = NodeResult score AllNode
@@ -354,7 +351,7 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
       Just nullGame -> do
         if not isPV && materialScore game >= 1
           then do
-            nullScore <- negate <$> searchPVS startingDepth (depth - nullReduction) (-beta) (-beta + 1) False nullGame
+            nullScore <- negate <$> searchPVS startingDepth (depth * 2 `quot` 3 - 2) (-beta) (-beta + 1) False nullGame
             if nullScore >= beta
               then pure (Just nullScore)
               else pure Nothing
