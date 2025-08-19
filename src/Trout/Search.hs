@@ -49,7 +49,7 @@ import Trout.Game.MoveGen (SpecialMove (Promotion), kingTable, knightTable, pawn
 import Trout.Game.MoveGen.Sliding.Magic (bishopMovesMagic, rookMovesMagic)
 import Trout.Piece (Color (..), Piece (..), PieceType (..), other)
 import Trout.Search.Eval (eval, materialScore)
-import Trout.Search.Node (NodeResult (..), NodeType (..), matchesBounds)
+import Trout.Search.Node (NodeResult (..), NodeType (..), nodeUsable)
 import Trout.Search.TranspositionTable (STTranspositionTable, TTEntry (..))
 import Trout.Search.TranspositionTable qualified as TT
 import Trout.Search.Worthiness (drawWorth, lossWorth, pawnWorth, pieceWorth, winWorth)
@@ -188,7 +188,7 @@ quieSearch !alpha !beta !game = do
   maybeEntry <- lift (TT.lookup (gameBoard game) tt)
   let earlyReturn =
         maybeEntry >>= \(TTEntry {entryScore = s}) ->
-          if matchesBounds alpha beta s
+          if nodeUsable alpha beta s
             then Just (nodeResScore s)
             else Nothing
   let seeReq = max 0 (alpha - staticEval - 2 * pieceWorth Pawn)
@@ -394,7 +394,7 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
                ) ->
             if move `elem` gameMoves
               && d >= depth
-              && matchesBounds alpha beta res
+              && nodeUsable alpha beta res
               -- prevents stalling in endgame by making sure halfmove penalty gets applied
               && not (scoreIsWinning (nodeResScore res) && halfmove /= gameHalfmove game)
               then Just (nodeResScore res)

@@ -14,23 +14,28 @@ import Tuner (Tunables (..), calcError, calcSigmoidK, newTunables, tuneEpoch)
 
 formatTunables :: Tunables -> String
 formatTunables (Tunables tunables) =
-  intercalate "\n\n" $
-    uncurry formatSet
-      <$> zip
-        [ "pawnMPST",
-          "knightMPST",
-          "bishopMPST",
-          "rookMPST",
-          "queenMPST",
-          "kingMPST",
-          "pawnEPST",
-          "knightEPST",
-          "bishopEPST",
-          "rookEPST",
-          "queenEPST",
-          "kingEPST"
-        ]
-        [0 ..]
+  "mobility "
+    ++ show (PV.slice (2 * 6 * 64) 12 tunables)
+    ++ "\n"
+    ++ intercalate
+      "\n\n"
+      ( uncurry formatSet
+          <$> zip
+            [ "pawnMPST",
+              "knightMPST",
+              "bishopMPST",
+              "rookMPST",
+              "queenMPST",
+              "kingMPST",
+              "pawnEPST",
+              "knightEPST",
+              "bishopEPST",
+              "rookEPST",
+              "queenEPST",
+              "kingEPST"
+            ]
+            [0 ..]
+      )
   where
     formatStr =
       intercalate
@@ -66,7 +71,7 @@ main = do
             putStrLn $ "previous tunables: " ++ show currTunables
             gen <- newStdGen
             let shuffledGames = shuffle' allGames (length allGames) gen
-            let steppedTunables = tuneEpoch currTunables shuffledGames k 2048
+            let steppedTunables = tuneEpoch currTunables shuffledGames k 500
             let newErr = calcError steppedTunables shuffledGames k
             if newErr > prevErr
               then pure currTunables

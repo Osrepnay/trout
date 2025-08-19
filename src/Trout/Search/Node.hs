@@ -1,4 +1,4 @@
-module Trout.Search.Node (NodeType (..), NodeResult (..), matchesBounds) where
+module Trout.Search.Node (NodeType (..), NodeResult (..), nodeUsable) where
 
 import Data.Bits (complement, (.&.))
 import Foreign (Ptr, Storable (..), castPtr)
@@ -26,8 +26,8 @@ fromIbv ibv = NodeResult (rounded `quot` 4) (toEnum (diff + 1))
     rounded = (ibv + 1) .&. complement 3
     diff = ibv - rounded
 
-matchesBounds :: Int -> Int -> NodeResult -> Bool
-matchesBounds alpha beta (NodeResult s t) =
+nodeUsable :: Int -> Int -> NodeResult -> Bool
+nodeUsable alpha beta (NodeResult s t) =
   t == ExactNode
     || t == AllNode && s <= alpha
     || t == CutNode && s >= beta

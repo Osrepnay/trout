@@ -46,7 +46,7 @@ newtype Tunables = Tunables
   deriving (Show)
 
 newTunables :: Tunables
-newTunables = Tunables (PV.concat [mpstsBase, epstsBase])
+newTunables = Tunables (PV.concat [mpstsBase, epstsBase, PV.fromList [3, 7, 8, 6, 6, 4, 4, 6, 5, 4, 2, 6]])
 
 tunableMPST :: Tunables -> PV.Vector Double
 tunableMPST (Tunables vec) = PV.slice 0 (PV.length mpstsBase) vec
@@ -98,23 +98,23 @@ tunedEval !tunables !board =
         + pst White King
         - pst Black King
 
+    mobs = PV.slice (2 * 6 * 64) (2 * 6) (unTunables tunables)
     mobilityValue =
-      fromIntegral $
-        sum
-          [ (mgMult * mgPhase + egMult * egPhase)
-              * colorSign c
-              * mobility board (Piece c p)
-              `quot` 24
-          | c <- [White, Black],
-            (p, mgMult, egMult) <-
-              [ (Pawn, 3, 7),
-                (Knight, 8, 6),
-                (Bishop, 6, 4),
-                (Rook, 4, 6),
-                (Queen, 5, 4),
-                (King, 2, 6)
-              ]
-          ]
+      sum
+        [ (mgMult * fromIntegral mgPhase + egMult * fromIntegral egPhase)
+            * fromIntegral (colorSign c)
+            * fromIntegral (mobility board (Piece c p))
+            / 24
+        | c <- [White, Black],
+          (p, mgMult, egMult) <-
+            [ (Pawn, mobs PV.! 0, mobs PV.! 1),
+              (Knight, mobs PV.! 2, mobs PV.! 3),
+              (Bishop, mobs PV.! 4, mobs PV.! 5),
+              (Rook, mobs PV.! 6, mobs PV.! 7),
+              (Queen, mobs PV.! 8, mobs PV.! 9),
+              (King, mobs PV.! 10, mobs PV.! 11)
+            ]
+        ]
 
     kingSafety = virtMobile Black pieces - virtMobile White pieces
     scaledKingSafety = fromIntegral $ kingSafety * mgPhase `quot` 24 * 3
@@ -237,7 +237,8 @@ sgdBatch tunables games k step =
         mgPhaseFrac = fromIntegral (totalMaterialScore (gameBoard game)) / 24
         egPhaseFrac = 1 - mgPhaseFrac
         commonD = 2 * (sigmoid (k * endpointEval) - res) * k * sigmoidDerivative (k * endpointEval)
-        pieces = boardPieces (gameBoard quieEndpoint)
+        board = gameBoard quieEndpoint
+        pieces = boardPieces board
         sqAlterations rawSq =
           maybeToList (getPiece rawSq pieces)
             >>= \(Piece c p) ->
@@ -249,7 +250,19 @@ sgdBatch tunables games k step =
                in [ (mgIdx, commonD * mgPhaseFrac * existMult),
                     (egIdx, commonD * egPhaseFrac * existMult)
                   ]
-        alterations = [0 .. 64] >>= sqAlterations
+        mobilityAlterations =
+          concat
+            [ [ (mobMgIdx, commonD * mgPhaseFrac * mobMult),
+                (mobEgIdx, commonD * egPhaseFrac * mobMult)
+              ]
+            | c <- [White, Black],
+              p <- enumFromTo Pawn King,
+              let piece = Piece c p
+                  mobMgIdx = 2 * 6 * 64 + fromEnum p * 2
+                  mobEgIdx = mobMgIdx + 1
+                  mobMult = fromIntegral $ colorSign c * mobility board piece
+            ]
+        alterations = ([0 .. 64] >>= sqAlterations) ++ mobilityAlterations
 
     -- TODO parallelize
     derivativesSum =

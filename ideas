@@ -31,6 +31,7 @@ deactivate nmp at low depths (like 5 elo? idk i dont have the patience to run it
 late move pruning (retry later, but only got like basically neutral with this)
 butterfly boards (neutral to negative, very very similar)
 make eval take a board instead of a game (it's like the same benchmarkwise so basically nothing on elo, pretty expected)
+mobility in pst tuner (+50 elo)
 
 todo
 bail aspiration
@@ -45,4 +46,4 @@ retry improving heuristic
 multicut
 kill worthiness for pieces because of desync with psts
 make tuner support epd based pgns
-mobility in pst tuner
+nmp margin staticEval >= beta, its like 8 elo so hard to test

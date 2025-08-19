@@ -63,20 +63,20 @@ eval board = colorSign (boardTurn board) * (pstEvalValue + mobilityValue + scale
         + pst (getBB White King) King 0
         - pst (getBB Black King) King 56
 
-    mobilityValue =
+    mobilityValue = round $
       sum
-        [ (mgMult * mgPhase + egMult * egPhase)
-            * colorSign c
-            * mobility board (Piece c p)
-            `quot` 24
+        [ (mgMult * fromIntegral mgPhase + egMult * fromIntegral egPhase)
+            * fromIntegral (colorSign c)
+            * fromIntegral (mobility board (Piece c p))
+            / 24
         | c <- [White, Black],
-          (p, mgMult, egMult) <-
-            [ (Pawn, 3, 7),
-              (Knight, 8, 6),
-              (Bishop, 6, 4),
-              (Rook, 4, 6),
-              (Queen, 5, 4),
-              (King, 2, 6)
+          (p, mgMult :: Double, egMult) <-
+            [ (Pawn, 9.4, 12.1),
+              (Knight, 9.1, 0),
+              (Bishop, 8.7, 2.1),
+              (Rook, 5.3, 3.7),
+              (Queen, 5.4, 3.7),
+              (King, 1.2, 5.8)
             ]
         ]
 
