@@ -183,7 +183,7 @@ singleSelect moves = (best, removeSingle best moves)
 quieSearch :: Int -> Int -> Game -> ReaderT (SearchEnv s) (ST s) Int
 quieSearch !alpha !beta !game = do
   -- stand-pat from null-move observation (eval immediately = not moving)
-  let staticEval = eval game
+  let staticEval = eval board
   (SearchEnv {searchEnvTT = tt}) <- ask
   maybeEntry <- lift (TT.lookup (gameBoard game) tt)
   let earlyReturn =
@@ -359,7 +359,7 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
 
     currentlyChecked = inCheck (boardTurn board) (boardPieces board)
 
-    staticEval = eval game
+    staticEval = eval board
 
     -- unfortunately this breaks on games with length over 100k! oh no!
     scoreIsWinning score = abs (abs score - winWorth) < 100000

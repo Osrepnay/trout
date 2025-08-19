@@ -10,13 +10,12 @@ import Trout.Search.PieceSquareTables (pstEval)
 -- 24: all pieces, 0: none
 -- pawns don't count, bishops and knights count 1, rooks 2, queens 4
 -- taken from pesto/ethereal/fruit
-totalMaterialScore :: Game -> Int
-totalMaterialScore game =
+totalMaterialScore :: Board -> Int
+totalMaterialScore board =
   popCount (pieceTypeBitboard Knight pieces .|. pieceTypeBitboard Bishop pieces)
     + 2 * popCount (pieceTypeBitboard Rook pieces)
     + 4 * popCount (pieceTypeBitboard Queen pieces)
   where
-    board = gameBoard game
     pieces = boardPieces board
 {-# INLINABLE totalMaterialScore #-}
 
@@ -42,13 +41,12 @@ virtMobile color pieces = popCount movez
     movez = bishopMovesMagic block kingSq .|. rookMovesMagic block kingSq
 {-# INLINABLE virtMobile #-}
 
-eval :: Game -> Int
-eval game = colorSign (boardTurn board) * (pstEvalValue + mobilityValue + scaledKingSafety)
+eval :: Board -> Int
+eval board = colorSign (boardTurn board) * (pstEvalValue + mobilityValue + scaledKingSafety)
   where
-    board = gameBoard game
     pieces = boardPieces board
     getBB color = ($ pieces) . pieceBitboard . Piece color
-    mgPhase = totalMaterialScore game
+    mgPhase = totalMaterialScore board
     egPhase = 24 - mgPhase
     pst bb p = pstEval bb p mgPhase egPhase
     pstEvalValue =
