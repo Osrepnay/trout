@@ -2,6 +2,7 @@ module Tuner
   ( Tunables (..),
     newTunables,
     tunableMobility,
+    tunableKingSafety,
     tunedEval,
     tracingQuie,
     calcSigmoidK,
@@ -11,7 +12,7 @@ module Tuner
   )
 where
 
-import Control.Parallel.Strategies (parListChunk, rseq, withStrategy)
+import Control.Parallel.Strategies (parListChunk, rseq, withStrategy, rdeepseq, evalList)
 import Data.Bifunctor (first)
 import Data.Foldable (foldl', maximumBy)
 import Data.Functor.Identity (runIdentity)
@@ -51,6 +52,8 @@ mpstsBase = PV.map fromIntegral $ PV.concat [pawnMPST, knightMPST, bishopMPST, r
 epstsBase :: PV.Vector Double
 epstsBase = PV.map fromIntegral $ PV.concat [pawnEPST, knightEPST, bishopEPST, rookEPST, queenEPST, kingEPST]
 
+-- TODO make this an actual type at some point
+-- weirder to do derivatives but it is what it is
 newtype Tunables = Tunables
   { unTunables :: PV.Vector Double
   }
@@ -62,7 +65,8 @@ newTunables =
     ( PV.concat
         [ mpstsBase,
           epstsBase,
-          PV.fromList [9.4, 12.1, 9.1, 0, 8.7, 2.1, 5.3, 3.7, 5.4, 3.7, 1.2, 5.8]
+          PV.fromList [9.4, 12.1, 9.1, 0, 8.7, 2.1, 5.3, 3.7, 5.4, 3.7, 1.2, 5.8],
+          PV.fromList [3, 0]
         ]
     )
 
@@ -74,6 +78,11 @@ tunableEPST (Tunables vec) = PV.slice (PV.length mpstsBase) (PV.length epstsBase
 
 tunableMobility :: Tunables -> PV.Vector Double
 tunableMobility (Tunables vec) = PV.slice (2 * 6 * 64) 12 vec
+
+tunableKingSafety :: Tunables -> (Double, Double)
+tunableKingSafety (Tunables vec) = (ks PV.! 0, ks PV.! 1)
+  where
+    ks = PV.slice (2 * 6 * 64 + 12) 2 vec
 
 pstEval :: Tunables -> Bitboard -> PieceType -> Int -> Int -> Int -> Double
 pstEval tunables bb piece !mgPhase !egPhase !mask =
@@ -137,8 +146,12 @@ tunedEval !tunables !board =
             ]
         ]
 
+    (safetyMg, safetyEg) = tunableKingSafety tunables
     kingSafety = virtMobile Black pieces - virtMobile White pieces
-    scaledKingSafety = fromIntegral $ kingSafety * mgPhase `quot` 24 * 3
+    scaledKingSafety =
+      fromIntegral kingSafety
+        * (fromIntegral mgPhase * safetyMg + fromIntegral egPhase * safetyEg)
+        / 24
 
 removeSingle :: (Eq a) => a -> [a] -> [a]
 removeSingle _ [] = []
@@ -225,11 +238,11 @@ calcSigmoidK tunables games
   | rootError < nudgeRight = go (-kStep) initialK rootError
   | otherwise = go kStep (initialK + kStep) nudgeRight
   where
-    kStep = 0.00001
+    kStep = 0.0001
     -- from previous runs
     -- cache here to save time
-    -- initialK = 0.00567
-    initialK = 0.00567
+    -- initialK = 0.0058
+    initialK = 0.0058
     rootError = calcError tunables games initialK
     nudgeRight = calcError tunables games (initialK + kStep)
 
@@ -240,7 +253,7 @@ calcSigmoidK tunables games
         newErr = calcError tunables games (k + delta)
 
 batchSize :: Int
-batchSize = 1024
+batchSize = 16384
 
 sgdBatch :: Tunables -> [(Game, Double)] -> Double -> Double -> Tunables
 sgdBatch tunables games k step =
@@ -252,7 +265,7 @@ sgdBatch tunables games k step =
     )
   where
     batch = take batchSize games
-    updateSumD sumD (game, res) = PV.accum (+) sumD alterations
+    calcAlterations (game, res) = alterations
       where
         (endpointEval, quieEndpoint) = quieWrapper tunables game
         mgPhaseFrac = fromIntegral (totalMaterialScore (gameBoard game)) / 24
@@ -283,14 +296,21 @@ sgdBatch tunables games k step =
                   mobEgIdx = mobMgIdx + 1
                   mobMult = fromIntegral $ colorSign c * mobility board piece
             ]
-        alterations = ([0 .. 64] >>= sqAlterations) ++ mobilityAlterations
+        safetyMult = fromIntegral $ virtMobile Black pieces - virtMobile White pieces
+        safetyMgIdx = 2 * 6 * 64 + 12
+        safetyEgIdx = safetyMgIdx + 1
+        kingSafetyAlterations =
+          [ (safetyMgIdx, commonD * mgPhaseFrac * safetyMult),
+            (safetyEgIdx, commonD * egPhaseFrac * safetyMult)
+          ]
+        alterations = ([0 .. 64] >>= sqAlterations) ++ mobilityAlterations ++ kingSafetyAlterations
 
     -- TODO parallelize
     derivativesSum =
       foldl'
-        updateSumD
+        (PV.accum (+))
         (PV.replicate (PV.length (unTunables tunables)) 0)
-        batch
+        (withStrategy (parListChunk 1024 (evalList rdeepseq)) (calcAlterations <$> batch))
 
 tuneEpoch :: Tunables -> [(Game, Double)] -> Double -> Double -> Tunables
 tuneEpoch startingTunables games k step

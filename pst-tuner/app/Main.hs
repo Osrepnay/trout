@@ -10,14 +10,11 @@ import System.Random (newStdGen)
 import System.Random.Shuffle (shuffle')
 import Text.Megaparsec (errorBundlePretty, parse)
 import Text.Printf (printf)
-import Tuner (Tunables (..), calcError, calcSigmoidK, newTunables, tunableMobility, tuneEpoch)
+import Tuner (Tunables (..), calcError, calcSigmoidK, newTunables, tunableKingSafety, tunableMobility, tuneEpoch)
 
 formatTunables :: Tunables -> String
 formatTunables tunables =
-  "mobility:\n"
-    ++ formatMob
-    ++ "\n"
-    ++ "piece-square tables:\n"
+  "piece-square tables:\n"
     ++ intercalate
       "\n\n"
       ( uncurry formatSet
@@ -37,6 +34,12 @@ formatTunables tunables =
             ]
             [0 ..]
       )
+    ++ "\n"
+    ++ "mobility:\n"
+    ++ formatMob
+    ++ "\n"
+    ++ "king safety:\n"
+    ++ show safeties
   where
     formatStr =
       intercalate
@@ -59,15 +62,15 @@ formatTunables tunables =
     mobs = tunableMobility tunables
     formatMobStr =
       intercalate
-        "\n"
-        [ "[ (Pawn, %f, %f),",
-          "  (Knight, %f, %f),",
-          "  (Bishop, %f, %f),",
-          "  (Rook, %f, %f),",
-          "  (Queen, %f, %f),",
-          "  (King, %f, %f),",
-          "]"
+        ",\n"
+        [ "[ (Pawn, %f, %f)",
+          "  (Knight, %f, %f)",
+          "  (Bishop, %f, %f)",
+          "  (Rook, %f, %f)",
+          "  (Queen, %f, %f)",
+          "  (King, %f, %f)"
         ]
+        ++ "\n]"
     formatMob =
       printf
         formatMobStr
@@ -83,6 +86,7 @@ formatTunables tunables =
         (mobs PV.! 9)
         (mobs PV.! 10)
         (mobs PV.! 11)
+    safeties = tunableKingSafety tunables
 
 main :: IO ()
 main = do
@@ -107,7 +111,7 @@ main = do
             let shuffledGames = shuffle' allGames (length allGames) gen
             let steppedTunables = tuneEpoch currTunables shuffledGames k 500
             let newErr = calcError steppedTunables shuffledGames k
-            if newErr > prevErr || True
+            if newErr > prevErr
               then pure currTunables
               else keepTuning newErr steppedTunables
       finalTunables <- keepTuning (fromIntegral (maxBound :: Int)) startingTunables

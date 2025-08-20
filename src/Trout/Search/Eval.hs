@@ -17,7 +17,7 @@ totalMaterialScore board =
     + 4 * popCount (pieceTypeBitboard Queen pieces)
   where
     pieces = boardPieces board
-{-# INLINABLE totalMaterialScore #-}
+{-# INLINEABLE totalMaterialScore #-}
 
 -- for current side
 materialScore :: Game -> Int
@@ -30,7 +30,7 @@ materialScore game =
     board = gameBoard game
     pieces = boardPieces board
     turn = boardTurn board
-{-# INLINABLE materialScore #-}
+{-# INLINEABLE materialScore #-}
 
 virtMobile :: Color -> Pieces -> Int
 virtMobile color pieces = popCount movez
@@ -39,7 +39,7 @@ virtMobile color pieces = popCount movez
     king = pieceBitboard (Piece color King) pieces
     kingSq = countTrailingZeros king
     movez = bishopMovesMagic block kingSq .|. rookMovesMagic block kingSq
-{-# INLINABLE virtMobile #-}
+{-# INLINEABLE virtMobile #-}
 
 eval :: Board -> Int
 eval board = colorSign (boardTurn board) * (pstEvalValue + mobilityValue + scaledKingSafety)
@@ -63,22 +63,29 @@ eval board = colorSign (boardTurn board) * (pstEvalValue + mobilityValue + scale
         + pst (getBB White King) King 0
         - pst (getBB Black King) King 56
 
-    mobilityValue = round $
-      sum
-        [ (mgMult * fromIntegral mgPhase + egMult * fromIntegral egPhase)
-            * fromIntegral (colorSign c)
-            * fromIntegral (mobility board (Piece c p))
-            / 24
-        | c <- [White, Black],
-          (p, mgMult :: Double, egMult) <-
-            [ (Pawn, 9.4, 12.1),
-              (Knight, 9.1, 0),
-              (Bishop, 8.7, 2.1),
-              (Rook, 5.3, 3.7),
-              (Queen, 5.4, 3.7),
-              (King, 1.2, 5.8)
-            ]
-        ]
+    mobilityValue =
+      round $
+        sum
+          [ (mgMult * fromIntegral mgPhase + egMult * fromIntegral egPhase)
+              * fromIntegral (colorSign c)
+              * fromIntegral (mobility board (Piece c p))
+              / 24
+          | c <- [White, Black],
+            (p, mgMult :: Double, egMult) <-
+              [ (Pawn, 8.9304334836208, 12.842035165579508),
+                (Knight, 9.27158925373256, 0.42504263816624105),
+                (Bishop, 8.817018669569705, 1.7618265292984037),
+                (Rook, 5.430428346121639, 3.5073542178510158),
+                (Queen, 5.553963075362616, 4.995892091104656),
+                (King, 3.3835406224833062, 6.030414055927475)
+              ]
+          ]
 
+    safetyMg, safetyEg :: Double
+    (safetyMg, safetyEg) = (5.748215440955903, -0.46339401922742257)
     kingSafety = virtMobile Black pieces - virtMobile White pieces
-    scaledKingSafety = kingSafety * mgPhase `quot` 24 * 3
+    scaledKingSafety =
+      round $
+        fromIntegral kingSafety
+          * (fromIntegral mgPhase * safetyMg + fromIntegral egPhase * safetyEg)
+          / 24
