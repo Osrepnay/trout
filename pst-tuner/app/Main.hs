@@ -10,13 +10,14 @@ import System.Random (newStdGen)
 import System.Random.Shuffle (shuffle')
 import Text.Megaparsec (errorBundlePretty, parse)
 import Text.Printf (printf)
-import Tuner (Tunables (..), calcError, calcSigmoidK, newTunables, tuneEpoch)
+import Tuner (Tunables (..), calcError, calcSigmoidK, newTunables, tunableMobility, tuneEpoch)
 
 formatTunables :: Tunables -> String
-formatTunables (Tunables tunables) =
-  "mobility "
-    ++ show (PV.slice (2 * 6 * 64) 12 tunables)
+formatTunables tunables =
+  "mobility:\n"
+    ++ formatMob
     ++ "\n"
+    ++ "piece-square tables:\n"
     ++ intercalate
       "\n\n"
       ( uncurry formatSet
@@ -41,14 +42,47 @@ formatTunables (Tunables tunables) =
       intercalate
         "\n"
         [ "%s :: Vector Int",
-          "%s = V.fromList $ concat $ reverse $",
+          "%s = V.fromList $ concat $ reverse",
           "%s"
         ]
     formatSet name nthBoard = printf formatStr name name formattedBoard
       where
         twoDimBoard :: [[Int]]
-        twoDimBoard = reverse $ chunksOf 8 $ fmap round $ PV.toList $ PV.slice (nthBoard * 64) 64 tunables
+        twoDimBoard =
+          reverse $
+            chunksOf 8 $
+              fmap round $
+                PV.toList $
+                  PV.slice (nthBoard * 64) 64 (unTunables tunables)
         formattedBoard = "  [ " ++ intercalate ",\n    " (show <$> twoDimBoard) ++ "\n  ]"
+
+    mobs = tunableMobility tunables
+    formatMobStr =
+      intercalate
+        "\n"
+        [ "[ (Pawn, %f, %f),",
+          "  (Knight, %f, %f),",
+          "  (Bishop, %f, %f),",
+          "  (Rook, %f, %f),",
+          "  (Queen, %f, %f),",
+          "  (King, %f, %f),",
+          "]"
+        ]
+    formatMob =
+      printf
+        formatMobStr
+        (mobs PV.! 0)
+        (mobs PV.! 1)
+        (mobs PV.! 2)
+        (mobs PV.! 3)
+        (mobs PV.! 4)
+        (mobs PV.! 5)
+        (mobs PV.! 6)
+        (mobs PV.! 7)
+        (mobs PV.! 8)
+        (mobs PV.! 9)
+        (mobs PV.! 10)
+        (mobs PV.! 11)
 
 main :: IO ()
 main = do
@@ -73,7 +107,7 @@ main = do
             let shuffledGames = shuffle' allGames (length allGames) gen
             let steppedTunables = tuneEpoch currTunables shuffledGames k 500
             let newErr = calcError steppedTunables shuffledGames k
-            if newErr > prevErr
+            if newErr > prevErr || True
               then pure currTunables
               else keepTuning newErr steppedTunables
       finalTunables <- keepTuning (fromIntegral (maxBound :: Int)) startingTunables

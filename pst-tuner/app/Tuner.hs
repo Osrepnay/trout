@@ -1,4 +1,15 @@
-module Tuner (Tunables (..), newTunables, tunedEval, tracingQuie, calcSigmoidK, calcError, sgdBatch, tuneEpoch) where
+module Tuner
+  ( Tunables (..),
+    newTunables,
+    tunableMobility,
+    tunedEval,
+    tracingQuie,
+    calcSigmoidK,
+    calcError,
+    sgdBatch,
+    tuneEpoch,
+  )
+where
 
 import Control.Parallel.Strategies (parListChunk, rseq, withStrategy)
 import Data.Bifunctor (first)
@@ -46,13 +57,23 @@ newtype Tunables = Tunables
   deriving (Show)
 
 newTunables :: Tunables
-newTunables = Tunables (PV.concat [mpstsBase, epstsBase, PV.fromList [3, 7, 8, 6, 6, 4, 4, 6, 5, 4, 2, 6]])
+newTunables =
+  Tunables
+    ( PV.concat
+        [ mpstsBase,
+          epstsBase,
+          PV.fromList [9.4, 12.1, 9.1, 0, 8.7, 2.1, 5.3, 3.7, 5.4, 3.7, 1.2, 5.8]
+        ]
+    )
 
 tunableMPST :: Tunables -> PV.Vector Double
 tunableMPST (Tunables vec) = PV.slice 0 (PV.length mpstsBase) vec
 
 tunableEPST :: Tunables -> PV.Vector Double
 tunableEPST (Tunables vec) = PV.slice (PV.length mpstsBase) (PV.length epstsBase) vec
+
+tunableMobility :: Tunables -> PV.Vector Double
+tunableMobility (Tunables vec) = PV.slice (2 * 6 * 64) 12 vec
 
 pstEval :: Tunables -> Bitboard -> PieceType -> Int -> Int -> Int -> Double
 pstEval tunables bb piece !mgPhase !egPhase !mask =
@@ -98,7 +119,7 @@ tunedEval !tunables !board =
         + pst White King
         - pst Black King
 
-    mobs = PV.slice (2 * 6 * 64) (2 * 6) (unTunables tunables)
+    mobs = tunableMobility tunables
     mobilityValue =
       sum
         [ (mgMult * fromIntegral mgPhase + egMult * fromIntegral egPhase)
@@ -207,8 +228,8 @@ calcSigmoidK tunables games
     kStep = 0.00001
     -- from previous runs
     -- cache here to save time
-    -- initialK = 0.00665
-    initialK = 0.00665
+    -- initialK = 0.00567
+    initialK = 0.00567
     rootError = calcError tunables games initialK
     nudgeRight = calcError tunables games (initialK + kStep)
 
