@@ -191,7 +191,7 @@ quieSearch !alpha !beta !game = do
           if nodeUsable alpha beta s
             then Just (nodeResScore s)
             else Nothing
-  let seeReq = max 0 (alpha - staticEval - 2 * pieceWorth Pawn)
+  let seeReq = max 0 (alpha - staticEval - 200)
   case earlyReturn of
     Just s -> pure s
     Nothing ->

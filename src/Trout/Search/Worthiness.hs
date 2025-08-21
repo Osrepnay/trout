@@ -12,7 +12,9 @@ module Trout.Search.Worthiness
   )
 where
 
+import Data.Vector.Primitive qualified as PV
 import Trout.Piece (PieceType (..))
+import Trout.Search.PieceSquareTables (bishopMPST, knightMPST, pawnMPST, queenMPST, rookMPST)
 
 -- based on centipawns
 pawnWorth :: Int
@@ -21,15 +23,15 @@ bishopWorth :: Int
 rookWorth :: Int
 queenWorth :: Int
 kingWorth :: Int
-pawnWorth = 100
+pawnWorth = PV.sum pawnMPST `quot` 64
 
-knightWorth = 300
+knightWorth = PV.sum knightMPST `quot` 64
 
-bishopWorth = 325
+bishopWorth = PV.sum bishopMPST `quot` 64
 
-rookWorth = 500
+rookWorth = PV.sum rookMPST `quot` 64
 
-queenWorth = 900
+queenWorth = PV.sum queenMPST `quot` 64
 
 kingWorth = 100000000
 
