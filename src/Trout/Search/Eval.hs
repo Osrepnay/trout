@@ -72,17 +72,17 @@ eval board = colorSign (boardTurn board) * (pstEvalValue + mobilityValue + scale
               / 24
           | c <- [White, Black],
             (p, mgMult :: Double, egMult) <-
-              [ (Pawn, 8.9304334836208, 12.842035165579508),
-                (Knight, 9.27158925373256, 0.42504263816624105),
-                (Bishop, 8.817018669569705, 1.7618265292984037),
-                (Rook, 5.430428346121639, 3.5073542178510158),
-                (Queen, 5.553963075362616, 4.995892091104656),
-                (King, 3.3835406224833062, 6.030414055927475)
+              [ (Pawn, 8.104085544295204, 11.51889638417345),
+                (Knight, 9.938049133238586, 0.6917621641412292),
+                (Bishop, 8.89332607104803, 1.8202514663150813),
+                (Rook, 5.412428817230581, 4.887858450166514),
+                (Queen, 4.923189772204054, 5.912168426251381),
+                (King, 4.549501609142366, 6.37230335652779)
               ]
           ]
 
     safetyMg, safetyEg :: Double
-    (safetyMg, safetyEg) = (5.748215440955903, -0.46339401922742257)
+    (safetyMg, safetyEg) = (5.6929293747870515, -0.37817814414804085)
     kingSafety = virtMobile Black pieces - virtMobile White pieces
     scaledKingSafety =
       round $

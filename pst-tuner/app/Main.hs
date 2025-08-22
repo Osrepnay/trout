@@ -109,7 +109,7 @@ main = do
             putStrLn $ "previous tunables: " ++ show currTunables
             gen <- newStdGen
             let shuffledGames = shuffle' allGames (length allGames) gen
-            let steppedTunables = tuneEpoch currTunables shuffledGames k 500
+            let steppedTunables = tuneEpoch currTunables shuffledGames k 300
             let newErr = calcError steppedTunables shuffledGames k
             if newErr > prevErr
               then pure currTunables
