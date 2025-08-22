@@ -430,28 +430,42 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
       Nothing -> go nth movesRest quiets best
       Just moveMade -> do
         let trueAlpha = maybe alpha (max alpha . fst) best
+        let search d isNullWindow = negate <$> searchPVS startingDepth d a b pv moveMade
+              where
+                pv = isPV && not isNullWindow
+                (a, b) =
+                  if isNullWindow
+                    then (-trueAlpha - 1, -trueAlpha)
+                    else (-beta, -trueAlpha)
         nodeScore <-
           if nth == 0
-            then negate <$> searchPVS startingDepth (depth - 1) (-beta) (-trueAlpha) isPV moveMade
+            -- principal variation
+            then search (depth - 1) False
             else do
               let isLMR = nth > 2 && depth >= 2
-              let newDepth =
+              let reducedDepth =
                     if isLMR
                       then
                         depth
                           - 1
-                          - ceiling (log (fromIntegral (depth + 1) :: Double) * log (fromIntegral nth) / 2.5)
+                          - ceiling
+                            ( log (fromIntegral (depth + 1) :: Double)
+                                * log (fromIntegral nth)
+                                / 2.5
+                            )
                       else depth - 1
-              score <- negate <$> searchPVS startingDepth newDepth (-trueAlpha - 1) (-trueAlpha) False moveMade
+              let didReduce = reducedDepth /= depth - 1
+              score <- search reducedDepth True
+              -- we blew the null window!
               if score >= (trueAlpha + 1)
                 then
                   if isPV
-                    then negate <$> searchPVS startingDepth (depth - 1) (-beta) (-trueAlpha) True moveMade
+                    then search (depth - 1) False
                     -- don't research with full window if non-pv branch, some older relative will research anyways
                     -- (if not pv, this means we are on a null window so -trueAlpha - 1 == -beta)
                     else
-                      if isLMR
-                        then negate <$> searchPVS startingDepth (depth - 1) (-trueAlpha - 1) (-trueAlpha) False moveMade
+                      if didReduce
+                        then search (depth - 1) True
                         else pure score
                 else pure score
         if nodeScore >= beta
