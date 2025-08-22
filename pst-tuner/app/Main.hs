@@ -10,7 +10,16 @@ import System.Random (newStdGen)
 import System.Random.Shuffle (shuffle')
 import Text.Megaparsec (errorBundlePretty, parse)
 import Text.Printf (printf)
-import Tuner (Tunables (..), calcError, calcSigmoidK, newTunables, tunableKingSafety, tunableMobility, tuneEpoch)
+import Tuner
+  ( Tunables (..),
+    calcError,
+    calcSigmoidK,
+    newTunables,
+    normalizeTunables,
+    tunableKingSafety,
+    tunableMobility,
+    tuneEpoch,
+  )
 
 formatTunables :: Tunables -> String
 formatTunables tunables =
@@ -115,4 +124,5 @@ main = do
               then pure currTunables
               else keepTuning newErr steppedTunables
       finalTunables <- keepTuning (fromIntegral (maxBound :: Int)) startingTunables
-      putStrLn $ formatTunables finalTunables
+      let normed = normalizeTunables finalTunables
+      putStrLn $ formatTunables normed

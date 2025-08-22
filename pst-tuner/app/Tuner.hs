@@ -9,10 +9,11 @@ module Tuner
     calcError,
     sgdBatch,
     tuneEpoch,
+    normalizeTunables,
   )
 where
 
-import Control.Parallel.Strategies (parListChunk, rseq, withStrategy, rdeepseq, evalList)
+import Control.Parallel.Strategies (evalList, parListChunk, rdeepseq, rseq, withStrategy)
 import Data.Bifunctor (first)
 import Data.Foldable (foldl', maximumBy)
 import Data.Functor.Identity (runIdentity)
@@ -318,3 +319,10 @@ tuneEpoch startingTunables games k step
   | otherwise = tuneEpoch fullRetuned (drop batchSize games) k step
   where
     fullRetuned = sgdBatch startingTunables games k step
+
+-- middlegame pawn = 100cp
+normalizeTunables :: Tunables -> Tunables
+normalizeTunables tunables = Tunables $ PV.map (* scale) $ unTunables tunables
+  where
+    scale = 100 / avg
+    avg = PV.sum (PV.slice 0 64 (tunableMPST tunables)) / 64
