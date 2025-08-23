@@ -51,4 +51,3 @@ nmp margin staticEval >= beta, its like 8 elo so hard to test
 clean up tuner, reference single source of truth, allow multiple learning rates
 momentum in sgd
 staged movegen
-move ordering score helper functions

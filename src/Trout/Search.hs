@@ -16,12 +16,12 @@ import Control.Monad.ST (ST)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Maybe (MaybeT (MaybeT), hoistMaybe, runMaybeT)
 import Control.Monad.Trans.Reader (ReaderT, ask)
-import Data.Foldable (find, maximumBy, traverse_)
+import Data.Foldable (maximumBy, traverse_)
 import Data.Functor ((<&>))
 import Data.Int (Int16)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as M
-import Data.Maybe (fromJust, isJust, maybeToList)
+import Data.Maybe (fromJust, fromMaybe, isJust, maybeToList)
 import Data.Ord (comparing)
 import Data.STRef (STRef, modifySTRef, newSTRef, readSTRef, writeSTRef)
 import Data.Vector.Primitive ((!))
@@ -64,6 +64,7 @@ maxHistory = 500
 
 type HistoryTable s = STVector s Int
 
+-- anything that needs to be carried up through search tree
 data SearchEnv s = SearchEnv
   { searchEnvTT :: !(STTranspositionTable s),
     searchEnvKillers :: !(STRef s KillerMap),
@@ -292,6 +293,44 @@ addHistory key bonus history =
     (\curr -> curr + signum bonus * abs (bonus - abs bonus * curr `quot` maxHistory))
     key
 
+-- move ordering:
+-- tt move -> positive SEE captures -> killer moves -> neutral captures -> history -> negative SEE captures
+
+ttScore :: Int
+ttScore = maxHistory * 2 + 100000
+
+killerScore :: Int
+killerScore = maxHistory * 2 + 1
+
+scoreMoves :: Game -> [Move] -> ReaderT (SearchEnv s) (ST s) [(Int, Move)]
+scoreMoves game moves = do
+  (SearchEnv {searchEnvTT = tt, searchEnvKillers = killers, searchEnvHistory = history}) <- ask
+  maybeTTEntry <- lift (TT.lookup board tt)
+  let maybeTTMove = entryMove <$> maybeTTEntry
+
+  killerMap <- lift (readSTRef killers)
+  let killerMoves = join $ maybeToList (M.lookup (gameHalfmove game) killerMap)
+
+  lift $ go maybeTTMove killerMoves history moves
+  where
+    board = gameBoard game
+
+    biasedSignum 0 = 1
+    biasedSignum n = signum n
+
+    go :: Maybe Move -> [Move] -> HistoryTable s -> [Move] -> ST s [(Int, Move)]
+    go _ _ _ [] = pure []
+    go maybeTTMove killers history (m : ms) = do
+      let tryTT = maybeTTMove >>= (\ttMove -> if ttMove == m then Just ttScore else Nothing)
+      let tryKiller
+            | m `elem` killers = Just killerScore
+            | otherwise = Nothing
+      let trySEE = (\see -> see + biasedSignum see * maxHistory * 2) <$> seeOfCapture board m
+      historyScore <- MV.read history (historyIdx (boardTurn board) m)
+
+      let finalScore = fromMaybe historyScore (tryTT <|> trySEE <|> tryKiller)
+      ((finalScore, m) :) <$> go maybeTTMove killers history ms
+
 mkNodeResult :: Int -> Int -> Int -> NodeResult
 mkNodeResult alpha beta score
   | score <= alpha = NodeResult score AllNode
@@ -317,9 +356,8 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
   | depth < 0 = searchPVS startingDepth 0 alpha beta isPV game
   | isDrawn game && startingDepth /= depth = pure 0
   | otherwise = do
-      (SearchEnv {searchEnvTT = tt, searchEnvKillers = killers, searchEnvHistory = history}) <- ask
+      (SearchEnv {searchEnvTT = tt}) <- ask
       maybeTTEntry <- lift (TT.lookup board tt)
-      let maybeTTMove = entryMove <$> maybeTTEntry
       prunes <-
         runMaybeT $
           hoistMaybe (checkTTCut maybeTTEntry)
@@ -329,12 +367,7 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
       case prunes of
         Just score -> pure score
         Nothing -> do
-          killerMap <- lift (readSTRef killers)
-          let killerMoves = join $ maybeToList (M.lookup (gameHalfmove game) killerMap)
-          let staticScores =
-                maybeToList ((maxHistory + 100000,) <$> maybeTTMove)
-                  ++ ((maxHistory + 2,) <$> killerMoves)
-          scoredMoves <- lift $ moveOrderer staticScores history gameMoves
+          scoredMoves <- scoreMoves game (allMoves board)
           (bResult, bMove) <- go 0 scoredMoves [] Nothing
           let newEntry = TTEntry bResult bMove (gameHalfmove game) depth
           -- make sure to save bestmove if root
@@ -344,8 +377,6 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
           pure (nodeResScore bResult)
   where
     board = gameBoard game
-
-    gameMoves = allMoves board
 
     checkNullMove
       | not isPV && materialScore game >= 1 && depth > 1 = case makeMove game NullMove of
@@ -387,35 +418,16 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
       maybeEntry
         >>= \( TTEntry
                  { entryScore = res,
-                   entryMove = move,
                    entryHalfmove = halfmove,
                    entryDepth = d
                  }
                ) ->
-            if move `elem` gameMoves
-              && d >= depth
+            if d >= depth
               && nodeUsable alpha beta res
               -- prevents stalling in endgame by making sure halfmove penalty gets applied
               && not (scoreIsWinning (nodeResScore res) && halfmove /= gameHalfmove game)
               then Just (nodeResScore res)
               else Nothing
-
-    -- ordering: tt, neutral and positive captures, quiets (killer then history), negative captures
-    moveOrderer :: [(Int, Move)] -> HistoryTable s -> [Move] -> ST s [(Int, Move)]
-    moveOrderer _ _ [] = pure []
-    moveOrderer targetMoves history (move : moves) = case targetMatch of
-      Just match -> (match :) <$> moveOrderer (filter ((/= move) . snd) targetMoves) history moves
-      Nothing -> do
-        boring <- boringScore
-        ((boring, move) :) <$> moveOrderer targetMoves history moves
-      where
-        targetMatch = find ((== move) . snd) targetMoves
-        -- put neutral captures ahead of noncaptures
-        seeScore = maybe 0 (+ 1) (seeOfCapture board move)
-        boringScore =
-          if seeScore == 0
-            then MV.read history (historyIdx (boardTurn board) move)
-            else pure (seeScore + signum seeScore * maxHistory)
 
     go :: Int -> [(Int, Move)] -> [Move] -> Maybe (Int, Move) -> ReaderT (SearchEnv s) (ST s) (NodeResult, Move)
     -- no valid moves (stalemate, checkmate checks)
