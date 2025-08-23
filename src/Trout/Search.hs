@@ -333,7 +333,7 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
           let killerMoves = join $ maybeToList (M.lookup (gameHalfmove game) killerMap)
           let staticScores =
                 maybeToList ((maxHistory + 100000,) <$> maybeTTMove)
-                  ++ ((maxHistory + 1,) <$> killerMoves)
+                  ++ ((maxHistory + 2,) <$> killerMoves)
           scoredMoves <- lift $ moveOrderer staticScores history gameMoves
           (bResult, bMove) <- go 0 scoredMoves [] Nothing
           let newEntry = TTEntry bResult bMove (gameHalfmove game) depth
@@ -410,8 +410,8 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
         ((boring, move) :) <$> moveOrderer targetMoves history moves
       where
         targetMatch = find ((== move) . snd) targetMoves
-        -- put neutral captures ahead of noncaptures and killers (1)
-        seeScore = maybe 0 (+ 2) (seeOfCapture board move)
+        -- put neutral captures ahead of noncaptures
+        seeScore = maybe 0 (+ 1) (seeOfCapture board move)
         boringScore =
           if seeScore == 0
             then MV.read history (historyIdx (boardTurn board) move)
