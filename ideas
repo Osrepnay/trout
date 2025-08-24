@@ -35,6 +35,7 @@ mobility in pst tuner (+50 elo)
 kill worthiness for pieces because of desync with psts (cleaner but nada)
 fix killer/history insertion criteria (maybe slight improvement, but not super important)
 staged movegen (huge fail)
+history leniency if move was a killer (basically nothing)
 
 todo
 bail aspiration
@@ -50,4 +51,4 @@ make tuner support epd based pgns
 nmp margin staticEval >= beta, its like 8 elo so hard to test
 clean up tuner, reference single source of truth, allow multiple learning rates
 momentum in sgd
-history leniency if move was a killer
+put bitboards in vector

@@ -24,7 +24,7 @@ import Data.Functor ((<&>))
 import Data.Int (Int16)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as M
-import Data.Maybe (fromJust, fromMaybe, isJust, maybeToList)
+import Data.Maybe (fromJust, isJust, maybeToList)
 import Data.Ord (comparing)
 import Data.STRef (STRef, modifySTRef, newSTRef, readSTRef, writeSTRef)
 import Data.Vector.Primitive ((!))
@@ -349,9 +349,12 @@ scoreMoves game moves = do
             | m `elem` killers = Just killerScore
             | otherwise = Nothing
       let trySEE = (\see -> see + biasedSignum see * maxHistory * 2) <$> seeOfCapture board m
-      historyScore <- MV.read history (historyIdx (boardTurn board) m)
 
-      let finalScore = fromMaybe historyScore (tryTT <|> trySEE <|> tryKiller)
+      finalScore <-
+        maybe
+          (MV.read history (historyIdx (boardTurn board) m))
+          pure
+          (tryTT <|> trySEE <|> tryKiller)
       ((finalScore, m) :) <$> go maybeTTMove killers history ms
 
 mkNodeResult :: Int -> Int -> Int -> NodeResult
