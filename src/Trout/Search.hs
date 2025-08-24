@@ -110,17 +110,19 @@ pvWalk :: Game -> ReaderT (SearchEnv s) (ST s) [Move]
 pvWalk game = go game Nothing
   where
     go _ (Just 0) = pure []
-    go g maybeDepth = do
-      (SearchEnv {searchEnvTT = tt}) <- ask
-      maybeEntry <- lift (TT.lookup (gameBoard g) tt)
-      case maybeEntry of
-        Just (TTEntry {entryMove = move, entryDepth = depth}) ->
-          if maybe True (depth ==) maybeDepth && move /= NullMove
-            then case makeMove g move of
-              Just movedG -> (move :) <$> go movedG (Just (depth - 1))
-              Nothing -> pure [] -- should be rare, this means full tt collision
-            else pure []
-        Nothing -> pure []
+    go g maybeDepth
+      | not (isDrawn g) = do
+        (SearchEnv {searchEnvTT = tt}) <- ask
+        maybeEntry <- lift (TT.lookup (gameBoard g) tt)
+        case maybeEntry of
+          Just (TTEntry {entryMove = move, entryDepth = depth}) ->
+            if maybe True (depth ==) maybeDepth && move /= NullMove
+              then case makeMove g move of
+                Just movedG -> (move :) <$> go movedG (Just (depth - 1))
+                Nothing -> pure [] -- should be rare, this means full tt collision
+              else pure []
+          Nothing -> pure []
+      | otherwise = pure []
 
 -- no check detection, just sends it
 staticExchEval :: Board -> Int -> PieceType -> Int
