@@ -58,7 +58,7 @@ import Trout.Search.TranspositionTable qualified as TT
 import Trout.Search.Worthiness (drawWorth, lossWorth, pawnWorth, pieceWorth, winWorth)
 
 maxKillers :: Int
-maxKillers = 3
+maxKillers = 2
 
 type KillerMap = Map Int16 [Move]
 

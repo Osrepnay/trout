@@ -36,6 +36,7 @@ kill worthiness for pieces because of desync with psts (cleaner but nada)
 fix killer/history insertion criteria (maybe slight improvement, but not super important)
 staged movegen (huge fail)
 history leniency if move was a killer (basically nothing)
+drop killer count to 2 (~25 elo, check if culling killers means we can bump it back up)
 
 todo
 bail aspiration
