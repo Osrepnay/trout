@@ -44,10 +44,10 @@ see pruning (pzchessbot inspo)
 quiescence checkmate detection
 quadratic futility
 stronger eval
-insert tt on prunes
 retry improving heuristic
 multicut
 make tuner support epd based pgns
 nmp margin staticEval >= beta, its like 8 elo so hard to test
 clean up tuner, reference single source of truth, allow multiple learning rates
 momentum in sgd
+history leniency if move was a killer

@@ -27,6 +27,7 @@ dependencies:
 - transformers
 - unordered-containers
 - vector
+- time
 # - inspection-testing
 
 ghc-options:

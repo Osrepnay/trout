@@ -54,6 +54,7 @@ library
     , containers
     , hashable
     , parsec
+    , time
     , transformers
     , unordered-containers
     , vector
@@ -71,6 +72,7 @@ executable trout-exe
     , containers
     , hashable
     , parsec
+    , time
     , transformers
     , trout
     , unordered-containers
@@ -97,6 +99,7 @@ test-suite trout-test
     , hspec
     , parsec
     , split
+    , time
     , transformers
     , trout
     , unordered-containers
@@ -118,6 +121,7 @@ benchmark trout-bench
     , deepseq
     , hashable
     , parsec
+    , time
     , transformers
     , trout
     , unordered-containers

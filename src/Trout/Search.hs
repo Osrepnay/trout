@@ -2,6 +2,9 @@ module Trout.Search
   ( SearchEnv,
     newEnv,
     clearEnv,
+    incNodecount,
+    resetNodecount,
+    getNodecount,
     pvWalk,
     staticExchEval,
     seeOfCapture,
@@ -68,7 +71,8 @@ type HistoryTable s = STVector s Int
 data SearchEnv s = SearchEnv
   { searchEnvTT :: !(STTranspositionTable s),
     searchEnvKillers :: !(STRef s KillerMap),
-    searchEnvHistory :: !(HistoryTable s)
+    searchEnvHistory :: !(HistoryTable s),
+    searchEnvNodecount :: !(STRef s Int)
   }
 
 newEnv :: Int -> ST s (SearchEnv s)
@@ -76,13 +80,30 @@ newEnv n = do
   tt <- TT.new n
   killers <- newSTRef M.empty
   history <- MV.replicate (2 * 6 * 64) 0
-  pure (SearchEnv tt killers history)
+  nodes <- newSTRef 0
+  pure (SearchEnv tt killers history nodes)
 
 clearEnv :: SearchEnv s -> ST s ()
-clearEnv (SearchEnv tt killers history) = do
+clearEnv (SearchEnv tt killers history nodes) = do
   TT.clear tt
   writeSTRef killers M.empty
   MV.set history 0
+  writeSTRef nodes 0
+
+incNodecount :: ReaderT (SearchEnv s) (ST s) ()
+incNodecount = do
+  ref <- searchEnvNodecount <$> ask
+  lift $ modifySTRef ref (+ 1)
+  pure ()
+
+resetNodecount :: ReaderT (SearchEnv s) (ST s) ()
+resetNodecount = do
+  ref <- searchEnvNodecount <$> ask
+  lift $ writeSTRef ref 0
+  pure ()
+
+getNodecount :: ReaderT (SearchEnv s) (ST s) Int
+getNodecount = ask >>= (lift . readSTRef) . searchEnvNodecount
 
 -- (attempt to) finid the pv (the tt might have been overwritten)
 pvWalk :: Game -> ReaderT (SearchEnv s) (ST s) [Move]
@@ -183,6 +204,8 @@ singleSelect moves = (best, removeSingle best moves)
 
 quieSearch :: Int -> Int -> Game -> ReaderT (SearchEnv s) (ST s) Int
 quieSearch !alpha !beta !game = do
+  incNodecount
+
   -- stand-pat from null-move observation (eval immediately = not moving)
   let staticEval = eval board
   (SearchEnv {searchEnvTT = tt}) <- ask
@@ -342,6 +365,7 @@ searchPVS startingDepth 0 !alpha !beta !isPV !game
   | isDrawn game && startingDepth /= 0 = pure 0
   | inCheck (boardTurn board) (boardPieces board) = searchPVS startingDepth 1 alpha beta isPV game
   | otherwise = do
+      -- don't incNodecount because quiescence does that on the same game, so it would be double-counting
       (SearchEnv {searchEnvTT = tt}) <- ask
       score <- quieSearch alpha beta game
       lift $
@@ -356,6 +380,8 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
   | depth < 0 = searchPVS startingDepth 0 alpha beta isPV game
   | isDrawn game && startingDepth /= depth = pure 0
   | otherwise = do
+      incNodecount
+
       (SearchEnv {searchEnvTT = tt}) <- ask
       maybeTTEntry <- lift (TT.lookup board tt)
       prunes <-

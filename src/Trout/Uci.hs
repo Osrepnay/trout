@@ -21,6 +21,7 @@ import Data.Foldable (foldl')
 import Data.Function ((&))
 import Data.Int (Int16)
 import Data.Maybe (fromMaybe)
+import Data.Time (diffUTCTime, getCurrentTime, nominalDiffTimeToSeconds)
 import System.IO (hFlush, hPutStrLn, stderr, stdout)
 import System.Timeout (timeout)
 import Text.Printf (printf)
@@ -40,7 +41,7 @@ import Trout.Game.Move
     uciShowMove,
   )
 import Trout.Piece (Color (..))
-import Trout.Search (SearchEnv, bestMove, clearEnv, newEnv, pvWalk)
+import Trout.Search (SearchEnv, bestMove, clearEnv, getNodecount, newEnv, pvWalk)
 import Trout.Search.TranspositionTable (sizeOfEntry)
 import Trout.Uci.Parse
   ( CommGoArg (..),
@@ -100,26 +101,39 @@ reportMove moveVar = do
 
 launchGo :: MVar Move -> MVar (SearchEnv RealWorld) -> Game -> GoSettings -> IO ()
 launchGo moveVar ssVar game (GoSettings movetime times incs maxDepth) = do
-  _ <- timeout (time * 999) (searches 1)
+  startTime <- getCurrentTime
+  _ <- timeout (time * 999) (searches startTime 1)
   reportMove moveVar
   where
-    searches depth
+    searches startTime depth
       | depth <= maxDepth = do
-          stateVec <- readMVar ssVar
-          (score, move) <- stToIO (runReaderT (bestMove depth game) stateVec)
+          stateEnv <- readMVar ssVar
+          (score, move) <- stToIO (runReaderT (bestMove depth game) stateEnv)
           _ <- evaluate score
           _ <- tryTakeMVar moveVar
           putMVar moveVar move
-          _ <- swapMVar ssVar stateVec
-          pv <- stToIO (runReaderT (pvWalk game) stateVec)
+          _ <- swapMVar ssVar stateEnv
+          pv <- stToIO (runReaderT (pvWalk game) stateEnv)
           let pvMoves = foldr (\a str -> ' ' : (uciShowMove a ++ str)) "" pv
           let pvStr =
                 if pvMoves == ""
                   then ""
                   else " pv" ++ pvMoves
-          printf "info depth %d score cp %d%s\n" depth score pvStr
+          nodes <- stToIO (runReaderT getNodecount stateEnv)
+          currTime <- getCurrentTime
+          let elapsedSecs = max 0.000000000001 $ nominalDiffTimeToSeconds $ diffUTCTime currTime startTime
+          let elapsedMs :: Int = round (elapsedSecs * 1000)
+          let nps = round (fromIntegral nodes / elapsedSecs) :: Int
+          printf
+            "info depth %d score cp %d time %d nodes %d nps %d%s\n"
+            depth
+            score
+            elapsedMs
+            nodes
+            nps
+            pvStr
           hFlush stdout
-          searches (depth + 1)
+          searches startTime (depth + 1)
       | otherwise = pure ()
     time = fromMaybe (getter times `quot` 20 + getter incs `quot` 2) movetime
     getter = case boardTurn (gameBoard game) of
