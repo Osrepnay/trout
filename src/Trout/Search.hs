@@ -377,6 +377,7 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
           pure (nodeResScore bResult)
   where
     board = gameBoard game
+    pieces = boardPieces board
 
     checkNullMove
       | not isPV && materialScore game >= 1 && depth > 1 = case makeMove game NullMove of
@@ -418,6 +419,7 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
       maybeEntry
         >>= \( TTEntry
                  { entryScore = res,
+                   entryMove = move,
                    entryHalfmove = halfmove,
                    entryDepth = d
                  }
@@ -426,6 +428,8 @@ searchPVS startingDepth depth !alpha !beta !isPV !game
               && nodeUsable alpha beta res
               -- prevents stalling in endgame by making sure halfmove penalty gets applied
               && not (scoreIsWinning (nodeResScore res) && halfmove /= gameHalfmove game)
+              -- sanity check in case of full hash collision
+              && maybe False ((== movePiece move) . pieceType) (getPiece (moveFrom move) pieces)
               then Just (nodeResScore res)
               else Nothing
 

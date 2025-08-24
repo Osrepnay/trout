@@ -34,6 +34,7 @@ make eval take a board instead of a game (it's like the same benchmarkwise so ba
 mobility in pst tuner (+50 elo)
 kill worthiness for pieces because of desync with psts (cleaner but nada)
 fix killer/history insertion criteria (maybe slight improvement, but not super important)
+staged movegen (huge fail)
 
 todo
 bail aspiration
@@ -50,4 +51,3 @@ make tuner support epd based pgns
 nmp margin staticEval >= beta, its like 8 elo so hard to test
 clean up tuner, reference single source of truth, allow multiple learning rates
 momentum in sgd
-staged movegen
