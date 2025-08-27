@@ -3,6 +3,7 @@ module Tuner
     newTunables,
     tunableMobility,
     tunableKingSafety,
+    tunablePasserMults,
     tunedEval,
     tracingQuie,
     calcSigmoidK,
@@ -26,7 +27,7 @@ import Trout.Game.Board (Board (..), getPiece, pieceBitboard)
 import Trout.Game.Move (Move (..), SpecialMove (..))
 import Trout.Piece (Color (..), Piece (..), PieceType (..), colorSign)
 import Trout.Search (seeOfCapture)
-import Trout.Search.Eval (totalMaterialScore, virtMobile)
+import Trout.Search.Eval (numPassers, totalMaterialScore, virtMobile)
 import Trout.Search.PieceSquareTables
   ( bishopEPST,
     bishopMPST,
@@ -66,8 +67,22 @@ newTunables =
     ( PV.concat
         [ mpstsBase,
           epstsBase,
-          PV.fromList [8.9304334836208, 12.842035165579508, 9.27158925373256, 0.42504263816624105, 8.817018669569705, 1.7618265292984037, 5.430428346121639, 3.5073542178510158, 5.553963075362616, 4.995892091104656, 3.3835406224833062, 6.03041405592747],
-          PV.fromList [5.748215440955903, -0.46339401922742257]
+          PV.fromList
+            [ 8.833997074443921,
+              12.556370043532233,
+              10.833140455990184,
+              0.7540671801689474,
+              9.694322211223236,
+              1.9841962477184265,
+              5.8999106161593655,
+              5.3280937143442015,
+              5.366607226301831,
+              6.444660325419429,
+              4.959262051920608,
+              6.946238277144365
+            ],
+          PV.fromList [6.205675047110871, -0.4122395550691301],
+          PV.fromList [5, 20]
         ]
     )
 
@@ -84,6 +99,11 @@ tunableKingSafety :: Tunables -> (Double, Double)
 tunableKingSafety (Tunables vec) = (ks PV.! 0, ks PV.! 1)
   where
     ks = PV.slice (2 * 6 * 64 + 12) 2 vec
+
+tunablePasserMults :: Tunables -> (Double, Double)
+tunablePasserMults (Tunables vec) = (ps PV.! 0, ps PV.! 1)
+  where
+    ps = PV.slice (2 * 6 * 64 + 12 + 2) 2 vec
 
 pstEval :: Tunables -> Bitboard -> PieceType -> Int -> Int -> Int -> Double
 pstEval tunables bb piece !mgPhase !egPhase !mask =
@@ -102,10 +122,65 @@ pstEval tunables bb piece !mgPhase !egPhase !mask =
     epsts = tunableEPST tunables
 {-# INLINE pstEval #-}
 
+{-}
+data EvalData = EvalData
+  { edPstIdxs :: [Int],
+    edMobilities :: PV.Vector Int,
+    edKingSafety :: Int,
+    edPasserMult :: Int
+  }
+  deriving (Show)
+
+mkEvalData :: Board -> EvalData
+mkEvalData board = undefined
+  where
+    pieces = boardPieces board
+    getBB color = ($ pieces) . pieceBitboard . Piece color
+    mgPhase = totalMaterialScore board
+    egPhase = 24 - mgPhase
+
+    pst c p = pstEval tunables (getBB c p) p mgPhase egPhase $ case c of
+      White -> 0
+      Black -> 56
+    pstEvalValue =
+      pst White Pawn
+        - pst Black Pawn
+        + pst White Knight
+        - pst Black Knight
+        + pst White Bishop
+        - pst Black Bishop
+        + pst White Rook
+        - pst Black Rook
+        + pst White Queen
+        - pst Black Queen
+        + pst White King
+        - pst Black King
+    pstIdxs =
+      [ case getPiece sq pieces of
+        Just (Piece c p) -> (fromEnum c * 6 + fromEnum p) * 64 +
+      | sq <- [0 .. 64]
+      ]
+
+    mobilities =
+      PV.fromList
+        [ fromIntegral (colorSign c)
+            * fromIntegral (mobility board (Piece c p))
+            / 24
+        | c <- [White, Black],
+          p <- enumFromTo Pawn King
+        ]
+
+    kingSafety = virtMobile Black pieces - virtMobile White pieces
+
+    whitePawns = pieceBitboard (Piece White Pawn) pieces
+    blackPawns = pieceBitboard (Piece Black Pawn) pieces
+    passerDiff = numPassers White whitePawns blackPawns - numPassers Black blackPawns whitePawns
+    -}
+
 tunedEval :: Tunables -> Board -> Double
 tunedEval !tunables !board =
   fromIntegral (colorSign (boardTurn board))
-    * (pstEvalValue + mobilityValue + scaledKingSafety)
+    * (pstEvalValue + mobilityValue + scaledKingSafety + scaledPasserDiff)
   where
     pieces = boardPieces board
     getBB color = ($ pieces) . pieceBitboard . Piece color
@@ -152,6 +227,16 @@ tunedEval !tunables !board =
     scaledKingSafety =
       fromIntegral kingSafety
         * (fromIntegral mgPhase * safetyMg + fromIntegral egPhase * safetyEg)
+        / 24
+
+    passerMultMg, passerMultEg :: Double
+    (passerMultMg, passerMultEg) = tunablePasserMults tunables
+    whitePawns = pieceBitboard (Piece White Pawn) pieces
+    blackPawns = pieceBitboard (Piece Black Pawn) pieces
+    passerDiff = numPassers White whitePawns blackPawns - numPassers Black blackPawns whitePawns
+    scaledPasserDiff =
+      fromIntegral passerDiff
+        * (fromIntegral mgPhase * passerMultMg + fromIntegral egPhase * passerMultEg)
         / 24
 
 removeSingle :: (Eq a) => a -> [a] -> [a]
@@ -285,6 +370,7 @@ sgdBatch tunables games k step =
                in [ (mgIdx, commonD * mgPhaseFrac * existMult),
                     (egIdx, commonD * egPhaseFrac * existMult)
                   ]
+
         mobilityAlterations =
           concat
             [ [ (mobMgIdx, commonD * mgPhaseFrac * mobMult),
@@ -297,6 +383,7 @@ sgdBatch tunables games k step =
                   mobEgIdx = mobMgIdx + 1
                   mobMult = fromIntegral $ colorSign c * mobility board piece
             ]
+
         safetyMult = fromIntegral $ virtMobile Black pieces - virtMobile White pieces
         safetyMgIdx = 2 * 6 * 64 + 12
         safetyEgIdx = safetyMgIdx + 1
@@ -304,9 +391,23 @@ sgdBatch tunables games k step =
           [ (safetyMgIdx, commonD * mgPhaseFrac * safetyMult),
             (safetyEgIdx, commonD * egPhaseFrac * safetyMult)
           ]
-        alterations = ([0 .. 64] >>= sqAlterations) ++ mobilityAlterations ++ kingSafetyAlterations
 
-    -- TODO parallelize
+        whitePawns = pieceBitboard (Piece White Pawn) pieces
+        blackPawns = pieceBitboard (Piece Black Pawn) pieces
+        passerMult = fromIntegral $ numPassers White whitePawns blackPawns - numPassers Black blackPawns whitePawns
+        passerMgIdx = safetyEgIdx + 1
+        passerEgIdx = passerMgIdx + 1
+        passerMultAlterations =
+          [ (passerMgIdx, commonD * mgPhaseFrac * passerMult),
+            (passerEgIdx, commonD * egPhaseFrac * passerMult)
+          ]
+
+        alterations =
+          ([0 .. 64] >>= sqAlterations)
+            ++ mobilityAlterations
+            ++ kingSafetyAlterations
+            ++ passerMultAlterations
+
     derivativesSum =
       foldl'
         (PV.accum (+))

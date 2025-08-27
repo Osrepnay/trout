@@ -36,7 +36,9 @@ kill worthiness for pieces because of desync with psts (cleaner but nada)
 fix killer/history insertion criteria (maybe slight improvement, but not super important)
 staged movegen (huge fail)
 history leniency if move was a killer (basically nothing)
-drop killer count to 2 (~25 elo, check if culling killers means we can bump it back up)
+drop killer count to 2 (small increase? thought it was higher but i accidentally grouped two changes)
+localize killers (very small to nothing)
+passed pawns (10elo? needs improvement)
 
 todo
 bail aspiration
@@ -53,3 +55,5 @@ nmp margin staticEval >= beta, its like 8 elo so hard to test
 clean up tuner, reference single source of truth, allow multiple learning rates
 momentum in sgd
 put bitboards in vector
+continue killer fiddling; test long of localize killers, killer count, history leniency
+nmp restrict double

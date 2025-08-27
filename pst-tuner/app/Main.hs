@@ -18,7 +18,7 @@ import Tuner
     normalizeTunables,
     tunableKingSafety,
     tunableMobility,
-    tuneEpoch,
+    tuneEpoch, tunablePasserMults,
   )
 
 formatTunables :: Tunables -> String
@@ -49,6 +49,9 @@ formatTunables tunables =
     ++ "\n"
     ++ "king safety:\n"
     ++ show safeties
+    ++ "\n"
+    ++ "passer mults:\n"
+    ++ show passers
   where
     formatStr =
       intercalate
@@ -96,6 +99,7 @@ formatTunables tunables =
         (mobs PV.! 10)
         (mobs PV.! 11)
     safeties = tunableKingSafety tunables
+    passers = tunablePasserMults tunables
 
 main :: IO ()
 main = do
@@ -118,7 +122,7 @@ main = do
             putStrLn $ "previous tunables: " ++ show currTunables
             gen <- newStdGen
             let shuffledGames = shuffle' allGames (length allGames) gen
-            let steppedTunables = tuneEpoch currTunables shuffledGames k 300
+            let steppedTunables = tuneEpoch currTunables shuffledGames k 1000
             let newErr = calcError steppedTunables shuffledGames k
             if newErr > prevErr
               then pure currTunables

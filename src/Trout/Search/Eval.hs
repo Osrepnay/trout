@@ -1,6 +1,38 @@
-module Trout.Search.Eval (totalMaterialScore, materialScore, virtMobile, eval) where
+module Trout.Search.Eval
+  ( totalMaterialScore,
+    materialScore,
+    virtMobile,
+    numPassers,
+    eval,
+  )
+where
 
-import Trout.Bitboard (countTrailingZeros, popCount, (.|.))
+import Data.Maybe (fromMaybe)
+import Data.Vector.Primitive qualified as PV
+import Trout.Bitboard
+  ( Bitboard,
+    countLeadingZeros,
+    countTrailingZeros,
+    fileA,
+    fileB,
+    fileC,
+    fileD,
+    fileE,
+    fileF,
+    fileG,
+    fileH,
+    popCount,
+    rank1,
+    rank2,
+    rank3,
+    rank4,
+    rank5,
+    rank6,
+    rank7,
+    rank8,
+    (.&.),
+    (.|.),
+  )
 import Trout.Game (Game (..), mobility)
 import Trout.Game.Board (Board (..), Pieces, colorOccupancy, pieceBitboard, pieceTypeBitboard)
 import Trout.Game.MoveGen.Sliding.Magic (bishopMovesMagic, rookMovesMagic)
@@ -41,8 +73,58 @@ virtMobile color pieces = popCount movez
     movez = bishopMovesMagic block kingSq .|. rookMovesMagic block kingSq
 {-# INLINEABLE virtMobile #-}
 
+-- crude and not fully correct but it doesn't really need to be (?)
+numPassers :: Color -> Bitboard -> Bitboard -> Int
+numPassers color pawns oppPawns =
+  sum $
+    ( \(col, neighbors) ->
+        -- pawn on column exists and
+        -- all relevant columns (neighbors and current) are free of opponent pawns
+        -- assumes there is only one pawn here
+        let pawnSq = sqFinder (pawns .&. col)
+            hasPawn = pawnSq >= 0 && pawnSq < 64
+            pawnRow = pawnSq `quot` 8
+         in if hasPawn && (neighbors .&. activeMasks PV.! pawnRow .&. oppPawns) == 0
+              then 1
+              else 0
+    )
+      <$> relevantCols
+  where
+    mkCols _ [] = error "what?"
+    mkCols prev [col] = [(col, col .|. fromMaybe 0 prev)]
+    mkCols prev (col : nextCol : cs) =
+      (col, col .|. nextCol .|. fromMaybe 0 prev)
+        : mkCols (Just col) (nextCol : cs)
+    relevantCols = mkCols Nothing [fileA, fileB, fileC, fileD, fileE, fileF, fileG, fileH]
+
+    -- masks to only check squares ahead of pawn
+    ranks = [rank1, rank2, rank3, rank4, rank5, rank6, rank7, rank8]
+    genMasks rs =
+      PV.fromList $
+        snd $
+          foldr
+            (\r (currMask, ms) -> (currMask .|. r, currMask : ms))
+            (0, [])
+            rs
+    whiteMasks = genMasks ranks
+    blackMasks = PV.reverse $ genMasks $ reverse ranks
+    activeMasks = case color of
+      White -> whiteMasks
+      Black -> blackMasks
+
+    sqFinder bb = case color of
+      White -> 63 - countLeadingZeros bb
+      Black -> countTrailingZeros bb
+{-# INLINEABLE numPassers #-}
+
 eval :: Board -> Int
-eval board = colorSign (boardTurn board) * (pstEvalValue + mobilityValue + scaledKingSafety)
+eval board =
+  colorSign (boardTurn board)
+    * ( pstEvalValue
+          + mobilityValue
+          + scaledKingSafety
+          + scaledPasserDiff
+      )
   where
     pieces = boardPieces board
     getBB color = ($ pieces) . pieceBitboard . Piece color
@@ -72,20 +154,32 @@ eval board = colorSign (boardTurn board) * (pstEvalValue + mobilityValue + scale
               / 24
           | c <- [White, Black],
             (p, mgMult :: Double, egMult) <-
-              [ (Pawn, 8.833997074443921, 12.556370043532233),
-                (Knight, 10.833140455990184, 0.7540671801689474),
-                (Bishop, 9.694322211223236, 1.9841962477184265),
-                (Rook, 5.8999106161593655, 5.3280937143442015),
-                (Queen, 5.366607226301831, 6.444660325419429),
-                (King, 4.959262051920608, 6.946238277144365)
+              [ (Pawn, 10.501635080083927, 8.949401146412207),
+                (Knight, 9.889030069445605, 3.160446331266091),
+                (Bishop, 8.531421913988687, 4.264606147903732),
+                (Rook, 5.9282204721547815, 5.635311372355729),
+                (Queen, 4.7985720986787594, 6.648850691033902),
+                (King, 2.771590972919295, 9.916898257701853)
               ]
           ]
 
     safetyMg, safetyEg :: Double
-    (safetyMg, safetyEg) = (6.205675047110871, -0.4122395550691301)
+    (safetyMg, safetyEg) = (6.4456024190590755, -6.711882589185124e-2)
+
     kingSafety = virtMobile Black pieces - virtMobile White pieces
     scaledKingSafety =
       round $
         fromIntegral kingSafety
           * (fromIntegral mgPhase * safetyMg + fromIntegral egPhase * safetyEg)
+          / 24
+
+    passerMultMg, passerMultEg :: Double
+    (passerMultMg, passerMultEg) = (-4.842846473543273, 32.20668977249144)
+    whitePawns = pieceBitboard (Piece White Pawn) pieces
+    blackPawns = pieceBitboard (Piece Black Pawn) pieces
+    passerDiff = numPassers White whitePawns blackPawns - numPassers Black blackPawns whitePawns
+    scaledPasserDiff =
+      round $
+        fromIntegral passerDiff
+          * (fromIntegral mgPhase * passerMultMg + fromIntegral egPhase * passerMultEg)
           / 24
