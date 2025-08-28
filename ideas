@@ -39,6 +39,8 @@ history leniency if move was a killer (basically nothing)
 drop killer count to 2 (small increase? thought it was higher but i accidentally grouped two changes)
 localize killers (very small to nothing)
 passed pawns (10elo? needs improvement)
+nmp margin staticEval >= beta, its like 8 elo so hard to test (after 8k games - like 2 elo... didn't keep)
+futility margin adjustment (-10elo)
 
 todo
 bail aspiration
@@ -51,7 +53,6 @@ stronger eval
 retry improving heuristic
 multicut
 make tuner support epd based pgns
-nmp margin staticEval >= beta, its like 8 elo so hard to test
 clean up tuner, reference single source of truth, allow multiple learning rates
 momentum in sgd
 put bitboards in vector
