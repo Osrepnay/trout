@@ -23,7 +23,8 @@ bishopWorth :: Int
 rookWorth :: Int
 queenWorth :: Int
 kingWorth :: Int
-pawnWorth = PV.sum pawnMPST `quot` 64
+-- mind the first and last row being 0
+pawnWorth = PV.sum pawnMPST `quot` 48
 
 knightWorth = PV.sum knightMPST `quot` 64
 

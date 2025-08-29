@@ -41,6 +41,7 @@ localize killers (very small to nothing)
 passed pawns (10elo? needs improvement)
 nmp margin staticEval >= beta, its like 8 elo so hard to test (after 8k games - like 2 elo... didn't keep)
 futility margin adjustment (-10elo)
+fix tuner normalization (basically nothing, maybe very slightly positive?)
 
 todo
 bail aspiration
@@ -58,3 +59,4 @@ momentum in sgd
 put bitboards in vector
 continue killer fiddling; test long of localize killers, killer count, history leniency
 nmp restrict double
+disable tt cutoff in pv node

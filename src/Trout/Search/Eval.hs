@@ -154,17 +154,17 @@ eval board =
               / 24
           | c <- [White, Black],
             (p, mgMult :: Double, egMult) <-
-              [ (Pawn, 10.501635080083927, 8.949401146412207),
-                (Knight, 9.889030069445605, 3.160446331266091),
-                (Bishop, 8.531421913988687, 4.264606147903732),
-                (Rook, 5.9282204721547815, 5.635311372355729),
-                (Queen, 4.7985720986787594, 6.648850691033902),
-                (King, 2.771590972919295, 9.916898257701853)
+              [ (Pawn, 11.205221664378167, 8.757388451627591),
+                (Knight, 11.01809959029444, 2.9830169369930584),
+                (Bishop, 9.647364620721548, 4.207102199072473),
+                (Rook, 5.46628063981836, 7.074045328426514),
+                (Queen, 4.69937003753212, 7.451574024272128),
+                (King, 8.53008558115183, 6.61159419922287)
               ]
           ]
 
     safetyMg, safetyEg :: Double
-    (safetyMg, safetyEg) = (6.4456024190590755, -6.711882589185124e-2)
+    (safetyMg, safetyEg) = (7.513632511315112, -0.7270409680525919)
 
     kingSafety = virtMobile Black pieces - virtMobile White pieces
     scaledKingSafety =
@@ -174,7 +174,7 @@ eval board =
           / 24
 
     passerMultMg, passerMultEg :: Double
-    (passerMultMg, passerMultEg) = (-4.842846473543273, 32.20668977249144)
+    (passerMultMg, passerMultEg) = (-0.6854114581591634, 34.681735784817946)
     whitePawns = pieceBitboard (Piece White Pawn) pieces
     blackPawns = pieceBitboard (Piece Black Pawn) pieces
     passerDiff = numPassers White whitePawns blackPawns - numPassers Black blackPawns whitePawns
