@@ -26,7 +26,8 @@ import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as M
 import Data.Maybe (fromJust, isJust, maybeToList)
 import Data.Ord (comparing)
-import Data.STRef (STRef, modifySTRef, newSTRef, readSTRef, writeSTRef)
+import Data.STRef (STRef, newSTRef, readSTRef, writeSTRef)
+import Data.STRef.Strict (modifySTRef')
 import Data.Vector.Primitive ((!))
 import Data.Vector.Primitive.Mutable (STVector)
 import Data.Vector.Primitive.Mutable qualified as MV
@@ -93,7 +94,7 @@ clearEnv (SearchEnv tt killers history nodes) = do
 incNodecount :: ReaderT (SearchEnv s) (ST s) ()
 incNodecount = do
   ref <- sEnvNodecount <$> ask
-  lift $ modifySTRef ref (+ 1)
+  lift $ modifySTRef' ref (+ 1)
   pure ()
 
 resetNodecount :: ReaderT (SearchEnv s) (ST s) ()
@@ -275,7 +276,7 @@ cleanKillers currHalfmove killerMap = case M.lookupMin killerMap of
 bestMove :: Int16 -> Game -> ReaderT (SearchEnv s) (ST s) (Int, Move)
 bestMove depth game = do
   (SearchEnv {sEnvTT = tt, sEnvKillers = killersRef}) <- ask
-  lift $ modifySTRef killersRef (cleanKillers (gameHalfmove game))
+  lift $ modifySTRef' killersRef (cleanKillers (gameHalfmove game))
   guess <- maybe 0 (nodeResScore . entryScore) <$> lift (TT.lookup (gameBoard game) tt)
   score <- aspirate depth guess game
   maybeEntry <- lift (TT.lookup (gameBoard game) tt)
@@ -579,7 +580,7 @@ searchPVS
             then do
               unless isCapture $ do
                 (SearchEnv {sEnvKillers = killers, sEnvHistory = history}) <- ask
-                lift $ modifySTRef killers (addKiller (gameHalfmove game) move)
+                lift $ modifySTRef' killers (addKiller (gameHalfmove game) move)
                 let bonus = fromIntegral depth * fromIntegral depth
                 lift $
                   addHistory
