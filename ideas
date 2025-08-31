@@ -54,7 +54,7 @@ stronger eval
 retry improving heuristic
 multicut
 make tuner support epd based pgns
-clean up tuner, reference single source of truth, allow multiple learning rates
+clean up tuner, allow multiple learning rates
 momentum in sgd
 put bitboards in vector
 continue killer fiddling; test long of localize killers, killer count, history leniency

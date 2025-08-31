@@ -21,7 +21,7 @@ import Text.Megaparsec.Char.Lexer (charLiteral, decimal, float, signed)
 import Trout.Game (Game (..), allMoves, makeMove, startingGame)
 import Trout.Game.Move (Move (..), SpecialMove (..))
 import Trout.Piece (Color (..), PieceType (..))
-import Trout.Search.Worthiness (pieceWorth)
+import Trout.Search.Worthiness (scoreIsMate)
 
 type Parser = Parsec Void Text
 
@@ -152,7 +152,7 @@ playPgn (moves, res) =
                   realScore =
                     pgnMoveScore pgnMove
                       >>= ( \score ->
-                              if abs score > 32 * pieceWorth Queen
+                              if scoreIsMate score
                                 then Nothing
                                 else Just score
                           )

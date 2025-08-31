@@ -3,6 +3,11 @@ module Trout.Search.Eval
     materialScore,
     virtMobile,
     numPassers,
+    mobilityMults,
+    safetyMultMg,
+    safetyMultEg,
+    passerMultMg,
+    passerMultEg,
     eval,
   )
 where
@@ -117,6 +122,29 @@ numPassers color pawns oppPawns =
       Black -> countTrailingZeros bb
 {-# INLINEABLE numPassers #-}
 
+mobilityMults :: PV.Vector Double
+mobilityMults =
+  PV.fromList
+    [ 11.497236189404395,
+      8.059537951231695,
+      11.68120195962409,
+      3.1364224823604294,
+      9.972000894883921,
+      4.125387713677939,
+      5.423664312678692,
+      7.342420262055399,
+      4.323891043941245,
+      8.906647816461081,
+      9.784063636143626,
+      6.766000963503464
+    ]
+
+safetyMultMg, safetyMultEg :: Double
+(safetyMultMg, safetyMultEg) = (7.420789420585534, -0.9756663839082776)
+
+passerMultMg, passerMultEg :: Double
+(passerMultMg, passerMultEg) = (-1.0697013783631468, 35.657915811214195)
+
 eval :: Board -> Int
 eval board =
   colorSign (boardTurn board)
@@ -154,27 +182,22 @@ eval board =
               / 24
           | c <- [White, Black],
             (p, mgMult :: Double, egMult) <-
-              [ (Pawn, 11.205221664378167, 8.757388451627591),
-                (Knight, 11.01809959029444, 2.9830169369930584),
-                (Bishop, 9.647364620721548, 4.207102199072473),
-                (Rook, 5.46628063981836, 7.074045328426514),
-                (Queen, 4.69937003753212, 7.451574024272128),
-                (King, 8.53008558115183, 6.61159419922287)
+              [ (Pawn, mobilityMults PV.! 0, mobilityMults PV.! 1),
+                (Knight, mobilityMults PV.! 2, mobilityMults PV.! 3),
+                (Bishop, mobilityMults PV.! 4, mobilityMults PV.! 5),
+                (Rook, mobilityMults PV.! 6, mobilityMults PV.! 7),
+                (Queen, mobilityMults PV.! 8, mobilityMults PV.! 9),
+                (King, mobilityMults PV.! 10, mobilityMults PV.! 11)
               ]
           ]
-
-    safetyMg, safetyEg :: Double
-    (safetyMg, safetyEg) = (7.513632511315112, -0.7270409680525919)
 
     kingSafety = virtMobile Black pieces - virtMobile White pieces
     scaledKingSafety =
       round $
         fromIntegral kingSafety
-          * (fromIntegral mgPhase * safetyMg + fromIntegral egPhase * safetyEg)
+          * (fromIntegral mgPhase * safetyMultMg + fromIntegral egPhase * safetyMultEg)
           / 24
 
-    passerMultMg, passerMultEg :: Double
-    (passerMultMg, passerMultEg) = (-0.6854114581591634, 34.681735784817946)
     whitePawns = pieceBitboard (Piece White Pawn) pieces
     blackPawns = pieceBitboard (Piece Black Pawn) pieces
     passerDiff = numPassers White whitePawns blackPawns - numPassers Black blackPawns whitePawns

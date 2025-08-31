@@ -27,7 +27,16 @@ import Trout.Game.Board (Board (..), getPiece, pieceBitboard)
 import Trout.Game.Move (Move (..), SpecialMove (..))
 import Trout.Piece (Color (..), Piece (..), PieceType (..), colorSign)
 import Trout.Search (seeOfCapture)
-import Trout.Search.Eval (numPassers, totalMaterialScore, virtMobile)
+import Trout.Search.Eval
+  ( mobilityMults,
+    numPassers,
+    passerMultEg,
+    passerMultMg,
+    safetyMultEg,
+    safetyMultMg,
+    totalMaterialScore,
+    virtMobile,
+  )
 import Trout.Search.PieceSquareTables
   ( bishopEPST,
     bishopMPST,
@@ -67,16 +76,9 @@ newTunables =
     ( PV.concat
         [ mpstsBase,
           epstsBase,
-          PV.fromList
-            [ 10.501635080083927, 8.949401146412207,
-              9.889030069445605, 3.160446331266091,
-              8.531421913988687, 4.264606147903732,
-              5.9282204721547815, 5.635311372355729,
-              4.7985720986787594, 6.648850691033902,
-              2.771590972919295, 9.916898257701853
-            ],
-          PV.fromList [6.4456024190590755, -6.711882589185124e-2],
-          PV.fromList [-4.842846473543273, 32.20668977249144]
+          mobilityMults,
+          PV.fromList [safetyMultMg, safetyMultEg],
+          PV.fromList [passerMultMg, passerMultEg]
         ]
     )
 
@@ -216,21 +218,21 @@ tunedEval !tunables !board =
             ]
         ]
 
-    (safetyMg, safetyEg) = tunableKingSafety tunables
+    (tunedSafetyMultMg, tunedSafetyMultEg) = tunableKingSafety tunables
     kingSafety = virtMobile Black pieces - virtMobile White pieces
     scaledKingSafety =
       fromIntegral kingSafety
-        * (fromIntegral mgPhase * safetyMg + fromIntegral egPhase * safetyEg)
+        * (fromIntegral mgPhase * tunedSafetyMultMg + fromIntegral egPhase * tunedSafetyMultEg)
         / 24
 
-    passerMultMg, passerMultEg :: Double
-    (passerMultMg, passerMultEg) = tunablePasserMults tunables
+    tunedPasserMultMg, tunedPasserMultEg :: Double
+    (tunedPasserMultMg, tunedPasserMultEg) = tunablePasserMults tunables
     whitePawns = pieceBitboard (Piece White Pawn) pieces
     blackPawns = pieceBitboard (Piece Black Pawn) pieces
     passerDiff = numPassers White whitePawns blackPawns - numPassers Black blackPawns whitePawns
     scaledPasserDiff =
       fromIntegral passerDiff
-        * (fromIntegral mgPhase * passerMultMg + fromIntegral egPhase * passerMultEg)
+        * (fromIntegral mgPhase * tunedPasserMultMg + fromIntegral egPhase * tunedPasserMultEg)
         / 24
 
 removeSingle :: (Eq a) => a -> [a] -> [a]

@@ -1,6 +1,8 @@
 module Main (main) where
 
-import Data.List (intercalate)
+import Data.HashSet qualified as HS
+import Data.Hashable (Hashable)
+import Data.List (foldl', intercalate)
 import Data.List.Split (chunksOf)
 import Data.Text.IO qualified as TIO
 import Data.Vector.Primitive qualified as PV
@@ -10,6 +12,8 @@ import System.Random (newStdGen)
 import System.Random.Shuffle (shuffle')
 import Text.Megaparsec (errorBundlePretty, parse)
 import Text.Printf (printf)
+import Trout.Game (Game (..), inCheck)
+import Trout.Game.Board (Board (..))
 import Tuner
   ( Tunables (..),
     calcError,
@@ -18,7 +22,8 @@ import Tuner
     normalizeTunables,
     tunableKingSafety,
     tunableMobility,
-    tuneEpoch, tunablePasserMults,
+    tunablePasserMults,
+    tuneEpoch,
   )
 
 formatTunables :: Tunables -> String
@@ -101,6 +106,19 @@ formatTunables tunables =
     safeties = tunableKingSafety tunables
     passers = tunablePasserMults tunables
 
+fastNub :: (Hashable b) => (a -> b) -> [a] -> [a]
+fastNub keyFunc xs =
+  snd $
+    foldl'
+      ( \(set, accum) x ->
+          let keyed = keyFunc x
+           in if HS.member keyed set
+                then (set, accum)
+                else (HS.insert keyed set, x : accum)
+      )
+      (HS.empty, [])
+      xs
+
 main :: IO ()
 main = do
   args <- getArgs
@@ -114,14 +132,21 @@ main = do
     Left err -> putStrLn (errorBundlePretty err)
     Right pgnGames -> do
       let allGames = pgnGames >>= playPgn
-      putStrLn $ "number of positions: " ++ show (length allGames)
-      let k = calcSigmoidK startingTunables allGames
+      let trimmedGames =
+            filter
+              ((\board -> not (inCheck (boardTurn board) (boardPieces board))) . gameBoard . fst)
+              allGames
+      let uniqueGames = fastNub (gameBoard . fst) trimmedGames
+      putStrLn $ "number of positions: " ++ show (length uniqueGames)
+      putStrLn $ "positions trimmed: " ++ show (length allGames - length trimmedGames)
+      putStrLn $ "duplicates removed: " ++ show (length trimmedGames - length uniqueGames)
+      let k = calcSigmoidK startingTunables uniqueGames
       putStrLn $ "k: " ++ show k
       let keepTuning prevErr currTunables = do
             putStrLn $ "previous error: " ++ show prevErr
             putStrLn $ "previous tunables: " ++ show currTunables
             gen <- newStdGen
-            let shuffledGames = shuffle' allGames (length allGames) gen
+            let shuffledGames = shuffle' uniqueGames (length uniqueGames) gen
             let steppedTunables = tuneEpoch currTunables shuffledGames k 1000
             let newErr = calcError steppedTunables shuffledGames k
             if newErr > prevErr
