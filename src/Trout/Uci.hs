@@ -158,6 +158,11 @@ doUci uciState = do
       hFlush stdout
       doUci uciState
     Right CommIsready -> do
+      -- make sure movegen is working/initialized
+      -- throw it here because... it's good enough
+      -- could use whole search but there isn't a lot to initialize there relatively speaking
+      allMoves (gameBoard startingGame) `seq` pure ()
+
       putStrLn "readyok"
       hFlush stdout
       doUci uciState
