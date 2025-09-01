@@ -42,6 +42,8 @@ passed pawns (10elo? needs improvement)
 nmp margin staticEval >= beta, its like 8 elo so hard to test (after 8k games - like 2 elo... didn't keep)
 futility margin adjustment (-10elo)
 fix tuner normalization (basically nothing, maybe very slightly positive?)
+disable tt cutoff in pv node (didn't finish but very small if anything (4, 5elo?))
+attempt lmr/pvs researching with a null window/full depth first before full window/full depth (again not a full test, but doesn't seem to have much)
 
 todo
 bail aspiration
@@ -59,4 +61,16 @@ momentum in sgd
 put bitboards in vector
 continue killer fiddling; test long of localize killers, killer count, history leniency
 nmp restrict double
-disable tt cutoff in pv node
+allow partial tt cutoff, i.e. adjust alpha/beta if it doesn't trip a cutoff completely
+remove all ask's (modularize searchenv)
+test SEE
+losing captures before quiets
+avoid SEE until necessary in quiescence
+neutral captures in front of killers again
+filter "best move is capture" and checked positions from pst tuning
+actual data type for move scoring (test perf)
+pawn structure
+pvs beta cutoff (pzchessbot)
+
+rewrite fixes (??)
+pvs condition fix
