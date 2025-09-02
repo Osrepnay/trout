@@ -424,6 +424,7 @@ search
         prunes <-
           runMaybeT $
             hoistMaybe (checkTTCut maybeTTEntry)
+              <|> hoistMaybe checkRFP
               <|> MaybeT checkNullMove
 
         case prunes of
@@ -442,6 +443,7 @@ search
       pieces = boardPieces board
 
       currentlyChecked = inCheck (boardTurn board) (boardPieces board)
+      staticEval = eval board
 
       -- if a tt entry is at an equal or higher depth
       -- and is able to cause a cutoff or is exact, return it
@@ -462,6 +464,23 @@ search
                 && maybe False ((== movePiece move) . pieceType) (getPiece (moveFrom move) pieces)
                 then Just (nodeResScore res)
                 else Nothing
+
+      -- reverse futility pruning/static null move pruning
+      -- if the static eval is too far above beta pretend it's a fail high
+      -- because at a certain point the other player can't make up the margin in the remaining moves
+      checkRFP
+        | not isPV
+            -- if alpha is mate, rfp could cause missing mates? idk would need to test this
+            && not (scoreIsMate alpha)
+            -- futility if beta is already checkmate is nonsensical
+            && not (scoreIsMate beta)
+            && depth <= 6
+            && staticEval >= beta + margin
+            && not currentlyChecked =
+            Just staticEval
+        | otherwise = Nothing
+        where
+          margin = fromIntegral depth * 160
 
       -- try a null move (pass turn) and see if it's still good enough to fail high
       -- null move observation: it's almost always better to do something than not
