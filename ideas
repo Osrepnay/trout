@@ -71,6 +71,8 @@ filter "best move is capture" and checked positions from pst tuning
 actual data type for move scoring (test perf)
 pawn structure
 pvs beta cutoff (pzchessbot)
+proper mate output
+qsearch nullwindow
 
 rewrite fixes (??)
 pvs condition fix

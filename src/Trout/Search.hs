@@ -13,7 +13,7 @@ module Trout.Search
 where
 
 import Control.Applicative ((<|>))
-import Control.Monad (join, unless, when)
+import Control.Monad (join, when)
 import Control.Monad.ST (ST)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Maybe (MaybeT (MaybeT), hoistMaybe, runMaybeT)
@@ -23,7 +23,7 @@ import Data.Functor ((<&>))
 import Data.Int (Int16)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as M
-import Data.Maybe (fromJust, fromMaybe, isJust, isNothing, maybeToList)
+import Data.Maybe (fromJust, isNothing, maybeToList)
 import Data.Ord (comparing)
 import Data.STRef (STRef, newSTRef, readSTRef, writeSTRef)
 import Data.STRef.Strict (modifySTRef')
@@ -56,7 +56,6 @@ import Trout.Search.Node (NodeResult (..), NodeType (..), nodeUsable)
 import Trout.Search.TranspositionTable (STTranspositionTable, TTEntry (..))
 import Trout.Search.TranspositionTable qualified as TT
 import Trout.Search.Worthiness (drawWorth, lossWorth, pawnWorth, pieceWorth, scoreIsMate, winWorth)
-import Debug.Trace
 
 maxKillers :: Int
 maxKillers = 2
@@ -405,15 +404,15 @@ mkNodeResult alpha beta score
 
 search :: SearchState -> ReaderT (SearchEnv s) (ST s) Int
 search
-  sState@( SearchState
-             { sStateDepth = !depth,
-               sStatePly = !ply,
-               sStateAlpha = !alpha,
-               sStateBeta = !beta,
-               sStatePV = !isPV,
-               sStateGame = !game
-             }
-           )
+  ( SearchState
+      { sStateDepth = !depth,
+        sStatePly = !ply,
+        sStateAlpha = !alpha,
+        sStateBeta = !beta,
+        sStatePV = !isPV,
+        sStateGame = !game
+      }
+    )
     | isDrawn game && ply /= 0 = pure drawWorth
     | depth <= 0 = quieSearch alpha beta game
     | otherwise = do
@@ -425,6 +424,7 @@ search
         prunes <-
           runMaybeT $
             hoistMaybe (checkTTCut maybeTTEntry)
+              <|> MaybeT checkNullMove
 
         case prunes of
           Just pruneScore -> pure pruneScore
@@ -441,13 +441,10 @@ search
       board = gameBoard game
       pieces = boardPieces board
 
-      -- the basics
-      updState =
-        sState
-          { sStateDepth = depth - 1,
-            sStatePly = ply + 1
-          }
+      currentlyChecked = inCheck (boardTurn board) (boardPieces board)
 
+      -- if a tt entry is at an equal or higher depth
+      -- and is able to cause a cutoff or is exact, return it
       checkTTCut maybeEntry =
         maybeEntry
           >>= \( TTEntry
@@ -466,12 +463,40 @@ search
                 then Just (nodeResScore res)
                 else Nothing
 
+      -- try a null move (pass turn) and see if it's still good enough to fail high
+      -- null move observation: it's almost always better to do something than not
+      checkNullMove
+        | not isPV && materialScore game >= 1 = case makeMove game NullMove of
+            Just nullGame -> do
+              nullScore <-
+                negate
+                  <$> search
+                    ( SearchState
+                        { sStateDepth = nullDepth,
+                          sStatePly = ply + 1,
+                          sStateAlpha = -beta,
+                          sStateBeta = -(beta - 1),
+                          sStatePV = False,
+                          sStateGame = nullGame
+                        }
+                    )
+              if nullScore >= beta
+                then pure (Just nullScore)
+                else pure Nothing
+            Nothing -> pure Nothing
+        | otherwise = pure Nothing
+        where
+          nullDepth = round (fromIntegral depth - 3.5 :: Double)
+
       -- move loop
       -- bestScore for fail-soft
       go :: Int -> [(Int, Move)] -> [Move] -> Maybe (Int, Move) -> ReaderT (SearchEnv s) (ST s) (Int, Move)
       go _ [] _ best = case best of
-        -- penalize longer checkmates
-        Nothing -> pure (lossWorth + fromIntegral (gameHalfmove game), NullMove)
+        Nothing ->
+          if currentlyChecked
+            -- penalize longer checkmates
+            then pure (lossWorth + fromIntegral (gameHalfmove game), NullMove)
+            else pure (drawWorth, NullMove)
         Just bestRes -> pure bestRes
       go nth moves failedQuiets best = case makeMove game move of
         Nothing -> go nth movesRest failedQuiets best
