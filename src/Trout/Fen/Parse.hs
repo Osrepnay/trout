@@ -3,7 +3,6 @@ module Trout.Fen.Parse (parseFen, readFen, Fen (..), fenToGame) where
 import Control.Applicative ((<|>))
 import Data.Bifunctor (first)
 import Data.Char (digitToInt, isDigit, ord)
-import Data.Foldable (Foldable (foldl'))
 import Data.Functor (($>), (<&>))
 import Data.HashMap.Strict qualified as HM
 import Data.Int (Int16)

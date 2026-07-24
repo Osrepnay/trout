@@ -6,7 +6,6 @@ module Trout.Game.MoveGen.Sliding.Magic
   )
 where
 
-import Data.Foldable (foldl')
 import Data.Functor ((<&>))
 import Data.Vector.Primitive (Vector, unsafeIndex, (//))
 import Data.Vector.Primitive qualified as V

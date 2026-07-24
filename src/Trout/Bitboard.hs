@@ -27,7 +27,6 @@ module Trout.Bitboard
 where
 
 import Data.Bits
-import Data.Foldable (foldl')
 import Data.Word (Word64)
 
 type Bitboard = Word64

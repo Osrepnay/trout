@@ -14,7 +14,6 @@ module Trout.Game
 where
 
 import Data.Bool (bool)
-import Data.Foldable (foldl')
 import Data.HashMap.Strict (HashMap)
 import Data.HashMap.Strict qualified as HM
 import Data.Int (Int16)
