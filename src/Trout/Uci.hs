@@ -40,7 +40,7 @@ import Trout.Game.Move
     uciShowMove,
   )
 import Trout.Piece (Color (..))
-import Trout.Search (SearchEnv, bestMove, clearEnv, getNodecount, newEnv, pvWalk)
+import Trout.Search (SearchEnv, bestMove, clearEnv, getNodecount, newEnv, pvWalk, refreshEnv)
 import Trout.Search.TranspositionTable (sizeOfEntry)
 import Trout.Uci.Parse
   ( CommGoArg (..),
@@ -102,6 +102,8 @@ launchGo :: MVar Move -> MVar (SearchEnv RealWorld) -> Game -> GoSettings -> IO 
 launchGo moveVar ssVar game (GoSettings movetime times incs maxDepth) = do
   startTime <- getCurrentTime
   _ <- timeout (time * 999) (searches startTime 1)
+  ss <- readMVar ssVar
+  stToIO (refreshEnv ss)
   reportMove moveVar
   where
     searches startTime depth

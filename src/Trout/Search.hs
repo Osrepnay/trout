@@ -1,6 +1,7 @@
 module Trout.Search
   ( SearchEnv,
     newEnv,
+    refreshEnv,
     clearEnv,
     incNodecount,
     resetNodecount,
@@ -23,7 +24,7 @@ import Data.Functor ((<&>))
 import Data.Int (Int16)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as M
-import Data.Maybe (fromJust, isNothing, maybeToList)
+import Data.Maybe (fromJust, fromMaybe, isNothing, maybeToList)
 import Data.Ord (comparing)
 import Data.STRef (STRef, newSTRef, readSTRef, writeSTRef)
 import Data.STRef.Strict (modifySTRef')
@@ -52,20 +53,54 @@ import Trout.Game.MoveGen (SpecialMove (Promotion), kingTable, knightTable, pawn
 import Trout.Game.MoveGen.Sliding.Magic (bishopMovesMagic, rookMovesMagic)
 import Trout.Piece (Color (..), Piece (..), PieceType (..), other)
 import Trout.Search.Eval (eval, materialScore)
-import Trout.Search.Node (NodeResult (..), NodeType (..), nodeUsable)
+import Trout.Search.Node (NodeResult (..), mkNodeResult, nodeUsable)
 import Trout.Search.TranspositionTable (STTranspositionTable, TTEntry (..))
 import Trout.Search.TranspositionTable qualified as TT
 import Trout.Search.Worthiness (drawWorth, lossWorth, pawnWorth, pieceWorth, scoreIsMate, winWorth)
 
+type KillerMap = Map Int16 [Move]
+
 maxKillers :: Int
 maxKillers = 2
 
-type KillerMap = Map Int16 [Move]
+addKiller :: Int16 -> Move -> KillerMap -> KillerMap
+addKiller halfmove move =
+  M.alter
+    ( \maybeKillers ->
+        let killerList = join (maybeToList maybeKillers)
+         in if move `elem` killerList
+              then Just (move : removeSingle move killerList)
+              else Just $ move : trimEnd killerList
+    )
+    halfmove
+  where
+    trimEnd xs
+      | length xs == maxKillers = init xs
+      | otherwise = xs
+
+type HistoryTable s = STVector s Int
 
 maxHistory :: Int
 maxHistory = 500
 
-type HistoryTable s = STVector s Int
+historyIdx :: Color -> Move -> Int
+historyIdx color move =
+  fromEnum color * 6 * 64
+    + fromEnum (movePiece move) * 64
+    + moveTo move
+
+addHistory :: Int -> Int -> HistoryTable s -> ST s ()
+addHistory key bonus history =
+  MV.modify
+    history
+    (\curr -> curr + bonus - abs bonus * curr `quot` maxHistory)
+    key
+
+decayHistory :: HistoryTable s -> ST s ()
+decayHistory history =
+  traverse_
+    (MV.modify history (\h -> h * 3 `quot` 5))
+    [0 .. MV.length history - 1]
 
 -- anything that needs to be carried up through search tree
 data SearchEnv s = SearchEnv
@@ -82,6 +117,11 @@ newEnv n = do
   history <- MV.replicate (2 * 6 * 64) 0
   nodes <- newSTRef 0
   pure (SearchEnv tt killers history nodes)
+
+refreshEnv :: SearchEnv s -> ST s ()
+refreshEnv (SearchEnv {sEnvKillers = killers, sEnvHistory = history}) = do
+  writeSTRef killers M.empty
+  decayHistory history
 
 clearEnv :: SearchEnv s -> ST s ()
 clearEnv (SearchEnv tt killers history nodes) = do
@@ -103,7 +143,7 @@ resetNodecount = do
 getNodecount :: ReaderT (SearchEnv s) (ST s) Int
 getNodecount = ask >>= (lift . readSTRef) . sEnvNodecount
 
--- (attempt to) finid the pv (the tt might have been overwritten)
+-- (attempt to) find the pv (the tt might have been overwritten)
 pvWalk :: Game -> ReaderT (SearchEnv s) (ST s) [Move]
 pvWalk game = go game Nothing
   where
@@ -250,18 +290,9 @@ quieSearch !alpha !beta !game = do
       where
         ((_, move), movesRest) = singleSelect moves
 
-cleanKillers :: Int16 -> KillerMap -> KillerMap
-cleanKillers currHalfmove killerMap = case M.lookupMin killerMap of
-  Just (minHalfmove, _) ->
-    if minHalfmove < currHalfmove
-      then cleanKillers currHalfmove (M.delete minHalfmove killerMap)
-      else killerMap
-  Nothing -> killerMap
-
 bestMove :: Int16 -> Game -> ReaderT (SearchEnv s) (ST s) (Int, Move)
 bestMove depth game = do
-  (SearchEnv {sEnvTT = tt, sEnvKillers = killersRef}) <- ask
-  lift $ modifySTRef' killersRef (cleanKillers (gameHalfmove game))
+  (SearchEnv {sEnvTT = tt}) <- ask
   guess <- maybe 0 (nodeResScore . entryScore) <$> lift (TT.lookup (gameBoard game) tt)
   score <- aspirate depth guess game
   maybeEntry <- lift (TT.lookup (gameBoard game) tt)
@@ -308,36 +339,6 @@ aspirate depth !initialGuess !game = go 25 25
         lower = initialGuess - lowerMargin
         upper = initialGuess + upperMargin
 
--- may or may not actually add the killer, only attempts to add based on replacement strategy
-addKiller :: Int16 -> Move -> KillerMap -> KillerMap
-addKiller halfmove move =
-  M.alter
-    ( \maybeKillers ->
-        let killerList = join (maybeToList maybeKillers)
-         in if move `elem` killerList
-              then Just (move : removeSingle move killerList)
-              else Just $ move : trimEnd killerList
-    )
-    halfmove
-  where
-    trimEnd xs
-      | length xs == maxKillers = init xs
-      | otherwise = xs
-
-historyIdx :: Color -> Move -> Int
-historyIdx color move =
-  fromEnum color * 6 * 64
-    + fromEnum (movePiece move) * 64
-    + fromEnum (moveTo move)
-
-addHistory :: Int -> Int -> HistoryTable s -> ST s ()
-addHistory key bonus history =
-  MV.modify
-    history
-    -- curr + bonus * abs (signum bonus - curr `quot` maxHistory)
-    (\curr -> curr + signum bonus * abs (bonus - abs bonus * curr `quot` maxHistory))
-    key
-
 -- least to most:
 -- (lossWorth - maxHistory - 1) bad captures (-maxHistory - 1)
 -- (-maxHistory) history heuristic quiet moves (maxHistory)
@@ -355,11 +356,14 @@ killerScore = maxHistory + 2
 ttScore :: Int
 ttScore = killerScore + 1 + winWorth + 1
 
--- DOESN'T ACCOUNT FOR TTMOVE
-moveScoreIsQuiet :: Int -> Bool
-moveScoreIsQuiet moveScore =
-  moveScore == killerScore
-    || -maxHistory <= moveScore && moveScore <= maxHistory
+-- returns Nothing if inconclusive
+moveScoreIsQuiet :: Int -> Maybe Bool
+moveScoreIsQuiet moveScore
+  | moveScore == ttScore = Nothing
+  | otherwise =
+      Just $
+        moveScore == killerScore
+          || -maxHistory <= moveScore && moveScore <= maxHistory
 
 scoreMoves :: Game -> [Move] -> ReaderT (SearchEnv s) (ST s) [(Int, Move)]
 scoreMoves game moves = do
@@ -396,12 +400,6 @@ scoreMoves game moves = do
         pure
         (tryTT <|> tryKiller <|> trySEE)
 
-mkNodeResult :: Int -> Int -> Int -> NodeResult
-mkNodeResult alpha beta score
-  | score <= alpha = NodeResult score AllNode
-  | score >= beta = NodeResult score CutNode
-  | otherwise = NodeResult score ExactNode
-
 search :: SearchState -> ReaderT (SearchEnv s) (ST s) Int
 search
   ( SearchState
@@ -423,7 +421,7 @@ search
         maybeTTEntry <- lift $ TT.lookup board tt
         prunes <-
           runMaybeT $
-            hoistMaybe (checkTTCut maybeTTEntry)
+            hoistMaybe (maybeTTEntry >>= checkTTCut)
               <|> hoistMaybe checkRFP
               <|> MaybeT checkNullMove
 
@@ -447,23 +445,23 @@ search
 
       -- if a tt entry is at an equal or higher depth
       -- and is able to cause a cutoff or is exact, return it
-      checkTTCut maybeEntry =
-        maybeEntry
-          >>= \( TTEntry
-                   { entryScore = res,
-                     entryMove = move,
-                     entryHalfmove = halfmove,
-                     entryDepth = d
-                   }
-                 ) ->
-              if d >= depth
-                && nodeUsable alpha beta res
-                -- prevents stalling in endgame by making sure halfmove penalty gets applied
-                && not (scoreIsMate (nodeResScore res) && halfmove /= gameHalfmove game)
-                -- sanity check in case of full hash collision
-                && maybe False ((== movePiece move) . pieceType) (getPiece (moveFrom move) pieces)
-                then Just (nodeResScore res)
-                else Nothing
+      checkTTCut
+        ( TTEntry
+            { entryScore = res,
+              entryMove = move,
+              entryHalfmove = halfmove,
+              entryDepth = d
+            }
+          )
+          | not isPV
+              && d >= depth
+              && nodeUsable alpha beta res
+              -- prevents stalling in endgame by making sure halfmove penalty gets applied
+              && not (scoreIsMate (nodeResScore res) && halfmove /= gameHalfmove game)
+              -- sanity check in case of full hash collision
+              && maybe False ((== movePiece move) . pieceType) (getPiece (moveFrom move) pieces) =
+              Just (nodeResScore res)
+          | otherwise = Nothing
 
       -- reverse futility pruning/static null move pruning
       -- if the static eval is too far above beta pretend it's a fail high
@@ -485,6 +483,7 @@ search
       -- try a null move (pass turn) and see if it's still good enough to fail high
       -- null move observation: it's almost always better to do something than not
       checkNullMove
+        -- make sure it's not the endgame by checking materialScore
         | not isPV && materialScore game >= 1 = case makeMove game NullMove of
             Just nullGame -> do
               nullScore <-
@@ -507,6 +506,25 @@ search
         where
           nullDepth = round (fromIntegral depth - 3.5 :: Double)
 
+      -- update killer moves and history heuristics on beta cutoff
+      updateQuietHeuristics :: Move -> [Move] -> ReaderT (SearchEnv s) (ST s) ()
+      updateQuietHeuristics move failedQuiets = do
+        (SearchEnv {sEnvKillers = killers, sEnvHistory = history}) <- ask
+
+        lift $ modifySTRef' killers (addKiller (gameHalfmove game) move)
+
+        let bonus = fromIntegral depth * fromIntegral depth
+        lift $
+          addHistory
+            (historyIdx (boardTurn board) move)
+            bonus
+            history
+        -- penalize quiets that didn't fail high
+        lift $
+          traverse_
+            (\q -> addHistory (historyIdx (boardTurn board) q) (-bonus) history)
+            failedQuiets
+
       -- move loop
       -- bestScore for fail-soft
       go :: Int -> [(Int, Move)] -> [Move] -> Maybe (Int, Move) -> ReaderT (SearchEnv s) (ST s) (Int, Move)
@@ -520,87 +538,78 @@ search
       go nth moves failedQuiets best = case makeMove game move of
         Nothing -> go nth movesRest failedQuiets best
         Just moveMade -> do
-          let searchHelper d useNullWindow =
+          -- the search can still be a null-window if a/b started that way
+          let searchHelper d addNullWindow =
                 negate
                   <$> search
                     ( SearchState
                         { sStateDepth = d,
                           sStatePly = ply + 1,
-                          sStateAlpha = newAlpha,
+                          sStateAlpha = -newBeta,
                           sStateBeta = -trueAlpha,
-                          sStatePV = newPV,
+                          sStatePV = newIsPV,
                           sStateGame = moveMade
                         }
                     )
                 where
-                  newPV = isPV && not useNullWindow
-                  newAlpha =
-                    if useNullWindow
-                      then -(trueAlpha + 1)
-                      else -beta
+                  newIsPV = isPV && not addNullWindow
+                  newBeta =
+                    if addNullWindow
+                      then trueAlpha + 1
+                      else beta
+          let lmrDepth =
+                (depth - 1)
+                  - ceiling
+                    (log (fromIntegral (depth + 1) :: Double) * log (fromIntegral nth) / 2.5)
           score <-
+            -- pvs - assume the other moves are bad so search with null window first
+            -- only use full window if it beats alpha and we need to know the actual value
             if nth == 0
               then searchHelper (depth - 1) False
-              -- pvs - assume the other moves are bad so search with null window first
-              -- only use full window if it beats alpha and we need to know the actual value
               else do
                 let isLMR = nth > 2 && depth >= 2
-                let reducedDepth =
-                      if isLMR
-                        then
-                          depth
-                            - 1
-                            - ceiling
-                              ( log (fromIntegral (depth + 1) :: Double)
-                                  * log (fromIntegral nth)
-                                  / 2.5
-                              )
-                        else depth - 1
+                let reducedDepth = if isLMR then lmrDepth else depth - 1
                 let didReduce = reducedDepth /= depth - 1
 
-                briefSearch <- searchHelper reducedDepth True
+                briefSearchScore <- searchHelper reducedDepth True
 
-                -- fail-high on null window beta (trueAlpha + 1)
-                -- don't research w/ full window if not pv,
-                -- it's already null window so it'll beta cutoff regardless
-                -- also don't if it didn't reduce in the first place
-                if briefSearch > trueAlpha && (isPV || didReduce)
-                  -- search fully to get real score
-                  then searchHelper (depth - 1) False
+                -- fail-high on null window's beta (trueAlpha + 1)
+                if briefSearchScore > trueAlpha
+                  -- first check w/ full depth, if it's still over
+                  -- then check with full window as well
+                  then do
+                    fullDepthScore <-
+                      if didReduce
+                        then searchHelper (depth - 1) True
+                        else pure briefSearchScore
+                    -- don't bother researching without null window if
+                    -- it's not PV because the window is null anyway
+                    if fullDepthScore > trueAlpha && isPV
+                      then searchHelper (depth - 1) False
+                      else pure fullDepthScore
                   -- briefSearch will either fail low or high so we don't need exact score
-                  else pure briefSearch
+                  else pure briefSearchScore
 
           if score >= beta
             then do
-              when isQuiet $ do
-                (SearchEnv {sEnvKillers = killers, sEnvHistory = history}) <- ask
-
-                lift $ modifySTRef' killers (addKiller (gameHalfmove game) move)
-
-                let bonus = fromIntegral depth * fromIntegral depth
-                lift $
-                  addHistory
-                    (historyIdx (boardTurn board) move)
-                    bonus
-                    history
-                -- penalize quiets that didn't fail high
-                lift $
-                  traverse_
-                    (\q -> addHistory (historyIdx (boardTurn board) q) (-bonus) history)
-                    failedQuiets
-
+              when isQuiet (updateQuietHeuristics move failedQuiets)
               pure (beta, move)
             else
               let newFailedQuiets = if isQuiet then move : failedQuiets else failedQuiets
-               in go (nth + 1) movesRest newFailedQuiets $ case best of
-                    Nothing -> Just (score, move)
-                    Just (prevScore, _) ->
-                      if score > prevScore
-                        then Just (score, move)
-                        else best
+                  newBest =
+                    maybe
+                      (score, move)
+                      (\b -> if score > fst b then (score, move) else b)
+                      best
+               in go (nth + 1) movesRest newFailedQuiets (Just newBest)
         where
+          -- max of alpha and best;
+          -- what alpha would be in a fail-hard search
           trueAlpha = maybe alpha (max alpha . fst) best
-          isQuiet = moveScoreIsQuiet moveScore || isNothing (getPiece (moveTo move) (boardPieces board))
+          isQuiet =
+            fromMaybe
+              (isNothing (getPiece (moveTo move) (boardPieces board)))
+              (moveScoreIsQuiet moveScore)
           ((moveScore, move), movesRest) = singleSelect moves
 
 {-

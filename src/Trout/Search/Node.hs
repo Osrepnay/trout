@@ -1,4 +1,4 @@
-module Trout.Search.Node (NodeType (..), NodeResult (..), nodeUsable) where
+module Trout.Search.Node (NodeType (..), NodeResult (..), mkNodeResult, nodeUsable) where
 
 import Data.Bits (complement, (.&.))
 import Foreign (Ptr, Storable (..), castPtr)
@@ -26,6 +26,15 @@ fromIbv ibv = NodeResult (rounded `quot` 4) (toEnum (diff + 1))
     rounded = (ibv + 1) .&. complement 3
     diff = ibv - rounded
 
+mkNodeResult :: Int -> Int -> Int -> NodeResult
+mkNodeResult alpha beta score
+  | score <= alpha = NodeResult score AllNode
+  | score >= beta = NodeResult score CutNode
+  | otherwise = NodeResult score ExactNode
+
+-- checks whether the noderesult can give
+-- any useful information given the bounds
+-- e.g. exact score or exceeding bounds
 nodeUsable :: Int -> Int -> NodeResult -> Bool
 nodeUsable alpha beta (NodeResult s t) =
   t == ExactNode
