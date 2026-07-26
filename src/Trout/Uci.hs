@@ -13,7 +13,7 @@ import Control.Concurrent
     tryReadMVar,
     tryTakeMVar,
   )
-import Control.Exception (evaluate)
+import Control.Exception (evaluate, finally)
 import Control.Monad.ST (RealWorld, stToIO)
 import Control.Monad.Trans.Reader (ReaderT (runReaderT))
 import Data.Bifunctor (first, second)
@@ -99,21 +99,24 @@ reportMove moveVar = do
   hFlush stdout
 
 launchGo :: MVar Move -> MVar (SearchEnv RealWorld) -> Game -> GoSettings -> IO ()
-launchGo moveVar ssVar game (GoSettings movetime times incs maxDepth) = do
-  startTime <- getCurrentTime
-  _ <- timeout (time * 999) (searches startTime 1)
-  ss <- readMVar ssVar
-  stToIO (refreshEnv ss)
-  reportMove moveVar
+launchGo moveVar stateEnvVar game (GoSettings movetime times incs maxDepth) =
+  flip finally final $
+    do
+      startTime <- getCurrentTime
+      _ <- timeout (time * 999) (searches startTime 1)
+      reportMove moveVar
   where
+    final = do
+      stateEnv <- readMVar stateEnvVar
+      stToIO (runReaderT (refreshEnv) stateEnv)
     searches startTime depth
       | depth <= maxDepth = do
-          stateEnv <- readMVar ssVar
+          stateEnv <- readMVar stateEnvVar
           (score, move) <- stToIO (runReaderT (bestMove depth game) stateEnv)
           _ <- evaluate score
           _ <- tryTakeMVar moveVar
           putMVar moveVar move
-          _ <- swapMVar ssVar stateEnv
+          _ <- swapMVar stateEnvVar stateEnv
           pv <- stToIO (runReaderT (pvWalk game) stateEnv)
           let pvMoves = foldr (\a str -> ' ' : (uciShowMove a ++ str)) "" pv
           let pvStr =

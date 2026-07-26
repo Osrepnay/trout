@@ -3,8 +3,6 @@ module Trout.Search
     newEnv,
     refreshEnv,
     clearEnv,
-    incNodecount,
-    resetNodecount,
     getNodecount,
     pvWalk,
     staticExchEval,
@@ -110,26 +108,6 @@ data SearchEnv s = SearchEnv
     sEnvNodecount :: !(STRef s Int)
   }
 
-newEnv :: Int -> ST s (SearchEnv s)
-newEnv n = do
-  tt <- TT.new n
-  killers <- newSTRef M.empty
-  history <- MV.replicate (2 * 6 * 64) 0
-  nodes <- newSTRef 0
-  pure (SearchEnv tt killers history nodes)
-
-refreshEnv :: SearchEnv s -> ST s ()
-refreshEnv (SearchEnv {sEnvKillers = killers, sEnvHistory = history}) = do
-  writeSTRef killers M.empty
-  decayHistory history
-
-clearEnv :: SearchEnv s -> ST s ()
-clearEnv (SearchEnv tt killers history nodes) = do
-  TT.clear tt
-  writeSTRef killers M.empty
-  MV.set history 0
-  writeSTRef nodes 0
-
 incNodecount :: ReaderT (SearchEnv s) (ST s) ()
 incNodecount = do
   ref <- sEnvNodecount <$> ask
@@ -142,6 +120,28 @@ resetNodecount = do
 
 getNodecount :: ReaderT (SearchEnv s) (ST s) Int
 getNodecount = ask >>= (lift . readSTRef) . sEnvNodecount
+
+newEnv :: Int -> ST s (SearchEnv s)
+newEnv n = do
+  tt <- TT.new n
+  killers <- newSTRef M.empty
+  history <- MV.replicate (2 * 6 * 64) 0
+  nodes <- newSTRef 0
+  pure (SearchEnv tt killers history nodes)
+
+refreshEnv :: ReaderT (SearchEnv s) (ST s) ()
+refreshEnv = do
+  (SearchEnv {sEnvKillers = killers, sEnvHistory = history}) <- ask
+  lift $ writeSTRef killers M.empty
+  lift $ decayHistory history
+  resetNodecount
+
+clearEnv :: SearchEnv s -> ST s ()
+clearEnv (SearchEnv tt killers history nodes) = do
+  TT.clear tt
+  writeSTRef killers M.empty
+  MV.set history 0
+  writeSTRef nodes 0
 
 -- (attempt to) find the pv (the tt might have been overwritten)
 pvWalk :: Game -> ReaderT (SearchEnv s) (ST s) [Move]
