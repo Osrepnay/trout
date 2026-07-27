@@ -80,7 +80,7 @@ addKiller halfmove move =
 type HistoryTable s = STVector s Int
 
 maxHistory :: Int
-maxHistory = 500
+maxHistory = 10000
 
 historyIdx :: Color -> Move -> Int
 historyIdx color move =
@@ -101,7 +101,7 @@ getHistory = MV.read
 decayHistory :: HistoryTable s -> ST s ()
 decayHistory history =
   traverse_
-    (MV.modify history (\h -> h * 3 `quot` 5))
+    (MV.modify history (\h -> h * 1 `quot` 5))
     [0 .. MV.length history - 1]
 
 -- anything that needs to be carried up through search tree
@@ -137,7 +137,7 @@ refreshEnv :: ReaderT (SearchEnv s) (ST s) ()
 refreshEnv = do
   (SearchEnv {sEnvKillers = killers, sEnvHistory = history}) <- ask
   -- lift $ writeSTRef killers M.empty
-  -- lift $ decayHistory history
+  lift $ decayHistory history
   resetNodecount
 
 clearEnv :: SearchEnv s -> ST s ()
