@@ -47,7 +47,7 @@ import Trout.Game.Board
     pieceBitboard,
     removePiece,
   )
-import Trout.Game.Move (Move (..), SpecialMove (EnPassant))
+import Trout.Game.Move (Move (..), SpecialMove (..))
 import Trout.Game.MoveGen (SpecialMove (Promotion), kingTable, knightTable, pawnCaptureTable)
 import Trout.Game.MoveGen.Sliding.Magic (bishopMovesMagic, rookMovesMagic)
 import Trout.Piece (Color (..), Piece (..), PieceType (..), other)
@@ -88,12 +88,15 @@ historyIdx color move =
     + fromEnum (movePiece move) * 64
     + moveTo move
 
-addHistory :: Int -> Int -> HistoryTable s -> ST s ()
-addHistory key bonus history =
+addHistory :: HistoryTable s -> Int -> Int -> ST s ()
+addHistory history bonus key =
   MV.modify
     history
     (\curr -> curr + bonus - abs bonus * curr `quot` maxHistory)
     key
+
+getHistory :: HistoryTable s -> Int -> ST s Int
+getHistory = MV.read
 
 decayHistory :: HistoryTable s -> ST s ()
 decayHistory history =
@@ -239,7 +242,7 @@ removeSingle r (x : xs)
   | otherwise = x : removeSingle r xs
 
 -- selection for move ordering
-singleSelect :: Ord a => [(a, Move)] -> ((a, Move), [(a, Move)])
+singleSelect :: (Ord a) => [(a, Move)] -> ((a, Move), [(a, Move)])
 singleSelect moves = (best, removeSingle best moves)
   where
     best = maximumBy (comparing fst) moves
@@ -290,15 +293,14 @@ bestMove depth game = do
   -- guess <- maybe 0 (nodeResScore . entryScore) <$> lift (TT.lookup (gameBoard game) tt)
   score <-
     search
-      ( SearchState
-          { sStateDepth = depth,
-            sStatePly = 0,
-            sStateAlpha = minBound `quot` 2,
-            sStateBeta = maxBound `quot` 2,
-            sStatePV = True,
-            sStateGame = game
-          }
-      )
+      SearchState
+        { sStateDepth = depth,
+          sStatePly = 0,
+          sStateAlpha = minBound `quot` 2,
+          sStateBeta = maxBound `quot` 2,
+          sStatePV = True,
+          sStateGame = game
+        }
   maybeEntry <- lift (TT.lookup (gameBoard game) tt)
   case maybeEntry of
     Just (TTEntry {entryMove = move}) -> pure (score, move)
@@ -366,37 +368,49 @@ killerScore = MoveScore $ maxHistory + 2
 ttScore :: MoveScore
 ttScore = MoveScore $ unMoveScore killerScore + 1 + winWorth + 1
 
-scoreMoves :: Game -> [Move] -> ReaderT (SearchEnv s) (ST s) [(MoveScore, Move)]
-scoreMoves game moves = do
+isMoveQuiet :: Board -> Move -> Bool
+isMoveQuiet board move = case moveSpecial move of
+  Promotion _ -> False
+  EnPassant _ -> False
+  Normal -> isNothing (getPiece (moveTo move) (boardPieces board))
+  _ -> True -- pawn double move, castling are both quiet
+
+scoreMoves :: Board -> [Move] -> ReaderT (SearchEnv s) (ST s) [(MoveScore, Move)]
+scoreMoves board moves = do
   SearchEnv {sEnvTT = tt} <- ask
-  ttMove <- lift $ fmap entryMove <$> TT.lookup (gameBoard game) tt
-  pure $
-    moves <&> \m ->
-      (,m) $
-        if maybe False (m ==) ttMove
-          then ttScore
-          else badScore
+  ttMaybeMove <- lift $ fmap entryMove <$> TT.lookup board tt
+  flip traverse moves $ \m ->
+    fmap ((,m) . fromMaybe badScore) $ runMaybeT $ do
+      let tryTT = ttMaybeMove >>= (\ttm -> if ttm == m then Just ttScore else Nothing)
+      let tryHist =
+            if isMoveQuiet board m
+              then do
+                SearchEnv {sEnvHistory = history} <- ask
+                lift $
+                  fmap (Just . MoveScore) $
+                    getHistory history (historyIdx (boardTurn board) m)
+              else pure Nothing
+      hoistMaybe tryTT <|> MaybeT tryHist
 
 search :: SearchState -> ReaderT (SearchEnv s) (ST s) Int
 search
-  ( SearchState
-      { sStateDepth = !depth,
-        sStatePly = !ply,
-        sStateAlpha = !alpha,
-        sStateBeta = !beta,
-        sStatePV = !isPV,
-        sStateGame = !game
-      }
-    )
+  SearchState
+    { sStateDepth = !depth,
+      sStatePly = !ply,
+      sStateAlpha = !alpha,
+      sStateBeta = !beta,
+      sStatePV = !isPV,
+      sStateGame = !game
+    }
     | isDrawn game && ply /= 0 = pure drawWorth
     | depth <= 0 = quieSearch alpha beta game
     | otherwise = do
         incNodecount
 
-        (SearchEnv {sEnvTT = tt}) <- ask
+        SearchEnv {sEnvTT = tt} <- ask
 
-        scoredMoves <- scoreMoves game (allMoves board)
-        (score, move) <- go 0 scoredMoves Nothing
+        scoredMoves <- scoreMoves board (allMoves board)
+        (score, move) <- go 0 scoredMoves [] Nothing
         let newEntry = TTEntry (mkNodeResult alpha beta score) move (gameHalfmove game) depth
         -- make sure to save bestmove if root
         if ply == 0
@@ -413,19 +427,20 @@ search
       -- move loop
       -- bestScore for fail-soft
       go ::
-        Int ->
-        [(MoveScore, Move)] ->
-        Maybe (Int, Move) ->
+        Int -> -- move index
+        [(MoveScore, Move)] -> -- remaining moves
+        [Move] -> -- quiets that didn't fail high
+        Maybe (Int, Move) -> -- current best score/move pair
         ReaderT (SearchEnv s) (ST s) (Int, Move)
-      go _ [] best = case best of
+      go _ [] _ best = case best of
         Nothing ->
           if currentlyChecked
             -- penalize longer checkmates
             then pure (lossWorth + fromIntegral (gameHalfmove game), NullMove)
             else pure (drawWorth, NullMove)
         Just bestRes -> pure bestRes
-      go nth moves best = case makeMove game move of
-        Nothing -> go nth movesRest best
+      go nth moves failedQuiets best = case makeMove game move of
+        Nothing -> go nth movesRest failedQuiets best
         Just moveMade -> do
           -- the search can still be a null-window if a/b started that way
           let searchHelper d addNullWindow =
@@ -460,19 +475,33 @@ search
                 )
 
           if score >= beta
-            then pure (beta, move)
+            then do
+              when isQuiet $ do
+                -- update history
+                SearchEnv {sEnvHistory = history} <- ask
+                let bonus = fromIntegral $ depth * depth
+                let mkKey = historyIdx (boardTurn board)
+                lift $ addHistory history bonus (mkKey move)
+                lift $ traverse_ (addHistory history (-bonus) . mkKey) failedQuiets
+              pure (beta, move)
             else
               let newBest =
                     maybe
                       (score, move)
                       (\b -> if score > fst b then (score, move) else b)
                       best
-               in go (nth + 1) movesRest (Just newBest)
+               in go (nth + 1) movesRest newFailedQuiets (Just newBest)
         where
           -- max of alpha and best;
           -- what alpha would be in a fail-hard search
           trueAlpha = maybe alpha (max alpha . fst) best
           ((moveScore, move), movesRest) = singleSelect moves
+          isQuiet = isMoveQuiet board move
+          -- we won't ever want to not append to this when the move is quiet
+          -- because if it does fail high, we never call go again
+          newFailedQuiets
+            | isQuiet = move : failedQuiets
+            | otherwise = failedQuiets
 
 {-
 searchPVS :: SearchState -> Game -> ReaderT (SearchEnv s) (ST s) Int
