@@ -411,21 +411,35 @@ search
         incNodecount
 
         SearchEnv {sEnvTT = tt} <- ask
-
-        scoredMoves <- scoreMoves board (allMoves board)
-        (score, move) <- go 0 scoredMoves [] Nothing
-        let newEntry = TTEntry (mkNodeResult alpha beta score) move (gameHalfmove game) depth
-        -- make sure to save bestmove if root
-        if ply == 0
-          then lift $ TT.basicInsert board newEntry tt
-          else lift $ TT.insert board newEntry tt
-        pure score
+        let prunes = pruneRFP
+        case prunes of
+          Just pruneScore -> pure pruneScore
+          Nothing -> do
+            scoredMoves <- scoreMoves board (allMoves board)
+            (score, move) <- go 0 scoredMoves [] Nothing
+            let newEntry = TTEntry (mkNodeResult alpha beta score) move (gameHalfmove game) depth
+            -- make sure to save bestmove if root
+            if ply == 0
+              then lift $ TT.basicInsert board newEntry tt
+              else lift $ TT.insert board newEntry tt
+            pure score
     where
       board = gameBoard game
       pieces = boardPieces board
 
       currentlyChecked = inCheck (boardTurn board) (boardPieces board)
       staticEval = eval board
+
+      pruneRFP :: Maybe Int
+      pruneRFP
+        | not isPV
+            && depth <= 6
+            && staticEval >= beta + rfpMargin
+            && not currentlyChecked =
+            Just staticEval
+        | otherwise = Nothing
+        where
+          rfpMargin = fromIntegral depth * 110
 
       -- move loop
       -- bestScore for fail-soft
