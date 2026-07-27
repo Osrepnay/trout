@@ -390,7 +390,11 @@ scoreMoves board moves = do
                   fmap (Just . MoveScore) $
                     getHistory history (historyIdx (boardTurn board) m)
               else pure Nothing
-      hoistMaybe tryTT <|> MaybeT tryHist
+      let unquietFiller =
+            if isMoveQuiet board m
+              then Nothing
+              else Just neutralSEEScore
+      hoistMaybe tryTT <|> MaybeT tryHist <|> hoistMaybe unquietFiller
 
 search :: SearchState -> ReaderT (SearchEnv s) (ST s) Int
 search
