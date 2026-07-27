@@ -464,18 +464,15 @@ search
                     if addNullWindow
                       then trueAlpha + 1
                       else beta
-          score <-
-            negate
-              <$> search
-                ( SearchState
-                    { sStateDepth = depth - 1,
-                      sStatePly = ply + 1,
-                      sStateAlpha = -beta,
-                      sStateBeta = -trueAlpha,
-                      sStatePV = isPV,
-                      sStateGame = moveMade
-                    }
-                )
+          nullScore <-
+            if nth > 0
+              then
+                searchHelper (depth - 1) True <&> \s ->
+                  if s > trueAlpha && isPV
+                    then Nothing -- re-search with full window
+                    else Just s
+              else pure Nothing
+          score <- maybe (searchHelper (depth - 1) False) pure nullScore
 
           if score >= beta
             then do
