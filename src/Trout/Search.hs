@@ -29,6 +29,7 @@ import Data.STRef.Strict (modifySTRef')
 import Data.Vector.Primitive ((!))
 import Data.Vector.Primitive.Mutable (STVector)
 import Data.Vector.Primitive.Mutable qualified as MV
+import Debug.Trace
 import Trout.Bitboard (Bitboard, clearBit, countTrailingZeros, (.&.), (.|.))
 import Trout.Game
   ( Game (..),
@@ -55,7 +56,6 @@ import Trout.Search.Node (NodeResult (..), mkNodeResult, nodeUsable)
 import Trout.Search.TranspositionTable (STTranspositionTable, TTEntry (..))
 import Trout.Search.TranspositionTable qualified as TT
 import Trout.Search.Worthiness (drawWorth, lossWorth, pawnWorth, pieceWorth, scoreIsMate, winWorth)
-import Debug.Trace
 
 type KillerMap = Map Int16 [Move]
 
@@ -133,8 +133,8 @@ newEnv n = do
 refreshEnv :: ReaderT (SearchEnv s) (ST s) ()
 refreshEnv = do
   (SearchEnv {sEnvKillers = killers, sEnvHistory = history}) <- ask
-  lift $ writeSTRef killers M.empty
-  lift $ decayHistory history
+  -- lift $ writeSTRef killers M.empty
+  -- lift $ decayHistory history
   resetNodecount
 
 clearEnv :: SearchEnv s -> ST s ()
@@ -239,10 +239,11 @@ removeSingle r (x : xs)
   | otherwise = x : removeSingle r xs
 
 -- selection for move ordering
-singleSelect :: [(Int, Move)] -> ((Int, Move), [(Int, Move)])
+singleSelect :: Ord a => [(a, Move)] -> ((a, Move), [(a, Move)])
 singleSelect moves = (best, removeSingle best moves)
   where
     best = maximumBy (comparing fst) moves
+{-# SPECIALIZE singleSelect :: [(MoveScore, Move)] -> ((MoveScore, Move), [(MoveScore, Move)]) #-}
 
 quieSearch :: Int -> Int -> Game -> ReaderT (SearchEnv s) (ST s) Int
 quieSearch !alpha !beta !game = do
@@ -261,6 +262,7 @@ quieSearch !alpha !beta !game = do
   where
     board = gameBoard game
 
+    -- mostly SEE, with patch for promotions
     scoreMove m = case seeOfCapture board m of
       Just s -> s
       Nothing -> case moveSpecial m of
@@ -349,17 +351,31 @@ aspirate depth !initialGuess !game = go 25 25
 -- (killerScore + 1) positive captures (winWorth + killerScore + 1)
 -- tt move (ttScore)
 
-neutralSEEScore :: Int
-neutralSEEScore = maxHistory + 1
+newtype MoveScore = MoveScore {unMoveScore :: Int} deriving (Eq, Show, Ord)
 
-killerScore :: Int
-killerScore = maxHistory + 2
+-- temp - until we can fill out movescore, this is dump for unclassified
+badScore :: MoveScore
+badScore = MoveScore minBound
 
-ttScore :: Int
-ttScore = killerScore + 1 + winWorth + 1
+neutralSEEScore :: MoveScore
+neutralSEEScore = MoveScore $ maxHistory + 1
 
-scoreMoves :: Game -> [Move] -> ReaderT (SearchEnv s) (ST s) [(Int, Move)]
-scoreMoves game moves = pure ((0,) <$> moves)
+killerScore :: MoveScore
+killerScore = MoveScore $ maxHistory + 2
+
+ttScore :: MoveScore
+ttScore = MoveScore $ unMoveScore killerScore + 1 + winWorth + 1
+
+scoreMoves :: Game -> [Move] -> ReaderT (SearchEnv s) (ST s) [(MoveScore, Move)]
+scoreMoves game moves = do
+  SearchEnv {sEnvTT = tt} <- ask
+  ttMove <- lift $ fmap entryMove <$> TT.lookup (gameBoard game) tt
+  pure $
+    moves <&> \m ->
+      (,m) $
+        if maybe False (m ==) ttMove
+          then ttScore
+          else badScore
 
 search :: SearchState -> ReaderT (SearchEnv s) (ST s) Int
 search
@@ -396,7 +412,11 @@ search
 
       -- move loop
       -- bestScore for fail-soft
-      go :: Int -> [(Int, Move)] -> Maybe (Int, Move) -> ReaderT (SearchEnv s) (ST s) (Int, Move)
+      go ::
+        Int ->
+        [(MoveScore, Move)] ->
+        Maybe (Int, Move) ->
+        ReaderT (SearchEnv s) (ST s) (Int, Move)
       go _ [] best = case best of
         Nothing ->
           if currentlyChecked
