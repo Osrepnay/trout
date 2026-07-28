@@ -274,7 +274,10 @@ quieSearch !alpha !beta !game = do
     else
       go
         staticEval
-        (((\m -> (scoreMove m, m)) <$> allDisquiets board))
+        ( filter
+            ((>= 0) . fst)
+            ((\m -> (scoreMove m, m)) <$> allDisquiets board)
+        )
   where
     board = gameBoard game
 
