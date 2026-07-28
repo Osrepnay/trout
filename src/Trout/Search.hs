@@ -414,7 +414,7 @@ search
         prunes <-
           runMaybeT $
             hoistMaybe pruneRFP
-        -- <|> MaybeT pruneNMP
+              <|> MaybeT pruneNMP
         case prunes of
           Just pruneScore -> pure pruneScore
           Nothing -> do
@@ -447,9 +447,7 @@ search
       pruneNMP :: ReaderT (SearchEnv s) (ST s) (Maybe Int)
       pruneNMP
         | not isPV
-            && materialScore game >= 1
-            && depth >= reduction
-            && staticEval >= beta =
+            && materialScore game >= 1 =
             case makeMove game NullMove of
               Just nullGame -> do
                 nullScore <-
@@ -464,12 +462,14 @@ search
                           sStateGame = nullGame
                         }
                 if nullScore >= beta
-                  then pure (Just nullScore)
+                  then if scoreIsMate nullScore
+                    then pure (Just beta)
+                    else pure (Just nullScore)
                   else pure Nothing
               Nothing -> pure Nothing
         | otherwise = pure Nothing
         where
-          reduction = 3
+          reduction = 4
 
       -- move loop
       -- bestScore for fail-soft
