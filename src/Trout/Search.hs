@@ -462,9 +462,10 @@ search
                           sStateGame = nullGame
                         }
                 if nullScore >= beta
-                  then if scoreIsMate nullScore
-                    then pure (Just beta)
-                    else pure (Just nullScore)
+                  then
+                    if scoreIsMate nullScore
+                      then pure (Just beta)
+                      else pure (Just nullScore)
                   else pure Nothing
               Nothing -> pure Nothing
         | otherwise = pure Nothing
