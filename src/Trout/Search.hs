@@ -209,8 +209,7 @@ seeOfCapture :: Board -> Move -> Maybe Int
 -- but because this is always called first and en passant can't happen after a capture
 -- it should be technically safe
 seeOfCapture !board (Move Pawn (EnPassant target) from to) =
-  Just $
-    max (pawnWorth - staticExchEval newBoard to (pieceType pieceAttacker)) 0
+  Just $ pawnWorth - staticExchEval newBoard to (pieceType pieceAttacker)
   where
     pieces = boardPieces board
     pieceAttacker = fromJust (getPiece from pieces)
@@ -231,7 +230,7 @@ seeOfCapture !board move =
           promoBonus = case moveSpecial move of
             Promotion p -> pieceWorth p - pieceWorth Pawn
             _ -> 0
-       in max (promoBonus + worthCaptured - staticExchEval newBoard (moveTo move) (pieceType pieceAttacker)) 0
+       in promoBonus + worthCaptured - staticExchEval newBoard (moveTo move) (pieceType pieceAttacker)
   where
     pieces = boardPieces board
 

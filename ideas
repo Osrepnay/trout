@@ -84,5 +84,6 @@ don't cutoff in pv node
 keep old move in tt replacement
 pv tables
 move iterative deepening into search
-centralize quiet move definition
 make see use psqts?
+weighted average for pieceWorth
+adaptive pieceWorth
