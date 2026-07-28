@@ -411,7 +411,10 @@ search
         incNodecount
 
         SearchEnv {sEnvTT = tt} <- ask
-        let prunes = pruneRFP
+        prunes <-
+          runMaybeT $
+            hoistMaybe pruneRFP
+        -- <|> MaybeT pruneNMP
         case prunes of
           Just pruneScore -> pure pruneScore
           Nothing -> do
@@ -441,6 +444,33 @@ search
         where
           rfpMargin = fromIntegral depth * 110
 
+      pruneNMP :: ReaderT (SearchEnv s) (ST s) (Maybe Int)
+      pruneNMP
+        | not isPV
+            && materialScore game >= 1
+            && depth >= reduction
+            && staticEval >= beta =
+            case makeMove game NullMove of
+              Just nullGame -> do
+                nullScore <-
+                  negate
+                    <$> search
+                      SearchState
+                        { sStateDepth = depth - reduction,
+                          sStatePly = ply + 1,
+                          sStateAlpha = -beta,
+                          sStateBeta = -(beta - 1),
+                          sStatePV = False,
+                          sStateGame = nullGame
+                        }
+                if nullScore >= beta
+                  then pure (Just nullScore)
+                  else pure Nothing
+              Nothing -> pure Nothing
+        | otherwise = pure Nothing
+        where
+          reduction = 3
+
       -- move loop
       -- bestScore for fail-soft
       go ::
@@ -463,30 +493,32 @@ search
           let searchHelper d addNullWindow =
                 negate
                   <$> search
-                    ( SearchState
-                        { sStateDepth = d,
-                          sStatePly = ply + 1,
-                          sStateAlpha = -newBeta,
-                          sStateBeta = -trueAlpha,
-                          sStatePV = newIsPV,
-                          sStateGame = moveMade
-                        }
-                    )
+                    SearchState
+                      { sStateDepth = d,
+                        sStatePly = ply + 1,
+                        sStateAlpha = -newBeta,
+                        sStateBeta = -trueAlpha,
+                        sStatePV = newIsPV,
+                        sStateGame = moveMade
+                      }
                 where
                   newIsPV = isPV && not addNullWindow
                   newBeta =
                     if addNullWindow
                       then trueAlpha + 1
                       else beta
-          nullScore <-
+          let lmrReduction =
+                ceiling
+                  ((log (fromIntegral (depth + 1)) * log (fromIntegral nth) / 2.5) :: Double)
+          nullWindowScore <-
             if nth > 0
               then
-                searchHelper (depth - 1) True <&> \s ->
+                searchHelper (depth - 1 - lmrReduction) True <&> \s ->
                   if s > trueAlpha && isPV
                     then Nothing -- re-search with full window
                     else Just s
               else pure Nothing
-          score <- maybe (searchHelper (depth - 1) False) pure nullScore
+          score <- maybe (searchHelper (depth - 1) False) pure nullWindowScore
 
           if score >= beta
             then do
