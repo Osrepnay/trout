@@ -535,11 +535,15 @@ search
                   ((log (fromIntegral (depth + 1)) * log (fromIntegral nth) / 2.5) :: Double)
           nullWindowScore <-
             if nth > 0
-              then
-                searchHelper (depth - 1 - lmrReduction) True <&> \s ->
-                  if s > trueAlpha && isPV
-                    then Nothing -- re-search with full window
-                    else Just s
+              then do
+                reducedNWScore <- searchHelper (depth - 1 - lmrReduction) True
+                if reducedNWScore > trueAlpha && lmrReduction > 0
+                  then do
+                    nwScore <- searchHelper (depth - 1) True
+                    if nwScore > trueAlpha && isPV
+                      then pure Nothing
+                      else pure (Just nwScore)
+                  else pure (Just reducedNWScore)
               else pure Nothing
           score <- maybe (searchHelper (depth - 1) False) pure nullWindowScore
 
@@ -552,7 +556,7 @@ search
                 let mkKey = historyIdx (boardTurn board)
                 lift $ addHistory history bonus (mkKey move)
                 lift $ traverse_ (addHistory history (-bonus) . mkKey) failedQuiets
-              pure (beta, move)
+              pure (score, move)
             else
               let newBest =
                     maybe
