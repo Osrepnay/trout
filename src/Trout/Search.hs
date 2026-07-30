@@ -385,7 +385,7 @@ scoreMoves board moves = do
   flip traverse moves $ \m ->
     fmap ((,m) . fromMaybe badScore) $ runMaybeT $ do
       let isQuiet = isMoveQuiet board m
-      let tryTT = ttMaybeMove >>= (\ttm -> if ttm == m then Just ttScore else Nothing)
+      let tryTT = ttMaybeMove >>= \ttm -> if ttm == m then Just ttScore else Nothing
       let tryHist =
             if isQuiet
               then do
@@ -415,7 +415,8 @@ search
         SearchEnv {sEnvTT = tt} <- ask
         prunes <-
           runMaybeT $
-            hoistMaybe pruneRFP
+            pruneTT
+              <|> hoistMaybe pruneRFP
               <|> MaybeT pruneNMP
         case prunes of
           Just pruneScore -> pure pruneScore
@@ -434,6 +435,25 @@ search
 
       currentlyChecked = inCheck (boardTurn board) (boardPieces board)
       staticEval = eval board
+
+      pruneTT :: MaybeT (ReaderT (SearchEnv s) (ST s)) Int
+      pruneTT = do
+        SearchEnv {sEnvTT = tt} <- lift ask
+        TTEntry
+          { entryScore = res,
+            entryMove = move,
+            entryDepth = d
+          } <-
+          MaybeT $ lift $ TT.lookup board tt
+        MaybeT $
+          pure $
+            if not isPV
+              && d >= depth
+              && nodeUsable alpha beta res
+              -- sanity check in case of full hash collision
+              && maybe False ((== movePiece move) . pieceType) (getPiece (moveFrom move) pieces)
+              then Just (nodeResScore res)
+              else Nothing
 
       pruneRFP :: Maybe Int
       pruneRFP
