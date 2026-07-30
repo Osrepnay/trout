@@ -268,7 +268,6 @@ quieSearch !alpha !beta !game = do
   -- stand-pat from null-move observation (eval immediately = not moving)
   let staticEval = eval board
   (SearchEnv {sEnvTT = tt}) <- ask
-  -- let seeReq = max 0 (alpha - staticEval - 200)
   if staticEval >= beta
     then pure staticEval
     else
@@ -531,8 +530,11 @@ search
                       then trueAlpha + 1
                       else beta
           let lmrReduction =
-                ceiling
-                  ((log (fromIntegral (depth + 1)) * log (fromIntegral nth) / 2.5) :: Double)
+                if depth < 3
+                  then 0
+                  else
+                    ceiling
+                      ((log (fromIntegral (depth + 1)) * log (fromIntegral nth) / 2.5) :: Double)
           nullWindowScore <-
             if nth > 0
               then do
