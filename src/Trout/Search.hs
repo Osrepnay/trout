@@ -407,6 +407,7 @@ search
           runMaybeT $
             pruneTT
               <|> hoistMaybe pruneRFP
+              <|> MaybeT pruneRazor
               <|> MaybeT pruneNMP
         case prunes of
           Just pruneScore -> pure pruneScore
@@ -455,6 +456,19 @@ search
         | otherwise = Nothing
         where
           rfpMargin = fromIntegral depth * 110
+
+      pruneRazor :: ReaderT (SearchEnv s) (ST s) (Maybe Int)
+      pruneRazor
+        | not isPV
+            && not (scoreIsMate alpha)
+            && staticEval + razorMargin <= alpha = do
+            quieScore <- quieSearch alpha beta game
+            if quieScore <= alpha
+              then pure (Just quieScore)
+              else pure Nothing
+        | otherwise = pure Nothing
+        where
+          razorMargin = fromIntegral depth * fromIntegral depth * 110
 
       pruneNMP :: ReaderT (SearchEnv s) (ST s) (Maybe Int)
       pruneNMP
