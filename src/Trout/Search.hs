@@ -300,17 +300,8 @@ quieSearch !alpha !beta !game = do
 bestMove :: Int16 -> Game -> ReaderT (SearchEnv s) (ST s) (Int, Move)
 bestMove depth game = do
   (SearchEnv {sEnvTT = tt}) <- ask
-  -- guess <- maybe 0 (nodeResScore . entryScore) <$> lift (TT.lookup (gameBoard game) tt)
-  score <-
-    search
-      SearchState
-        { sStateDepth = depth,
-          sStatePly = 0,
-          sStateAlpha = minBound `quot` 2,
-          sStateBeta = maxBound `quot` 2,
-          sStatePV = True,
-          sStateGame = game
-        }
+  guess <- maybe 0 (nodeResScore . entryScore) <$> lift (TT.lookup (gameBoard game) tt)
+  score <- aspirate depth guess game
   maybeEntry <- lift (TT.lookup (gameBoard game) tt)
   case maybeEntry of
     Just (TTEntry {entryMove = move}) -> pure (score, move)
@@ -330,7 +321,7 @@ data SearchState = SearchState
   deriving (Eq, Show)
 
 aspirate :: Int16 -> Int -> Game -> ReaderT (SearchEnv s) (ST s) Int
-aspirate depth !initialGuess !game = go 25 25
+aspirate depth !initialGuess !game = go 50 50
   where
     go :: Int -> Int -> ReaderT (SearchEnv s) (ST s) Int
     go lowerMargin upperMargin = do
@@ -346,10 +337,10 @@ aspirate depth !initialGuess !game = go 25 25
               }
           )
       if result <= lower
-        then go (lowerMargin * 4) upperMargin
+        then go (lowerMargin * 10) upperMargin
         else
           if result >= upper
-            then go lowerMargin (upperMargin * 4)
+            then go lowerMargin (upperMargin * 10)
             else pure result
       where
         lower = initialGuess - lowerMargin
