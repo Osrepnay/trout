@@ -22,7 +22,7 @@ import Data.Functor ((<&>))
 import Data.Int (Int16)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as M
-import Data.Maybe (fromJust, fromMaybe, isNothing, maybeToList)
+import Data.Maybe (fromJust, fromMaybe, isJust, isNothing, maybeToList)
 import Data.Ord (comparing)
 import Data.STRef (STRef, newSTRef, readSTRef, writeSTRef)
 import Data.STRef.Strict (modifySTRef')
@@ -513,64 +513,72 @@ search
             then pure (lossWorth + fromIntegral (gameHalfmove game), NullMove)
             else pure (drawWorth, NullMove)
         Just bestRes -> pure bestRes
-      go nth moves failedQuiets best = case makeMove game move of
-        Nothing -> go nth movesRest failedQuiets best
-        Just moveMade -> do
-          -- the search can still be a null-window if a/b started that way
-          let searchHelper d addNullWindow =
-                negate
-                  <$> search
-                    SearchState
-                      { sStateDepth = d,
-                        sStatePly = ply + 1,
-                        sStateAlpha = -newBeta,
-                        sStateBeta = -trueAlpha,
-                        sStatePV = newIsPV,
-                        sStateGame = moveMade
-                      }
-                where
-                  newIsPV = isPV && not addNullWindow
-                  newBeta =
-                    if addNullWindow
-                      then trueAlpha + 1
-                      else beta
-          let lmrReduction =
-                if depth < 3
-                  then 0
-                  else
-                    ceiling
-                      ((log (fromIntegral (depth + 1)) * log (fromIntegral nth) / 2.5) :: Double)
-          nullWindowScore <-
-            if nth > 0
-              then do
-                reducedNWScore <- searchHelper (depth - 1 - lmrReduction) True
-                if reducedNWScore > trueAlpha && lmrReduction > 0
+      go nth moves failedQuiets best
+        -- late move pruning
+        | not isPV
+            && isQuiet
+            && isJust best
+            && not currentlyChecked
+            && nth > 4 * fromIntegral depth * fromIntegral depth + 3 =
+            go nth [] failedQuiets best
+        | otherwise = case makeMove game move of
+            Nothing -> go nth movesRest failedQuiets best
+            Just moveMade -> do
+              -- the search can still be a null-window if a/b started that way
+              let searchHelper d addNullWindow =
+                    negate
+                      <$> search
+                        SearchState
+                          { sStateDepth = d,
+                            sStatePly = ply + 1,
+                            sStateAlpha = -newBeta,
+                            sStateBeta = -trueAlpha,
+                            sStatePV = newIsPV,
+                            sStateGame = moveMade
+                          }
+                    where
+                      newIsPV = isPV && not addNullWindow
+                      newBeta =
+                        if addNullWindow
+                          then trueAlpha + 1
+                          else beta
+              let lmrReduction =
+                    if depth < 3
+                      then 0
+                      else
+                        ceiling
+                          ((log (fromIntegral (depth + 1)) * log (fromIntegral nth) / 2.5) :: Double)
+              nullWindowScore <-
+                if nth > 0
                   then do
-                    nwScore <- searchHelper (depth - 1) True
-                    if nwScore > trueAlpha && isPV
-                      then pure Nothing
-                      else pure (Just nwScore)
-                  else pure (Just reducedNWScore)
-              else pure Nothing
-          score <- maybe (searchHelper (depth - 1) False) pure nullWindowScore
+                    reducedNWScore <- searchHelper (depth - 1 - lmrReduction) True
+                    if reducedNWScore > trueAlpha && lmrReduction > 0
+                      then do
+                        nwScore <- searchHelper (depth - 1) True
+                        if nwScore > trueAlpha && isPV
+                          then pure Nothing
+                          else pure (Just nwScore)
+                      else pure (Just reducedNWScore)
+                  else pure Nothing
+              score <- maybe (searchHelper (depth - 1) False) pure nullWindowScore
 
-          if score >= beta
-            then do
-              when isQuiet $ do
-                -- update history
-                SearchEnv {sEnvHistory = history} <- ask
-                let bonus = fromIntegral $ depth * depth
-                let mkKey = historyIdx (boardTurn board)
-                lift $ addHistory history bonus (mkKey move)
-                lift $ traverse_ (addHistory history (-bonus) . mkKey) failedQuiets
-              pure (score, move)
-            else
-              let newBest =
-                    maybe
-                      (score, move)
-                      (\b -> if score > fst b then (score, move) else b)
-                      best
-               in go (nth + 1) movesRest newFailedQuiets (Just newBest)
+              if score >= beta
+                then do
+                  when isQuiet $ do
+                    -- update history
+                    SearchEnv {sEnvHistory = history} <- ask
+                    let bonus = fromIntegral $ depth * depth
+                    let mkKey = historyIdx (boardTurn board)
+                    lift $ addHistory history bonus (mkKey move)
+                    lift $ traverse_ (addHistory history (-bonus) . mkKey) failedQuiets
+                  pure (score, move)
+                else
+                  let newBest =
+                        maybe
+                          (score, move)
+                          (\b -> if score > fst b then (score, move) else b)
+                          best
+                   in go (nth + 1) movesRest newFailedQuiets (Just newBest)
         where
           -- max of alpha and best;
           -- what alpha would be in a fail-hard search
