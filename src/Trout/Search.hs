@@ -57,6 +57,9 @@ import Trout.Search.TranspositionTable (STTranspositionTable, TTEntry (..))
 import Trout.Search.TranspositionTable qualified as TT
 import Trout.Search.Worthiness (drawWorth, lossWorth, pawnWorth, pieceWorth, scoreIsLosing, scoreIsMate, winWorth)
 
+maxPly :: Int16
+maxPly = 128
+
 type KillerMap = Map Int16 [Move]
 
 maxKillers :: Int
@@ -398,7 +401,7 @@ search
       sStateGame = !game
     }
     | isDrawn game && ply /= 0 = pure drawWorth
-    | depth <= 0 = quieSearch alpha beta game
+    | depth <= 0 || ply >= maxPly = quieSearch alpha beta game
     | otherwise = do
         incNodecount
 
