@@ -10,6 +10,7 @@ module Trout.Search.Worthiness
     drawWorth,
     pieceWorth,
     scoreIsMate,
+    scoreIsLosing,
   )
 where
 
@@ -57,3 +58,6 @@ drawWorth = 0
 -- whether score is winworth/lossworth with allowances for the halfmove added
 scoreIsMate :: Int -> Bool
 scoreIsMate score = abs (abs score - winWorth) < 100000
+
+scoreIsLosing :: Int -> Bool
+scoreIsLosing score = score < -100000

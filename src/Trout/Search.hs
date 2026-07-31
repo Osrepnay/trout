@@ -55,7 +55,7 @@ import Trout.Search.Eval (eval, materialScore)
 import Trout.Search.Node (NodeResult (..), mkNodeResult, nodeUsable)
 import Trout.Search.TranspositionTable (STTranspositionTable, TTEntry (..))
 import Trout.Search.TranspositionTable qualified as TT
-import Trout.Search.Worthiness (drawWorth, lossWorth, pawnWorth, pieceWorth, scoreIsMate, winWorth)
+import Trout.Search.Worthiness (drawWorth, lossWorth, pawnWorth, pieceWorth, scoreIsLosing, scoreIsMate, winWorth)
 
 type KillerMap = Map Int16 [Move]
 
@@ -517,9 +517,8 @@ search
         -- late move pruning
         | not isPV
             && isQuiet
-            && isJust best
-            && not currentlyChecked
-            && nth > 4 * fromIntegral depth * fromIntegral depth + 3 =
+            && maybe False (not . scoreIsLosing . fst) best
+            && nth > 3 + 4 * fromIntegral depth * fromIntegral depth =
             go nth [] failedQuiets best
         | otherwise = case makeMove game move of
             Nothing -> go nth movesRest failedQuiets best
@@ -548,19 +547,30 @@ search
                       else
                         ceiling
                           ((log (fromIntegral (depth + 1)) * log (fromIntegral nth) / 2.5) :: Double)
-              nullWindowScore <-
-                if nth > 0
-                  then do
-                    reducedNWScore <- searchHelper (depth - 1 - lmrReduction) True
-                    if reducedNWScore > trueAlpha && lmrReduction > 0
-                      then do
-                        nwScore <- searchHelper (depth - 1) True
-                        if nwScore > trueAlpha && isPV
-                          then pure Nothing
-                          else pure (Just nwScore)
-                      else pure (Just reducedNWScore)
-                  else pure Nothing
-              score <- maybe (searchHelper (depth - 1) False) pure nullWindowScore
+              -- if both lmrReduction > 0 and isPV are true, will re-search twice
+              -- if lmrReduction > 0 but !isPV, will re-search w/ basic search
+              -- (which is the same as nwScore, addNullWindow has no effect if !isPV)
+              -- if there is no reduction but isPV,
+              -- will search nwScore and fallback to basic search
+              let reducedNWScore =
+                    if nth > 0 && lmrReduction > 0
+                      then
+                        searchHelper (depth - 1 - lmrReduction) True <&> \s ->
+                          if s > trueAlpha
+                            then Nothing
+                            else Just s
+                      else pure Nothing
+              let nwScore =
+                    if nth > 0 && isPV
+                      then
+                        searchHelper (depth - 1) True <&> \s ->
+                          if s > trueAlpha
+                            then Nothing
+                            else Just s
+                      else pure Nothing
+              score <-
+                runMaybeT (MaybeT reducedNWScore <|> MaybeT nwScore)
+                  >>= maybe (searchHelper (depth - 1) False) pure
 
               if score >= beta
                 then do
