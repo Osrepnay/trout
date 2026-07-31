@@ -19,7 +19,7 @@ import Control.Monad.Trans.Reader (ReaderT (runReaderT))
 import Data.Bifunctor (first, second)
 import Data.Function ((&))
 import Data.Int (Int16)
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, listToMaybe)
 import Data.Time (diffUTCTime, getCurrentTime, nominalDiffTimeToSeconds)
 import System.IO (hFlush, hPutStrLn, stderr, stdout)
 import System.Timeout (timeout)
@@ -40,7 +40,7 @@ import Trout.Game.Move
     uciShowMove,
   )
 import Trout.Piece (Color (..))
-import Trout.Search (SearchEnv, bestMove, clearEnv, getNodecount, newEnv, pvWalk, refreshEnv)
+import Trout.Search (SearchEnv, bestMove, clearEnv, getNodecount, newEnv, refreshEnv)
 import Trout.Search.TranspositionTable (sizeOfEntry)
 import Trout.Uci.Parse
   ( CommGoArg (..),
@@ -112,13 +112,13 @@ launchGo moveVar stateEnvVar game (GoSettings movetime times incs maxDepth) =
     searches startTime depth
       | depth <= maxDepth = do
           stateEnv <- readMVar stateEnvVar
-          (score, move) <- stToIO (runReaderT (bestMove depth game) stateEnv)
+          (score, pvLine) <- stToIO (runReaderT (bestMove depth game) stateEnv)
+          let move = fromMaybe NullMove (listToMaybe pvLine)
           _ <- evaluate score
           _ <- tryTakeMVar moveVar
           putMVar moveVar move
           _ <- swapMVar stateEnvVar stateEnv
-          pv <- stToIO (runReaderT (pvWalk game) stateEnv)
-          let pvMoves = foldr (\a str -> ' ' : (uciShowMove a ++ str)) "" pv
+          let pvMoves = foldr (\a str -> ' ' : (uciShowMove a ++ str)) "" pvLine
           let pvStr =
                 if pvMoves == ""
                   then ""
