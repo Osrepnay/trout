@@ -496,7 +496,7 @@ search
               Nothing -> pure Nothing
         | otherwise = pure Nothing
         where
-          reduction = 4
+          reduction = 3 + depth `quot` 3
 
       -- move loop
       -- bestScore for fail-soft
