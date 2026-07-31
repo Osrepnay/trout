@@ -286,7 +286,21 @@ bestMove depth game = do
   (SearchEnv {sEnvTT = tt}) <- ask
   guess <- maybe 0 (nodeResScore . entryScore) <$> lift (TT.lookup (gameBoard game) tt)
   (score, pvLine) <- aspirate depth guess game
+  lift $ insertAll tt score 1 depth game pvLine
   pure (score, pvLine)
+  where
+    insertAll :: STTranspositionTable s -> Int -> Int -> Int16 -> Game -> [Move] -> ST s ()
+    insertAll _ _ _ _ _ [] = pure ()
+    insertAll tt score mult d g (m : moves) = do
+      let entry =
+            TTEntry
+              { entryScore = NodeResult (mult * score) ExactNode,
+                entryMove = m,
+                entryHalfmove = gameHalfmove g,
+                entryDepth = d
+              }
+      TT.basicInsert (gameBoard g) entry tt
+      insertAll tt score (-mult) (d - 1) (fromJust (makeMove g m)) moves
 
 -- distinct from searchenv, what??
 -- everything that doesn't need to be persistent between siblings
@@ -398,10 +412,7 @@ search
             let move = fromMaybe NullMove (listToMaybe pvLine)
             let nodeResult = mkNodeResult alpha beta score
             let newEntry = TTEntry nodeResult move (gameHalfmove game) depth
-            -- make sure to save bestmove if root
-            if ply == 0
-              then lift $ TT.basicInsert board newEntry tt
-              else lift $ TT.insert board newEntry tt
+            lift $ TT.insert board newEntry tt
             if nodeResType nodeResult == ExactNode
               then pure (score, pvLine)
               else pure (score, [])
