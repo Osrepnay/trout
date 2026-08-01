@@ -27,8 +27,8 @@ import Data.Ord (comparing)
 import Data.STRef (STRef, newSTRef, readSTRef, writeSTRef)
 import Data.STRef.Strict (modifySTRef')
 import Data.Vector.Primitive ((!))
-import Data.Vector.Primitive.Mutable (STVector)
-import Data.Vector.Primitive.Mutable qualified as MV
+import Data.Vector.Primitive.Mutable qualified as MPV
+import Data.Vector.Storable.Mutable qualified as MSV
 import Debug.Trace
 import Trout.Bitboard (Bitboard, clearBit, countTrailingZeros, (.&.), (.|.))
 import Trout.Game
@@ -60,27 +60,49 @@ import Trout.Search.Worthiness (drawWorth, lossWorth, pawnWorth, pieceWorth, sco
 maxPly :: Int16
 maxPly = 128
 
-type KillerMap = Map Int16 [Move]
+type KillerTable s = MSV.STVector s Move
 
-maxKillers :: Int
-maxKillers = 2
+addKiller :: Int16 -> Move -> KillerTable s -> ST s ()
+-- nullmove is used as sentinel, don't want to risk this poisoning table
+addKiller _ NullMove _ = pure ()
+addKiller ply move killerTable = do
+  let firstIdx = fromIntegral ply * 2
+  let secondIdx = fromIntegral ply * 2 + 1
+  firstSlot <- MSV.read killerTable firstIdx
+  if move == firstSlot
+    then pure ()
+    else do
+        MSV.write killerTable secondIdx firstSlot
+        MSV.write killerTable firstIdx move
 
-addKiller :: Int16 -> Move -> KillerMap -> KillerMap
-addKiller halfmove move =
-  M.alter
-    ( \maybeKillers ->
-        let killerList = join (maybeToList maybeKillers)
-         in if move `elem` killerList
-              then Just (move : removeSingle move killerList)
-              else Just $ move : trimEnd killerList
-    )
-    halfmove
+getKillers :: Int16 -> KillerTable s -> ST s [Move]
+getKillers ply killerTable =
+  liftA2
+    (\a b -> [a, b])
+    (MSV.read killerTable firstIdx)
+    (MSV.read killerTable secondIdx)
   where
-    trimEnd xs
-      | length xs == maxKillers = init xs
-      | otherwise = xs
+    firstIdx = fromIntegral ply * 2
+    secondIdx = fromIntegral ply * 2 + 1
 
-type HistoryTable s = STVector s Int
+-- shifts the killers up two plies to prepare for next move
+shiftKillers :: KillerTable s -> ST s ()
+shiftKillers killerTable = go 0
+  where
+    go ply
+      | ply > maxPly = pure ()
+      | otherwise =
+          MSV.read killerTable getIdx
+            >>= \firstSlot -> case firstSlot of
+              NullMove -> pure ()
+              _ -> do
+                secondSlot <- MSV.read killerTable (getIdx + 1)
+                MSV.write killerTable (fromIntegral ply * 2) firstSlot
+                MSV.write killerTable (fromIntegral ply * 2 + 1) secondSlot
+      where
+        getIdx = (fromIntegral ply + 2) * 2
+
+type HistoryTable s = MPV.STVector s Int
 
 maxHistory :: Int
 maxHistory = 10000
@@ -93,24 +115,24 @@ historyIdx color move =
 
 addHistory :: HistoryTable s -> Int -> Int -> ST s ()
 addHistory history bonus key =
-  MV.modify
+  MPV.modify
     history
     (\curr -> curr + bonus - abs bonus * curr `quot` maxHistory)
     key
 
 getHistory :: HistoryTable s -> Int -> ST s Int
-getHistory = MV.read
+getHistory = MPV.read
 
 decayHistory :: HistoryTable s -> ST s ()
 decayHistory history =
   traverse_
-    (MV.modify history (\h -> h * 1 `quot` 5))
-    [0 .. MV.length history - 1]
+    (MPV.modify history (\h -> h * 1 `quot` 5))
+    [0 .. MPV.length history - 1]
 
 -- anything that needs to be carried up through search tree
 data SearchEnv s = SearchEnv
   { sEnvTT :: !(STTranspositionTable s),
-    sEnvKillers :: !(STRef s KillerMap),
+    sEnvKillers :: !(KillerTable s),
     sEnvHistory :: !(HistoryTable s),
     sEnvNodecount :: !(STRef s Int)
   }
@@ -131,23 +153,23 @@ getNodecount = ask >>= (lift . readSTRef) . sEnvNodecount
 newEnv :: Int -> ST s (SearchEnv s)
 newEnv n = do
   tt <- TT.new n
-  killers <- newSTRef M.empty
-  history <- MV.replicate (2 * 6 * 64) 0
+  killerTable <- MSV.replicate (2 * (fromIntegral maxPly + 1)) NullMove
+  history <- MPV.replicate (2 * 6 * 64) 0
   nodes <- newSTRef 0
-  pure (SearchEnv tt killers history nodes)
+  pure (SearchEnv tt killerTable history nodes)
 
 refreshEnv :: ReaderT (SearchEnv s) (ST s) ()
 refreshEnv = do
-  (SearchEnv {sEnvKillers = killers, sEnvHistory = history}) <- ask
-  -- lift $ writeSTRef killers M.empty
+  (SearchEnv {sEnvKillers = killerTable, sEnvHistory = history}) <- ask
+  lift $ shiftKillers killerTable
   lift $ decayHistory history
   resetNodecount
 
 clearEnv :: SearchEnv s -> ST s ()
-clearEnv (SearchEnv tt killers history nodes) = do
+clearEnv (SearchEnv tt killerTable history nodes) = do
   TT.clear tt
-  writeSTRef killers M.empty
-  MV.set history 0
+  MSV.set killerTable NullMove
+  MPV.set history 0
   writeSTRef nodes 0
 
 -- no check detection, just sends it
@@ -353,8 +375,11 @@ badScore = MoveScore minBound
 ttScore :: MoveScore
 ttScore = MoveScore maxBound
 
+killerScore :: MoveScore
+killerScore = MoveScore (maxHistory + 1)
+
 mkSEEScore :: Int -> MoveScore
-mkSEEScore seeVal = MoveScore $ seeVal + maxHistory + winWorth
+mkSEEScore seeVal = MoveScore $ seeVal + maxHistory + 1 + winWorth
 
 isMoveQuiet :: Board -> Move -> Bool
 isMoveQuiet board move = case moveSpecial move of
@@ -363,14 +388,23 @@ isMoveQuiet board move = case moveSpecial move of
   Normal -> isNothing (getPiece (moveTo move) (boardPieces board))
   _ -> True -- pawn double move, castling are both quiet
 
-scoreMoves :: Board -> [Move] -> ReaderT (SearchEnv s) (ST s) [(MoveScore, Move)]
-scoreMoves board moves = do
+scoreMoves :: Int16 -> Board -> [Move] -> ReaderT (SearchEnv s) (ST s) [(MoveScore, Move)]
+scoreMoves ply board moves = do
   SearchEnv {sEnvTT = tt} <- ask
   ttMaybeMove <- lift $ fmap entryMove <$> TT.lookup board tt
   flip traverse moves $ \m ->
     fmap ((,m) . fromMaybe badScore) $ runMaybeT $ do
       let isQuiet = isMoveQuiet board m
       let tryTT = ttMaybeMove >>= \ttm -> if ttm == m then Just ttScore else Nothing
+      let tryKillers =
+            if isQuiet
+              then do
+                SearchEnv {sEnvKillers = killerTable} <- ask
+                killers <- lift $ getKillers ply killerTable
+                if m `elem` killers
+                  then pure (Just killerScore)
+                  else pure Nothing
+              else pure Nothing
       let tryHist =
             if isQuiet
               then do
@@ -380,7 +414,7 @@ scoreMoves board moves = do
                     getHistory history (historyIdx (boardTurn board) m)
               else pure Nothing
       let trySEE = mkSEEScore <$> seeOfUnquiet board m
-      hoistMaybe tryTT <|> MaybeT tryHist <|> hoistMaybe trySEE
+      hoistMaybe tryTT <|> MaybeT tryKillers <|> MaybeT tryHist <|> hoistMaybe trySEE
 
 search :: SearchState -> ReaderT (SearchEnv s) (ST s) (Int, [Move])
 search
@@ -407,7 +441,7 @@ search
         case prunes of
           Just pruneScore -> pure (pruneScore, [])
           Nothing -> do
-            scoredMoves <- scoreMoves board (allMoves board)
+            scoredMoves <- scoreMoves ply board (allMoves board)
             (score, pvLine) <- go 0 scoredMoves [] Nothing
             let move = fromMaybe NullMove (listToMaybe pvLine)
             let nodeResult = mkNodeResult alpha beta score
@@ -571,8 +605,10 @@ search
               if score >= beta
                 then do
                   when isQuiet $ do
-                    -- update history
-                    SearchEnv {sEnvHistory = history} <- ask
+                    SearchEnv {sEnvKillers = killerTable, sEnvHistory = history} <- ask
+                    -- killers
+                    lift $ addKiller ply move killerTable
+                    -- history
                     let bonus = fromIntegral $ depth * depth
                     let mkKey = historyIdx (boardTurn board)
                     lift $ addHistory history bonus (mkKey move)
