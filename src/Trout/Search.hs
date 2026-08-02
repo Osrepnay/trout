@@ -553,7 +553,7 @@ search
                           then trueAlpha + 1
                           else beta
               let lmrReduction =
-                    if depth < 3
+                    if depth < 3 || nth < 3
                       then 0
                       else
                         ceiling
