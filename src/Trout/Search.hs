@@ -20,6 +20,7 @@ import Data.Bifunctor (first)
 import Data.Foldable (maximumBy, traverse_)
 import Data.Functor ((<&>))
 import Data.Int (Int16)
+import Data.List ((!?))
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as M
 import Data.Maybe (fromJust, fromMaybe, isJust, isNothing, listToMaybe, maybeToList)
@@ -311,6 +312,7 @@ data SearchState = SearchState
     sStateAlpha :: !Int,
     sStateBeta :: !Int,
     sStatePV :: !Bool,
+    sStateEvalHist :: ![Maybe Int],
     sStateGame :: !Game
   }
   deriving (Eq, Show)
@@ -328,6 +330,7 @@ aspirate depth !initialGuess !game = go 50 50
                 sStateAlpha = lower,
                 sStateBeta = upper,
                 sStatePV = True,
+                sStateEvalHist = [],
                 sStateGame = game
               }
           )
@@ -390,6 +393,7 @@ search
       sStateAlpha = !alpha,
       sStateBeta = !beta,
       sStatePV = !isPV,
+      sStateEvalHist = !evalHist,
       sStateGame = !game
     }
     | isDrawn game && ply /= 0 = pure (drawWorth, [])
@@ -422,6 +426,10 @@ search
 
       currentlyChecked = inCheck (boardTurn board) (boardPieces board)
       staticEval = eval board
+      checkedEval = if currentlyChecked then Nothing else Just staticEval
+      improving = case join (evalHist !? 1 <|> evalHist !? 3) of
+        Nothing -> False
+        Just oldEval -> staticEval > oldEval
 
       pruneTT :: MaybeT (ReaderT (SearchEnv s) (ST s)) Int
       pruneTT = do
@@ -481,6 +489,7 @@ search
                           sStateAlpha = -beta,
                           sStateBeta = -(beta - 1),
                           sStatePV = False,
+                          sStateEvalHist = checkedEval : evalHist,
                           sStateGame = nullGame
                         }
                 if nullScore >= beta
@@ -493,6 +502,11 @@ search
         | otherwise = pure Nothing
         where
           reduction = 3 + depth `quot` 3
+
+      lmpLimit =
+        if improving
+          then 3 + 2 * fromIntegral depth * fromIntegral depth
+          else 3 + fromIntegral depth * fromIntegral depth
 
       -- move loop
       -- bestScore for fail-soft
@@ -514,7 +528,7 @@ search
         | not isPV
             && isQuiet
             && maybe False (not . scoreIsLosing . fst) best
-            && nth > 3 + 4 * fromIntegral depth * fromIntegral depth =
+            && nth > lmpLimit =
             go nth [] failedQuiets best
         | otherwise = case makeMove game move of
             Nothing -> go nth movesRest failedQuiets best
@@ -529,6 +543,7 @@ search
                             sStateAlpha = -newBeta,
                             sStateBeta = -trueAlpha,
                             sStatePV = newIsPV,
+                            sStateEvalHist = checkedEval : evalHist,
                             sStateGame = moveMade
                           }
                     where
