@@ -357,7 +357,9 @@ ttScore :: MoveScore
 ttScore = MoveScore maxBound
 
 mkSEEScore :: Int -> MoveScore
-mkSEEScore seeVal = MoveScore $ seeVal + maxHistory + winWorth
+mkSEEScore seeVal
+  | seeVal >= 0 = MoveScore $ seeVal + maxHistory + 1
+  | otherwise = MoveScore $ seeVal - maxHistory - 1
 
 isMoveQuiet :: Board -> Move -> Bool
 isMoveQuiet board move = case moveSpecial move of
