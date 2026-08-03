@@ -353,10 +353,6 @@ aspirate depth !initialGuess !game =
 
 newtype MoveScore = MoveScore {unMoveScore :: Int} deriving (Eq, Show, Ord)
 
--- temp - until we can fill out movescore, this is dump for unclassified
-badScore :: MoveScore
-badScore = MoveScore minBound
-
 ttScore :: MoveScore
 ttScore = MoveScore maxBound
 
@@ -377,7 +373,7 @@ scoreMoves board moves = do
   SearchEnv {sEnvTT = tt} <- ask
   ttMaybeMove <- lift $ fmap entryMove <$> TT.lookup board tt
   flip traverse moves $ \m ->
-    fmap ((,m) . fromMaybe badScore) $ runMaybeT $ do
+    fmap ((,m) . fromJust) $ runMaybeT $ do
       let isQuiet = isMoveQuiet board m
       let tryTT = ttMaybeMove >>= \ttm -> if ttm == m then Just ttScore else Nothing
       let tryHist =
