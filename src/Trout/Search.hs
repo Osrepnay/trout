@@ -485,7 +485,8 @@ search
       pruneNMP :: ReaderT (SearchEnv s) (ST s) (Maybe Int)
       pruneNMP
         | not isPV
-            && materialScore game >= 1 =
+            && materialScore game >= 1
+            && staticEval >= beta =
             case makeMove game NullMove of
               Just nullGame -> do
                 (nullScore, _) <-
