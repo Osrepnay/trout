@@ -465,7 +465,9 @@ search
             Just staticEval
         | otherwise = Nothing
         where
-          rfpMargin = fromIntegral depth * 110
+          rfpMargin = if improving
+            then fromIntegral depth * 80
+            else fromIntegral depth * 110
 
       pruneRazor :: ReaderT (SearchEnv s) (ST s) (Maybe Int)
       pruneRazor
