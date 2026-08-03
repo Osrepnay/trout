@@ -318,31 +318,35 @@ data SearchState = SearchState
   deriving (Eq, Show)
 
 aspirate :: Int16 -> Int -> Game -> ReaderT (SearchEnv s) (ST s) (Int, [Move])
-aspirate depth !initialGuess !game = go 50 50
+aspirate depth !initialGuess !game =
+  go initialGuess initialGuess initialMargin initialMargin
   where
-    go :: Int -> Int -> ReaderT (SearchEnv s) (ST s) (Int, [Move])
-    go lowerMargin upperMargin = do
+    initialMargin
+      | depth <= 0 = abs initialGuess + winWorth + 1
+      | otherwise = max 5 (300 `quot` fromIntegral depth)
+    go :: Int -> Int -> Int -> Int -> ReaderT (SearchEnv s) (ST s) (Int, [Move])
+    go lowerBound upperBound lowerMargin upperMargin = do
       (result, pvLine) <-
         search
           ( SearchState
               { sStateDepth = depth,
                 sStatePly = 0,
-                sStateAlpha = lower,
-                sStateBeta = upper,
+                sStateAlpha = alpha,
+                sStateBeta = beta,
                 sStatePV = True,
                 sStateEvalHist = [],
                 sStateGame = game
               }
           )
-      if result <= lower
-        then go (lowerMargin * 10) upperMargin
+      if result <= alpha
+        then go result upperBound (lowerMargin * 2) upperMargin
         else
-          if result >= upper
-            then go lowerMargin (upperMargin * 10)
+          if result >= beta
+            then go lowerBound result lowerMargin (upperMargin * 2)
             else pure (result, pvLine)
       where
-        lower = initialGuess - lowerMargin
-        upper = initialGuess + upperMargin
+        alpha = lowerBound - lowerMargin
+        beta = upperBound + upperMargin
 
 -- least to most:
 -- TDOO fillout
