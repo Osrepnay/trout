@@ -6,9 +6,10 @@ import Control.Monad.Trans.Reader (runReaderT)
 import Criterion.Main
 import Data.Int (Int16)
 import Data.Maybe
+import Foreign.Storable (sizeOf)
 import Trout.Game
 import Trout.Search
-import Trout.Search.TranspositionTable (sizeOfEntry)
+import Trout.Search.TranspositionTable (TTEntry)
 
 instance NFData (SearchEnv s) where
   rnf !_ = ()
@@ -25,7 +26,7 @@ main = do
     ]
 
 createEnv :: IO (SearchEnv RealWorld)
-createEnv = stToIO (newEnv (16000000 `quot` sizeOfEntry))
+createEnv = stToIO (newEnv (16000000 `quot` sizeOf (undefined :: TTEntry)))
 
 bestMoveWrapper :: Int16 -> Game -> SearchEnv RealWorld -> IO Int
 bestMoveWrapper depth game searchEnv =

@@ -21,6 +21,7 @@ import Data.Function ((&))
 import Data.Int (Int16)
 import Data.Maybe (fromMaybe, listToMaybe)
 import Data.Time (diffUTCTime, getCurrentTime, nominalDiffTimeToSeconds)
+import Foreign.Storable (sizeOf)
 import System.IO (hFlush, hPutStrLn, stderr, stdout)
 import System.Timeout (timeout)
 import Text.Printf (printf)
@@ -41,7 +42,7 @@ import Trout.Game.Move
   )
 import Trout.Piece (Color (..))
 import Trout.Search (SearchEnv, bestMove, clearEnv, getNodecount, newEnv, refreshEnv)
-import Trout.Search.TranspositionTable (sizeOfEntry)
+import Trout.Search.TranspositionTable (TTEntry)
 import Trout.Uci.Parse
   ( CommGoArg (..),
     CommPositionInit (..),
@@ -60,11 +61,11 @@ data UciState = UciState
 newUciState :: IO UciState
 newUciState =
   UciState startingGame False Nothing
-    <$> (stToIO (newEnv (16000000 `quot` sizeOfEntry)) >>= newMVar)
+    <$> (stToIO (newEnv (16000000 `quot` sizeOf (undefined :: TTEntry))) >>= newMVar)
 
 modUciStateHash :: Int -> UciState -> IO UciState
 modUciStateHash hashMB state = do
-  newSearchEnv <- stToIO (newEnv (hashMB * 1000000 `quot` sizeOfEntry))
+  newSearchEnv <- stToIO (newEnv (hashMB * 1000000 `quot` sizeOf (undefined :: TTEntry)))
   var <- newMVar newSearchEnv
   pure $ state {uciSearchEnv = var}
 
