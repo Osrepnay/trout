@@ -145,8 +145,11 @@ safetyMultMg, safetyMultEg :: Double
 passerMultMg, passerMultEg :: Double
 (passerMultMg, passerMultEg) = (-1.0697013783631468, 35.657915811214195)
 
+tempoBonus :: Int
+tempoBonus = 10
+
 eval :: Board -> Int
-eval board =
+eval board = tempoBonus +
   colorSign (boardTurn board)
     * ( pstEvalValue
           + mobilityValue
