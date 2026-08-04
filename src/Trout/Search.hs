@@ -461,9 +461,10 @@ search
             Just staticEval
         | otherwise = Nothing
         where
-          rfpMargin = if improving
-            then fromIntegral depth * 80
-            else fromIntegral depth * 110
+          rfpMargin =
+            if improving
+              then fromIntegral depth * 80
+              else fromIntegral depth * 110
 
       pruneRazor :: ReaderT (SearchEnv s) (ST s) (Maybe Int)
       pruneRazor
@@ -513,6 +514,13 @@ search
           then 3 + 2 * fromIntegral depth * fromIntegral depth
           else 3 + fromIntegral depth * fromIntegral depth
 
+      -- all the conditions except for isQuiet
+      doFutility =
+        not isPV
+          && depth <= 7
+          && staticEval + 400 + fromIntegral depth * 100 <= alpha
+          && not currentlyChecked
+
       -- move loop
       -- bestScore for fail-soft
       go ::
@@ -532,9 +540,13 @@ search
         -- late move pruning
         | not isPV
             && isQuiet
-            && maybe False (not . scoreIsLosing . fst) best
+            && hasUsableMove
             && nth > lmpLimit =
             go nth [] failedQuiets best
+        | isQuiet
+            && hasUsableMove
+            && doFutility =
+            go (nth + 1) movesRest newFailedQuiets best
         | otherwise = case makeMove game move of
             Nothing -> go nth movesRest failedQuiets best
             Just moveMade -> do
@@ -616,6 +628,8 @@ search
           newFailedQuiets
             | isQuiet = move : failedQuiets
             | otherwise = failedQuiets
+          -- has a legal move that doesn't just go to checkmate
+          hasUsableMove = maybe False (not . scoreIsLosing . fst) best
 
 {-
 searchPVS :: SearchState -> Game -> ReaderT (SearchEnv s) (ST s) Int
