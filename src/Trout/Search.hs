@@ -253,15 +253,19 @@ quieSearch !alpha !beta !game = do
   -- stand-pat from null-move observation (eval immediately = not moving)
   let staticEval = eval board
   (SearchEnv {sEnvTT = tt}) <- ask
-  if staticEval >= beta
-    then pure staticEval
-    else
-      go
-        staticEval
-        ( filter
-            ((>= 0) . fst)
-            ((\m -> (scoreMove m, m)) <$> allDisquiets board)
-        )
+  maybeRes <- lift $ fmap entryScore <$> TT.lookup board tt
+  case maybeRes >>= \s -> if nodeUsable alpha beta s then Just s else Nothing of
+    Just s -> pure (nodeResScore s)
+    Nothing ->
+      if staticEval >= beta
+        then pure staticEval
+        else
+          go
+            staticEval
+            ( filter
+                ((>= 0) . fst)
+                ((\m -> (scoreMove m, m)) <$> allDisquiets board)
+            )
   where
     board = gameBoard game
 
