@@ -403,7 +403,13 @@ search
       sStateGame = !game
     }
     | isDrawn game && ply /= 0 = pure (drawWorth, [])
-    | depth <= 0 || ply >= maxPly = (,[]) <$> quieSearch alpha beta game
+    | depth <= 0 || ply >= maxPly = do
+        -- don't incNodecount, quiescence does it for the same node
+        (SearchEnv {sEnvTT = tt}) <- ask
+        score <- quieSearch alpha beta game
+        let newEntry = TTEntry (mkNodeResult alpha beta score) NullMove (gameHalfmove game) 0
+        lift $ TT.insert (gameBoard game) newEntry tt
+        pure (score, [])
     | otherwise = do
         incNodecount
 
