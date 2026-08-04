@@ -21,16 +21,13 @@ import Data.Foldable (maximumBy, traverse_)
 import Data.Functor ((<&>))
 import Data.Int (Int16)
 import Data.List ((!?))
-import Data.Map.Strict (Map)
-import Data.Map.Strict qualified as M
-import Data.Maybe (fromJust, fromMaybe, isJust, isNothing, listToMaybe, maybeToList)
+import Data.Maybe (fromJust, fromMaybe, isNothing, listToMaybe)
 import Data.Ord (comparing)
 import Data.STRef (STRef, newSTRef, readSTRef, writeSTRef)
 import Data.STRef.Strict (modifySTRef')
 import Data.Vector.Primitive ((!))
 import Data.Vector.Primitive.Mutable (STVector)
 import Data.Vector.Primitive.Mutable qualified as MV
-import Debug.Trace
 import Trout.Bitboard (Bitboard, clearBit, countTrailingZeros, (.&.), (.|.))
 import Trout.Game
   ( Game (..),
@@ -49,7 +46,7 @@ import Trout.Game.Board
     removePiece,
   )
 import Trout.Game.Move (Move (..), SpecialMove (..))
-import Trout.Game.MoveGen (SpecialMove (Promotion), kingTable, knightTable, pawnCaptureTable)
+import Trout.Game.MoveGen (kingTable, knightTable, pawnCaptureTable)
 import Trout.Game.MoveGen.Sliding.Magic (bishopMovesMagic, rookMovesMagic)
 import Trout.Piece (Color (..), Piece (..), PieceType (..), other)
 import Trout.Search.Eval (eval, materialScore)
@@ -60,26 +57,6 @@ import Trout.Search.Worthiness (drawWorth, lossWorth, pawnWorth, pieceWorth, sco
 
 maxPly :: Int16
 maxPly = 128
-
-type KillerMap = Map Int16 [Move]
-
-maxKillers :: Int
-maxKillers = 2
-
-addKiller :: Int16 -> Move -> KillerMap -> KillerMap
-addKiller halfmove move =
-  M.alter
-    ( \maybeKillers ->
-        let killerList = join (maybeToList maybeKillers)
-         in if move `elem` killerList
-              then Just (move : removeSingle move killerList)
-              else Just $ move : trimEnd killerList
-    )
-    halfmove
-  where
-    trimEnd xs
-      | length xs == maxKillers = init xs
-      | otherwise = xs
 
 type HistoryTable s = STVector s Int
 
@@ -111,7 +88,6 @@ decayHistory history =
 -- anything that needs to be carried up through search tree
 data SearchEnv s = SearchEnv
   { sEnvTT :: !(STTranspositionTable s),
-    sEnvKillers :: !(STRef s KillerMap),
     sEnvHistory :: !(HistoryTable s),
     sEnvNodecount :: !(STRef s Int)
   }
@@ -132,22 +108,19 @@ getNodecount = ask >>= (lift . readSTRef) . sEnvNodecount
 newEnv :: Int -> ST s (SearchEnv s)
 newEnv n = do
   tt <- TT.new n
-  killers <- newSTRef M.empty
   history <- MV.replicate (2 * 6 * 64) 0
   nodes <- newSTRef 0
-  pure (SearchEnv tt killers history nodes)
+  pure (SearchEnv tt history nodes)
 
 refreshEnv :: ReaderT (SearchEnv s) (ST s) ()
 refreshEnv = do
-  (SearchEnv {sEnvKillers = killers, sEnvHistory = history}) <- ask
-  -- lift $ writeSTRef killers M.empty
+  (SearchEnv {sEnvHistory = history}) <- ask
   lift $ decayHistory history
   resetNodecount
 
 clearEnv :: SearchEnv s -> ST s ()
-clearEnv (SearchEnv tt killers history nodes) = do
+clearEnv (SearchEnv tt history nodes) = do
   TT.clear tt
-  writeSTRef killers M.empty
   MV.set history 0
   writeSTRef nodes 0
 
@@ -286,27 +259,6 @@ quieSearch !alpha !beta !game = do
       where
         ((_, move), movesRest) = singleSelect moves
 
-bestMove :: Int16 -> Game -> ReaderT (SearchEnv s) (ST s) (Int, [Move])
-bestMove depth game = do
-  (SearchEnv {sEnvTT = tt}) <- ask
-  guess <- maybe 0 (nodeResScore . entryScore) <$> lift (TT.lookup (gameBoard game) tt)
-  (score, pvLine) <- aspirate depth guess game
-  lift $ insertAll tt score 1 depth game pvLine
-  pure (score, pvLine)
-  where
-    insertAll :: STTranspositionTable s -> Int -> Int -> Int16 -> Game -> [Move] -> ST s ()
-    insertAll _ _ _ _ _ [] = pure ()
-    insertAll tt score mult d g (m : moves) = do
-      let entry =
-            TTEntry
-              { entryScore = NodeResult (mult * score) ExactNode,
-                entryMove = m,
-                entryHalfmove = gameHalfmove g,
-                entryDepth = d
-              }
-      TT.basicInsert (gameBoard g) entry tt
-      insertAll tt score (-mult) (d - 1) (fromJust (makeMove g m)) moves
-
 -- distinct from searchenv, what??
 -- everything that doesn't need to be persistent between siblings
 -- could be arguments, but there are a lot
@@ -321,39 +273,11 @@ data SearchState = SearchState
   }
   deriving (Eq, Show)
 
-aspirate :: Int16 -> Int -> Game -> ReaderT (SearchEnv s) (ST s) (Int, [Move])
-aspirate depth !initialGuess !game =
-  go initialGuess initialGuess initialMargin initialMargin
-  where
-    initialMargin
-      | depth <= 0 = abs initialGuess + winWorth + 1
-      | otherwise = max 5 (300 `quot` fromIntegral depth)
-    go :: Int -> Int -> Int -> Int -> ReaderT (SearchEnv s) (ST s) (Int, [Move])
-    go lowerBound upperBound lowerMargin upperMargin = do
-      (result, pvLine) <-
-        search
-          ( SearchState
-              { sStateDepth = depth,
-                sStatePly = 0,
-                sStateAlpha = alpha,
-                sStateBeta = beta,
-                sStatePV = True,
-                sStateEvalHist = [],
-                sStateGame = game
-              }
-          )
-      if result <= alpha
-        then go result upperBound (lowerMargin * 2) upperMargin
-        else
-          if result >= beta
-            then go lowerBound result lowerMargin (upperMargin * 2)
-            else pure (result, pvLine)
-      where
-        alpha = lowerBound - lowerMargin
-        beta = upperBound + upperMargin
-
--- least to most:
--- TDOO fillout
+-- order:
+-- tt move
+-- positive/neutral captures
+-- history
+-- negative captures
 
 newtype MoveScore = MoveScore {unMoveScore :: Int} deriving (Eq, Show, Ord)
 
@@ -631,7 +555,7 @@ search
           -- max of alpha and best;
           -- what alpha would be in a fail-hard search
           trueAlpha = maybe alpha (max alpha . fst) best
-          ((moveScore, move), movesRest) = singleSelect moves
+          ((_moveScore, move), movesRest) = singleSelect moves
           isQuiet = isMoveQuiet board move
           -- we won't ever want to not append to this when the move is quiet
           -- because if it does fail high, we never call go again
@@ -641,218 +565,54 @@ search
           -- has a legal move that doesn't just go to checkmate
           hasUsableMove = maybe False (not . scoreIsLosing . fst) best
 
-{-
-searchPVS :: SearchState -> Game -> ReaderT (SearchEnv s) (ST s) Int
-searchPVS
-  sState@( SearchState
-             { sStateStartingDepth = !startingDepth,
-               sStateDepth = 0,
-               sStateAlpha = !alpha,
-               sStateBeta = !beta
-             }
-           )
-  !game
-    | isDrawn game && startingDepth /= 0 = pure 0
-    | inCheck (boardTurn board) (boardPieces board) = searchPVS (sState {sStateDepth = 1}) game
-    | otherwise = do
-        -- don't incNodecount because quiescence does that on the same game, so it would be double-counting
-        (SearchEnv {sEnvTT = tt}) <- ask
-        score <- quieSearch alpha beta game
-        lift $
-          TT.insert
-            (gameBoard game)
-            (TTEntry (mkNodeResult alpha beta score) NullMove (gameHalfmove game) 0)
-            tt
-        pure score
-    where
-      board = gameBoard game
-searchPVS
-  sState@( SearchState
-             { sStateStartingDepth = !startingDepth,
-               sStateDepth = !depth,
-               sStateAlpha = !alpha,
-               sStateBeta = !beta,
-               sStatePV = !isPV
-             }
-           )
-  !game
-    | depth < 0 = searchPVS (sState {sStateDepth = 0}) game
-    | isDrawn game && startingDepth /= depth = pure 0
-    | otherwise = do
-        incNodecount
+aspirate :: Int16 -> Int -> Game -> ReaderT (SearchEnv s) (ST s) (Int, [Move])
+aspirate depth !initialGuess !game =
+  go initialGuess initialGuess initialMargin initialMargin
+  where
+    initialMargin
+      | depth <= 0 = abs initialGuess + winWorth + 1
+      | otherwise = max 5 (300 `quot` fromIntegral depth)
+    go :: Int -> Int -> Int -> Int -> ReaderT (SearchEnv s) (ST s) (Int, [Move])
+    go lowerBound upperBound lowerMargin upperMargin = do
+      (result, pvLine) <-
+        search
+          ( SearchState
+              { sStateDepth = depth,
+                sStatePly = 0,
+                sStateAlpha = alpha,
+                sStateBeta = beta,
+                sStatePV = True,
+                sStateEvalHist = [],
+                sStateGame = game
+              }
+          )
+      if result <= alpha
+        then go result upperBound (lowerMargin * 2) upperMargin
+        else
+          if result >= beta
+            then go lowerBound result lowerMargin (upperMargin * 2)
+            else pure (result, pvLine)
+      where
+        alpha = lowerBound - lowerMargin
+        beta = upperBound + upperMargin
 
-        (SearchEnv {sEnvTT = tt}) <- ask
-        maybeTTEntry <- lift (TT.lookup board tt)
-        prunes <-
-          runMaybeT $
-            hoistMaybe (checkTTCut maybeTTEntry)
-              <|> hoistMaybe checkFutility
-              <|> MaybeT checkRazor
-              <|> MaybeT checkNullMove
-        case prunes of
-          Just score -> pure score
-          Nothing -> do
-            scoredMoves <- scoreMovesOld game (allMoves board)
-            (bResult, bMove) <- go 0 scoredMoves [] Nothing
-            let newEntry = TTEntry bResult bMove (gameHalfmove game) depth
-            -- make sure to save bestmove if root
-            if depth == startingDepth
-              then lift $ TT.basicInsert board newEntry tt
-              else lift $ TT.insert board newEntry tt
-            pure (nodeResScore bResult)
-    where
-      board = gameBoard game
-      pieces = boardPieces board
-
-      checkNullMove
-        | not isPV && materialScore game >= 1 && depth > 1 = case makeMove game NullMove of
-            Just nullGame -> do
-              nullScore <-
-                negate
-                  <$> searchPVS
-                    ( sState
-                        { sStateDepth = depth * 2 `quot` 3 - 2,
-                          sStateAlpha = -beta,
-                          sStateBeta = -beta + 1,
-                          sStatePV = False
-                        }
-                    )
-                    nullGame
-              if nullScore >= beta
-                then pure (Just nullScore)
-                else pure Nothing
-            Nothing -> pure Nothing
-        | otherwise = pure Nothing
-
-      currentlyChecked = inCheck (boardTurn board) (boardPieces board)
-
-      staticEval = eval board
-
-      -- unfortunately this breaks on games with length over 100k! oh no!
-      scoreIsWinning score = abs (abs score - winWorth) < 100000
-
-      checkFutility
-        | not isPV
-            -- futility if beta is already checkmate is nonsensical
-            && not (scoreIsWinning beta)
-            && staticEval >= beta + fromIntegral depth * 150
-            && not currentlyChecked =
-            Just staticEval
-        | otherwise = Nothing
-
-      checkRazor
-        | not isPV
-            && not (scoreIsWinning alpha)
-            && staticEval + fromIntegral depth * fromIntegral depth * 110 <= alpha = do
-            quieScore <- quieSearch alpha beta game
-            if quieScore <= alpha
-              then pure (Just quieScore)
-              else pure Nothing
-        | otherwise = pure Nothing
-
-      checkTTCut maybeEntry =
-        maybeEntry
-          >>= \( TTEntry
-                   { entryScore = res,
-                     entryMove = move,
-                     entryHalfmove = halfmove,
-                     entryDepth = d
-                   }
-                 ) ->
-              if d >= depth
-                && nodeUsable alpha beta res
-                -- prevents stalling in endgame by making sure halfmove penalty gets applied
-                && not (scoreIsWinning (nodeResScore res) && halfmove /= gameHalfmove game)
-                -- sanity check in case of full hash collision
-                && maybe False ((== movePiece move) . pieceType) (getPiece (moveFrom move) pieces)
-                then Just (nodeResScore res)
-                else Nothing
-
-      go :: Int -> [(Int, Move)] -> [Move] -> Maybe (Int, Move) -> ReaderT (SearchEnv s) (ST s) (NodeResult, Move)
-      -- no valid moves (stalemate, checkmate checks)
-      -- bestScore is nothing if all moves are illegal
-      go _ [] _ Nothing
-        | currentlyChecked = pure (NodeResult (lossWorth + fromIntegral (gameHalfmove game)) AllNode, NullMove)
-        | otherwise = pure (mkNodeResult alpha beta drawWorth, NullMove)
-      -- bestScore tracks the best score among moves, but separate from real alpha
-      -- this way we keep track of realer score and not alpha cutoff (fail-soft)
-      go _ [] _ (Just (bestScore, bMove)) = pure (mkNodeResult alpha beta bestScore, bMove)
-      go nth moves quiets best = case makeMove game move of
-        Nothing -> go nth movesRest quiets best
-        Just moveMade -> do
-          let trueAlpha = maybe alpha (max alpha . fst) best
-          let search d isNullWindow =
-                negate
-                  <$> searchPVS
-                    ( sState
-                        { sStateDepth = d,
-                          sStateAlpha = a,
-                          sStateBeta = b,
-                          sStatePV = pv
-                        }
-                    )
-                    moveMade
-                where
-                  pv = isPV && not isNullWindow
-                  (a, b) =
-                    if isNullWindow
-                      then (-trueAlpha - 1, -trueAlpha)
-                      else (-beta, -trueAlpha)
-          nodeScore <-
-            if nth == 0
-              -- principal variation
-              then search (depth - 1) False
-              else do
-                let isLMR = nth > 2 && depth >= 2
-                let reducedDepth =
-                      if isLMR
-                        then
-                          depth
-                            - 1
-                            - ceiling
-                              ( log (fromIntegral (depth + 1) :: Double)
-                                  * log (fromIntegral nth)
-                                  / 2.5
-                              )
-                        else depth - 1
-                let didReduce = reducedDepth /= depth - 1
-                score <- search reducedDepth True
-                -- we blew the null window!
-                if score >= (trueAlpha + 1)
-                  then
-                    if isPV
-                      then search (depth - 1) False
-                      -- don't research with full window if non-pv branch, some older relative will research anyways
-                      -- (if not pv, this means we are on a null window so -trueAlpha - 1 == -beta)
-                      else
-                        if didReduce
-                          then search (depth - 1) True
-                          else pure score
-                  else pure score
-          if nodeScore >= beta
-            then do
-              unless isCapture $ do
-                (SearchEnv {sEnvKillers = killers, sEnvHistory = history}) <- ask
-                lift $ modifySTRef' killers (addKiller (gameHalfmove game) move)
-                let bonus = fromIntegral depth * fromIntegral depth
-                lift $
-                  addHistory
-                    (historyIdx (boardTurn board) move)
-                    bonus
-                    history
-                -- penalize quiets that didn't fail high
-                lift $ traverse_ (\q -> addHistory (historyIdx (boardTurn board) q) (-bonus) history) quiets
-              pure (NodeResult nodeScore CutNode, move)
-            else
-              let newQuiets = if isCapture then quiets else move : quiets
-               in go (nth + 1) movesRest newQuiets $
-                    case best of
-                      Just (bScore, _) ->
-                        if bScore < nodeScore
-                          then Just (nodeScore, move)
-                          else best
-                      Nothing -> Just (nodeScore, move)
-        where
-          isCapture = isJust (getPiece (moveTo move) (boardPieces board))
-          ((_, move), movesRest) = singleSelect moves
--}
+bestMove :: Int16 -> Game -> ReaderT (SearchEnv s) (ST s) (Int, [Move])
+bestMove depth game = do
+  (SearchEnv {sEnvTT = tt}) <- ask
+  guess <- maybe 0 (nodeResScore . entryScore) <$> lift (TT.lookup (gameBoard game) tt)
+  (score, pvLine) <- aspirate depth guess game
+  lift $ insertAll tt score 1 depth game pvLine
+  pure (score, pvLine)
+  where
+    insertAll :: STTranspositionTable s -> Int -> Int -> Int16 -> Game -> [Move] -> ST s ()
+    insertAll _ _ _ _ _ [] = pure ()
+    insertAll tt score mult d g (m : moves) = do
+      let entry =
+            TTEntry
+              { entryScore = NodeResult (mult * score) ExactNode,
+                entryMove = m,
+                entryHalfmove = gameHalfmove g,
+                entryDepth = d
+              }
+      TT.basicInsert (gameBoard g) entry tt
+      insertAll tt score (-mult) (d - 1) (fromJust (makeMove g m)) moves
