@@ -106,6 +106,7 @@ launchGo moveVar stateEnvVar game (GoSettings movetime times incs maxDepth) =
   flip finally final $
     do
       startTime <- getCurrentTime
+      putMVar moveVar NullMove
       _ <- timeout (time * 999) (searches startTime 1)
       reportMove moveVar
   where
@@ -118,9 +119,7 @@ launchGo moveVar stateEnvVar game (GoSettings movetime times incs maxDepth) =
           (score, pvLine) <- runReaderT (bestMove depth game) stateEnv
           let move = fromMaybe NullMove (listToMaybe pvLine)
           _ <- evaluate score
-          _ <- tryTakeMVar moveVar
-          putMVar moveVar move
-          _ <- swapMVar stateEnvVar stateEnv
+          _ <- swapMVar moveVar move
           let pvMoves = foldr (\a str -> ' ' : (uciShowMove a ++ str)) "" pvLine
           let pvStr =
                 if pvMoves == ""
