@@ -19,7 +19,7 @@ import Data.Maybe (fromMaybe, listToMaybe)
 import Foreign.Storable (sizeOf)
 import GHC.Clock (getMonotonicTimeNSec)
 import System.IO (hFlush, hPutStrLn, stderr, stdout)
-import Text.Printf (printf)
+import Text.Printf (hPrintf, printf)
 import Text.Read (readEither)
 import Trout.Fen.Parse (fenToGame)
 import Trout.Game
@@ -139,7 +139,7 @@ launchGo moveVar stateEnv game (GoSettings movetime times incs maxDepth) =
     timeNs =
       1_000_000
         * fromIntegral
-          (fromMaybe (getter times `quot` 20 + getter incs `quot` 2) movetime)
+          (fromMaybe (getter times `quot` 20 + getter incs `quot` 2) movetime - 20)
     getter = case boardTurn (gameBoard game) of
       White -> fst
       Black -> snd
@@ -178,7 +178,7 @@ doUci uciState = do
             pure uciState
           Right hashMB -> modUciStateHash hashMB uciState
         _ -> do
-          hPutStrLn stderr $ "option not supported" ++ name
+          hPrintf stderr "option not supported: \"%s\"\n" name
           hFlush stderr
           pure uciState
       doUci uciState'
