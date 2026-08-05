@@ -10,14 +10,14 @@ import Control.Concurrent
     swapMVar,
     tryTakeMVar,
   )
-import Control.Exception (catch, evaluate)
+import Control.Exception (catch)
 import Control.Monad.Trans.Reader (ReaderT (runReaderT))
 import Data.Bifunctor (first, second)
 import Data.Function ((&))
+import Data.Functor (($>))
 import Data.Int (Int16)
-import Data.Maybe (fromMaybe, listToMaybe)
+import Data.Maybe (fromMaybe)
 import Foreign.Storable (sizeOf)
-import GHC.Clock (getMonotonicTimeNSec)
 import System.IO (hFlush, hPutStrLn, stderr, stdout)
 import Text.Printf (hPrintf, printf)
 import Text.Read (readEither)
@@ -36,7 +36,7 @@ import Trout.Game.Move
     uciShowMove,
   )
 import Trout.Piece (Color (..))
-import Trout.Search (OutOfTime, SearchEnv, bestMove, clearEnv, getNodecount, newEnv, refreshEnv)
+import Trout.Search (EngineMessage (..), OutOfTime, SearchEnv, clearEnv, iterativeDeepening, newEnv, refreshEnv)
 import Trout.Search.TranspositionTable (TTEntry)
 import Trout.Uci.Parse
   ( CommGoArg (..),
@@ -108,48 +108,35 @@ launchGo :: Int -> MVar Move -> SearchEnv -> Game -> GoSettings -> IO ()
 launchGo moveOverheadMs moveVar stateEnv game (GoSettings movetime times incs maxDepth) =
   flip catch (\(_ :: OutOfTime) -> final) $
     do
-      startTime <- getMonotonicTimeNSec
       putMVar moveVar NullMove
-      searches startTime 1
+      _ <- flip runReaderT stateEnv $ iterativeDeepening timeNs maxDepth game messageCb
+      final
   where
+    messageCb (MsgInfo depth score elapsedNs nodes nps pvLine) = do
+      case pvLine of
+        bm : _ -> swapMVar moveVar bm $> ()
+        [] -> pure ()
+
+      let pvMoves = foldr (\a str -> ' ' : (uciShowMove a ++ str)) "" pvLine
+      let pvStr =
+            if pvMoves == ""
+              then ""
+              else " pv" ++ pvMoves
+      let elapsedMs = max 1 (elapsedNs `quot` 1_000_000)
+      printf
+        "info depth %d score cp %d time %d nodes %d nps %d%s\n"
+        depth
+        score
+        elapsedMs
+        nodes
+        nps
+        pvStr
+      hFlush stdout
     final = do
       reportMove moveVar
       runReaderT refreshEnv stateEnv
-    searches startTime depth
-      | depth <= maxDepth = do
-          thisStartTime <- getMonotonicTimeNSec
-          let delta = thisStartTime - startTime
-          let timeRemaining = if delta > timeNs then 0 else timeNs - delta
-          (score, pvLine) <- runReaderT (bestMove timeRemaining depth game) stateEnv
-          let move = fromMaybe NullMove (listToMaybe pvLine)
-          _ <- evaluate score
-          _ <- swapMVar moveVar move
-          let pvMoves = foldr (\a str -> ' ' : (uciShowMove a ++ str)) "" pvLine
-          let pvStr =
-                if pvMoves == ""
-                  then ""
-                  else " pv" ++ pvMoves
-          nodes <- runReaderT getNodecount stateEnv
-          currTime <- getMonotonicTimeNSec
-          let elapsedNs = max 1 (currTime - startTime)
-          let elapsedMs = max 1 (elapsedNs `quot` 1_000_000)
-          let elapsedSecs = max 1 (elapsedMs `quot` 1000)
-          let nps = fromIntegral nodes `quot` elapsedSecs
-          printf
-            "info depth %d score cp %d time %d nodes %d nps %d%s\n"
-            depth
-            score
-            elapsedMs
-            nodes
-            nps
-            pvStr
-          hFlush stdout
-          searches startTime (depth + 1)
-      | otherwise = pure ()
-    timeNs =
-      1_000_000
-        * fromIntegral
-          (fromMaybe (getter times `quot` 20 + getter incs `quot` 2) movetime - moveOverheadMs)
+    baseTime = fromMaybe (getter times `quot` 20 + getter incs `quot` 2) movetime
+    timeNs = 1_000_000 * fromIntegral (baseTime - moveOverheadMs)
     getter = case boardTurn (gameBoard game) of
       White -> fst
       Black -> snd

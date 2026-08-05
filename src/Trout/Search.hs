@@ -1,13 +1,14 @@
 module Trout.Search
   ( SearchEnv,
+    OutOfTime,
     newEnv,
     refreshEnv,
     clearEnv,
-    getNodecount,
     staticExchEval,
     seeOfCapture,
     bestMove,
-    OutOfTime,
+    EngineMessage (..),
+    iterativeDeepening,
   )
 where
 
@@ -140,6 +141,9 @@ setStartTime = do
   ref <- sEnvStartTime <$> ask
   time <- lift getMonotonicTimeNSec
   lift $ writeIORef ref time
+
+getStartTime :: ReaderT SearchEnv IO Word64
+getStartTime = ask >>= lift . readIORef . sEnvStartTime
 
 newEnv :: Int -> IO SearchEnv
 newEnv n = do
@@ -637,11 +641,9 @@ aspirate depth !initialGuess !game =
         alpha = lowerBound - lowerMargin
         beta = upperBound + upperMargin
 
-bestMove :: Word64 -> Int16 -> Game -> ReaderT SearchEnv IO (Int, [Move])
-bestMove timeNs depth game = do
-  setStartTime
-  (SearchEnv {sEnvTT = tt, sEnvTimeAllotted = allottedVar}) <- ask
-  lift $ writeIORef allottedVar timeNs
+bestMove :: Int16 -> Game -> ReaderT SearchEnv IO (Int, [Move])
+bestMove depth game = do
+  SearchEnv {sEnvTT = tt} <- ask
   guess <- maybe 0 (nodeResScore . entryScore) <$> lift (TT.lookup (gameBoard game) tt)
   (score, pvLine) <- aspirate depth guess game
   lift $ insertAll tt score 1 depth game pvLine
@@ -659,3 +661,28 @@ bestMove timeNs depth game = do
               }
       TT.basicInsert (gameBoard g) entry tt
       insertAll tt score (-mult) (d - 1) (fromJust (makeMove g m)) moves
+
+-- will there ever be more entries?
+data EngineMessage
+  = MsgInfo
+      Int16 -- depth
+      Int -- evaluation
+      Word64 -- total time (ns)
+      Int -- nodes searched
+      Int -- nps
+      [Move] -- pv
+
+iterativeDeepening :: Word64 -> Int16 -> Game -> (EngineMessage -> IO ()) -> ReaderT SearchEnv IO (Int, [Move])
+iterativeDeepening maxTimeNs maxDepth game messageCb = do
+  setStartTime
+  startTimeNs <- getStartTime
+  SearchEnv {sEnvTimeAllotted = allottedVar} <- ask
+  lift $ writeIORef allottedVar maxTimeNs
+  results <- flip traverse [1 .. max 1 maxDepth] $ \d -> do
+    (score, pv) <- bestMove d game
+    timeElapsedNs <- lift $ subtract startTimeNs <$> getMonotonicTimeNSec
+    nodecount <- getNodecount
+    let nps = fromIntegral $ (1_000_000 * fromIntegral nodecount) `quot` timeElapsedNs
+    lift $ messageCb (MsgInfo d score timeElapsedNs nodecount nps pv)
+    pure (score, pv)
+  pure (last results)

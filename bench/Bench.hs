@@ -30,7 +30,7 @@ createEnv = newEnv (16000000 `quot` sizeOf (undefined :: TTEntry))
 bestMoveWrapper :: Int16 -> Game -> SearchEnv -> IO Int
 bestMoveWrapper depth game searchEnv =
   flip runReaderT searchEnv $
-    last . fmap fst <$> traverse (\d -> bestMove maxBound d game) [1 .. depth]
+    last . fmap fst <$> traverse (\d -> bestMove d game) [1 .. depth]
 
 perft :: Int -> Game -> Int
 perft 0 _ = 1
