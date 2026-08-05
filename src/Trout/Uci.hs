@@ -14,7 +14,6 @@ import Control.Concurrent
     tryTakeMVar,
   )
 import Control.Exception (evaluate, finally)
-import Control.Monad.ST (RealWorld, stToIO)
 import Control.Monad.Trans.Reader (ReaderT (runReaderT))
 import Data.Bifunctor (first, second)
 import Data.Function ((&))
@@ -55,17 +54,20 @@ data UciState = UciState
   { uciGame :: Game,
     uciIsDebug :: Bool,
     uciSearch :: Maybe (ThreadId, MVar Move),
-    uciSearchEnv :: MVar (SearchEnv RealWorld)
+    uciSearchEnv :: MVar SearchEnv
   }
+
+calcNumEntries :: Int -> Int
+calcNumEntries hashMB = hashMB * 1000000 `quot` sizeOf (undefined :: TTEntry)
 
 newUciState :: IO UciState
 newUciState =
   UciState startingGame False Nothing
-    <$> (stToIO (newEnv (16000000 `quot` sizeOf (undefined :: TTEntry))) >>= newMVar)
+    <$> (newEnv (calcNumEntries 16) >>= newMVar)
 
 modUciStateHash :: Int -> UciState -> IO UciState
 modUciStateHash hashMB state = do
-  newSearchEnv <- stToIO (newEnv (hashMB * 1000000 `quot` sizeOf (undefined :: TTEntry)))
+  newSearchEnv <- newEnv (calcNumEntries hashMB)
   var <- newMVar newSearchEnv
   pure $ state {uciSearchEnv = var}
 
@@ -99,7 +101,7 @@ reportMove moveVar = do
   putStrLn ("bestmove " ++ move)
   hFlush stdout
 
-launchGo :: MVar Move -> MVar (SearchEnv RealWorld) -> Game -> GoSettings -> IO ()
+launchGo :: MVar Move -> MVar SearchEnv -> Game -> GoSettings -> IO ()
 launchGo moveVar stateEnvVar game (GoSettings movetime times incs maxDepth) =
   flip finally final $
     do
@@ -109,11 +111,11 @@ launchGo moveVar stateEnvVar game (GoSettings movetime times incs maxDepth) =
   where
     final = do
       stateEnv <- readMVar stateEnvVar
-      stToIO (runReaderT (refreshEnv) stateEnv)
+      runReaderT refreshEnv stateEnv
     searches startTime depth
       | depth <= maxDepth = do
           stateEnv <- readMVar stateEnvVar
-          (score, pvLine) <- stToIO (runReaderT (bestMove depth game) stateEnv)
+          (score, pvLine) <- runReaderT (bestMove depth game) stateEnv
           let move = fromMaybe NullMove (listToMaybe pvLine)
           _ <- evaluate score
           _ <- tryTakeMVar moveVar
@@ -124,7 +126,7 @@ launchGo moveVar stateEnvVar game (GoSettings movetime times incs maxDepth) =
                 if pvMoves == ""
                   then ""
                   else " pv" ++ pvMoves
-          nodes <- stToIO (runReaderT getNodecount stateEnv)
+          nodes <- runReaderT getNodecount stateEnv
           currTime <- getCurrentTime
           let elapsedSecs = max 0.000000000001 $ nominalDiffTimeToSeconds $ diffUTCTime currTime startTime
           let elapsedMs :: Int = round (elapsedSecs * 1000)
@@ -188,7 +190,7 @@ doUci uciState = do
       let envMVar = uciSearchEnv uciState
       maybeEnv <- tryReadMVar envMVar
       case maybeEnv of
-        Just env -> stToIO (clearEnv env)
+        Just env -> clearEnv env
         Nothing -> pure ()
       doUci $
         uciState {uciGame = startingGame}

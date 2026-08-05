@@ -1,6 +1,6 @@
 module Trout.Search.TranspositionTable
   ( TTEntry (..),
-    STTranspositionTable,
+    IOTranspositionTable,
     new,
     clear,
     lookup,
@@ -10,12 +10,11 @@ module Trout.Search.TranspositionTable
 where
 
 import Control.Monad (when)
-import Control.Monad.ST (ST)
 import Data.Bifunctor (first)
 import Data.Bits ((.&.))
 import Data.Hashable (hash)
 import Data.Int (Int16)
-import Data.Vector.Storable.Mutable (STVector)
+import Data.Vector.Storable.Mutable (IOVector)
 import Data.Vector.Storable.Mutable qualified as MSV
 import Foreign.Ptr (Ptr, castPtr, plusPtr)
 import Foreign.Storable (Storable (..))
@@ -88,25 +87,25 @@ instance Storable (Maybe (Int, TTEntry)) where
     poke (castPtr ptr) trueHash
     pokeByteOff ptr (sizeOf (trueHash :: Int)) entry
 
-type STTranspositionTable s = STVector s (Maybe (Int, TTEntry))
+type IOTranspositionTable = IOVector (Maybe (Int, TTEntry))
 
-new :: Int -> ST s (STTranspositionTable s)
+new :: Int -> IO IOTranspositionTable
 new n = MSV.replicate n Nothing
 
-clear :: STTranspositionTable s -> ST s ()
+clear :: IOTranspositionTable -> IO ()
 clear tt = MSV.set tt Nothing
 
 toKey :: Int -> Int -> Int
 toKey unkeyed len = fromIntegral ((fromIntegral unkeyed :: Word) `rem` fromIntegral len)
 
-basicInsert :: Board -> TTEntry -> STTranspositionTable s -> ST s ()
+basicInsert :: Board -> TTEntry -> IOTranspositionTable -> IO ()
 basicInsert board entry vec =
   MSV.write
     vec
     (toKey (hash board) (MSV.length vec))
     (Just (hash board, entry))
 
-lookup :: Board -> STTranspositionTable s -> ST s (Maybe TTEntry)
+lookup :: Board -> IOTranspositionTable -> IO (Maybe TTEntry)
 lookup board vec =
   checkEntry
     <$> MSV.read
@@ -119,10 +118,10 @@ lookup board vec =
       | otherwise = Nothing
 
 -- also returns if wrong hash
-slotLookup :: Board -> STTranspositionTable s -> ST s (Maybe (Bool, TTEntry))
+slotLookup :: Board -> IOTranspositionTable -> IO (Maybe (Bool, TTEntry))
 slotLookup board vec = fmap (first (== hash board)) <$> MSV.read vec (toKey (hash board) (MSV.length vec))
 
-insert :: Board -> TTEntry -> STTranspositionTable s -> ST s ()
+insert :: Board -> TTEntry -> IOTranspositionTable -> IO ()
 insert board entry vec = do
   existing <- slotLookup board vec
   case existing of

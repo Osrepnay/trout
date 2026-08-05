@@ -1,7 +1,6 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 import Control.DeepSeq (NFData (rnf))
-import Control.Monad.ST (RealWorld, stToIO)
 import Control.Monad.Trans.Reader (runReaderT)
 import Criterion.Main
 import Data.Int (Int16)
@@ -11,7 +10,7 @@ import Trout.Game
 import Trout.Search
 import Trout.Search.TranspositionTable (TTEntry)
 
-instance NFData (SearchEnv s) where
+instance NFData SearchEnv where
   rnf !_ = ()
 
 main :: IO ()
@@ -25,14 +24,13 @@ main = do
       bench "perft(5)" $ whnf (perft 5) startingGame
     ]
 
-createEnv :: IO (SearchEnv RealWorld)
-createEnv = stToIO (newEnv (16000000 `quot` sizeOf (undefined :: TTEntry)))
+createEnv :: IO SearchEnv
+createEnv = newEnv (16000000 `quot` sizeOf (undefined :: TTEntry))
 
-bestMoveWrapper :: Int16 -> Game -> SearchEnv RealWorld -> IO Int
+bestMoveWrapper :: Int16 -> Game -> SearchEnv -> IO Int
 bestMoveWrapper depth game searchEnv =
-  stToIO $
-    flip runReaderT searchEnv $
-      last . fmap fst <$> traverse (`bestMove` game) [1 .. depth]
+  flip runReaderT searchEnv $
+    last . fmap fst <$> traverse (`bestMove` game) [1 .. depth]
 
 perft :: Int -> Game -> Int
 perft 0 _ = 1
