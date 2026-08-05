@@ -8,6 +8,7 @@ module Trout.Search
     seeOfCapture,
     bestMove,
     EngineMessage (..),
+    TimeLimit (..),
     iterativeDeepening,
   )
 where
@@ -672,17 +673,31 @@ data EngineMessage
       Int -- nps
       [Move] -- pv
 
-iterativeDeepening :: Word64 -> Int16 -> Game -> (EngineMessage -> IO ()) -> ReaderT SearchEnv IO (Int, [Move])
-iterativeDeepening maxTimeNs maxDepth game messageCb = do
+-- exact means search for exactly that time, no more no less (roughly)
+data TimeLimit = NoTimeLimit | TimeLimit Word64 | ExactTimeLimit Word64
+  deriving (Eq, Show)
+
+iterativeDeepening :: TimeLimit -> Int16 -> Game -> (EngineMessage -> IO ()) -> ReaderT SearchEnv IO (Int, [Move])
+iterativeDeepening timeLimit maxDepth game messageCb = do
   setStartTime
   startTimeNs <- getStartTime
   SearchEnv {sEnvTimeAllotted = allottedVar} <- ask
   lift $ writeIORef allottedVar maxTimeNs
-  results <- flip traverse [1 .. max 1 maxDepth] $ \d -> do
-    (score, pv) <- bestMove d game
-    timeElapsedNs <- lift $ subtract startTimeNs <$> getMonotonicTimeNSec
-    nodecount <- getNodecount
-    let nps = fromIntegral $ (1_000_000 * fromIntegral nodecount) `quot` timeElapsedNs
-    lift $ messageCb (MsgInfo d score timeElapsedNs nodecount nps pv)
-    pure (score, pv)
-  pure (last results)
+  go startTimeNs 1
+  where
+    (maxTimeNs, doSoftBound) = case timeLimit of
+      NoTimeLimit -> (maxBound, False)
+      TimeLimit t -> (t, True)
+      ExactTimeLimit t -> (t, False)
+    go startTimeNs d = do
+      (score, pv) <- bestMove d game
+      timeElapsedNs <- lift $ subtract startTimeNs <$> getMonotonicTimeNSec
+      nodecount <- getNodecount
+      let nps = fromIntegral $ (1_000_000_000 * fromIntegral nodecount) `quot` timeElapsedNs
+      lift $ messageCb (MsgInfo d score timeElapsedNs nodecount nps pv)
+
+      let elapsedFrac :: Double = fromIntegral timeElapsedNs / fromIntegral maxTimeNs
+      -- soft bound
+      if d >= maxDepth || elapsedFrac > 0.5 && doSoftBound
+        then pure (score, pv)
+        else go startTimeNs (d + 1)

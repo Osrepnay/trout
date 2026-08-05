@@ -36,7 +36,7 @@ import Trout.Game.Move
     uciShowMove,
   )
 import Trout.Piece (Color (..))
-import Trout.Search (EngineMessage (..), OutOfTime, SearchEnv, clearEnv, iterativeDeepening, newEnv, refreshEnv)
+import Trout.Search (EngineMessage (..), OutOfTime, SearchEnv, TimeLimit (..), clearEnv, iterativeDeepening, newEnv, refreshEnv)
 import Trout.Search.TranspositionTable (TTEntry)
 import Trout.Uci.Parse
   ( CommGoArg (..),
@@ -109,7 +109,7 @@ launchGo moveOverheadMs moveVar stateEnv game (GoSettings movetime times incs ma
   flip catch (\(_ :: OutOfTime) -> final) $
     do
       putMVar moveVar NullMove
-      _ <- flip runReaderT stateEnv $ iterativeDeepening timeNs maxDepth game messageCb
+      _ <- flip runReaderT stateEnv $ iterativeDeepening timeLimit maxDepth game messageCb
       final
   where
     messageCb (MsgInfo depth score elapsedNs nodes nps pvLine) = do
@@ -135,8 +135,12 @@ launchGo moveOverheadMs moveVar stateEnv game (GoSettings movetime times incs ma
     final = do
       reportMove moveVar
       runReaderT refreshEnv stateEnv
-    baseTime = fromMaybe (getter times `quot` 20 + getter incs `quot` 2) movetime
-    timeNs = 1_000_000 * fromIntegral (baseTime - moveOverheadMs)
+
+    wrapTime ms = 1_000_000 * fromIntegral (max 0 (ms - moveOverheadMs))
+    tcTime = getter times `quot` 15 + getter incs * 3 `quot` 4
+    timeLimit = case movetime of
+      Just t -> ExactTimeLimit (wrapTime t)
+      Nothing -> TimeLimit (wrapTime tcTime)
     getter = case boardTurn (gameBoard game) of
       White -> fst
       Black -> snd
