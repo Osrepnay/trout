@@ -49,6 +49,7 @@ import Trout.Uci.Parse
 data UciState = UciState
   { uciGame :: Game,
     uciIsDebug :: Bool,
+    uciMoveOverheadMs :: Int,
     uciSearch :: Maybe (ThreadId, MVar Move),
     uciSearchEnv :: SearchEnv
   }
@@ -57,7 +58,16 @@ calcNumEntries :: Int -> Int
 calcNumEntries hashMB = hashMB * 1000000 `quot` sizeOf (undefined :: TTEntry)
 
 newUciState :: IO UciState
-newUciState = UciState startingGame False Nothing <$> newEnv (calcNumEntries 16)
+newUciState = do
+  env <- newEnv (calcNumEntries 16)
+  pure
+    UciState
+      { uciGame = startingGame,
+        uciIsDebug = False,
+        uciMoveOverheadMs = 20,
+        uciSearch = Nothing,
+        uciSearchEnv = env
+      }
 
 modUciStateHash :: Int -> UciState -> IO UciState
 modUciStateHash hashMB state = do
@@ -94,8 +104,8 @@ reportMove moveVar = do
   putStrLn ("bestmove " ++ move)
   hFlush stdout
 
-launchGo :: MVar Move -> SearchEnv -> Game -> GoSettings -> IO ()
-launchGo moveVar stateEnv game (GoSettings movetime times incs maxDepth) =
+launchGo :: Int -> MVar Move -> SearchEnv -> Game -> GoSettings -> IO ()
+launchGo moveOverheadMs moveVar stateEnv game (GoSettings movetime times incs maxDepth) =
   flip catch (\(_ :: OutOfTime) -> final) $
     do
       startTime <- getMonotonicTimeNSec
@@ -139,7 +149,7 @@ launchGo moveVar stateEnv game (GoSettings movetime times incs maxDepth) =
     timeNs =
       1_000_000
         * fromIntegral
-          (fromMaybe (getter times `quot` 20 + getter incs `quot` 2) movetime - 20)
+          (fromMaybe (getter times `quot` 20 + getter incs `quot` 2) movetime - moveOverheadMs)
     getter = case boardTurn (gameBoard game) of
       White -> fst
       Black -> snd
@@ -153,6 +163,7 @@ doUci uciState = do
       putStrLn "id name Trout"
       putStrLn "id author Osrepnay"
       putStrLn $ "option name Hash type spin default 16 min 1 max " ++ show (maxBound :: Int)
+      putStrLn $ "option name Move Overhead type spin default 20 min 0 max " ++ show (maxBound :: Int)
       putStrLn "uciok"
       hFlush stdout
       doUci uciState
@@ -177,6 +188,15 @@ doUci uciState = do
             hPutStrLn stderr err
             pure uciState
           Right hashMB -> modUciStateHash hashMB uciState
+        "Move Overhead" -> case readEither value of
+          Left err -> do
+            hPutStrLn stderr err
+            pure uciState
+          Right overheadMs ->
+            pure
+              uciState
+                { uciMoveOverheadMs = overheadMs
+                }
         _ -> do
           hPrintf stderr "option not supported: \"%s\"\n" name
           hFlush stderr
@@ -203,6 +223,7 @@ doUci uciState = do
       thread <-
         forkIO $
           launchGo
+            (uciMoveOverheadMs uciState)
             goVar
             (uciSearchEnv uciState)
             (uciGame uciState)
