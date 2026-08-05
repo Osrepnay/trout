@@ -7,10 +7,12 @@ module Trout.Search
     staticExchEval,
     seeOfCapture,
     bestMove,
+    OutOfTime,
   )
 where
 
 import Control.Applicative ((<|>))
+import Control.Exception (Exception, throwIO)
 import Control.Monad (join, when)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Maybe (MaybeT (MaybeT), hoistMaybe, runMaybeT)
@@ -26,6 +28,8 @@ import Data.Ord (comparing)
 import Data.Vector.Primitive ((!))
 import Data.Vector.Primitive.Mutable (IOVector)
 import Data.Vector.Primitive.Mutable qualified as MV
+import Data.Word (Word64)
+import GHC.Clock (getMonotonicTimeNSec)
 import Trout.Bitboard (Bitboard, clearBit, countTrailingZeros, (.&.), (.|.))
 import Trout.Game
   ( Game (..),
@@ -87,7 +91,9 @@ decayHistory history =
 data SearchEnv = SearchEnv
   { sEnvTT :: !IOTranspositionTable,
     sEnvHistory :: !HistoryTable,
-    sEnvNodecount :: !(IORef Int)
+    sEnvNodecount :: !(IORef Int),
+    sEnvStartTime :: !(IORef Word64), -- nanoseconds
+    sEnvTimeAllotted :: !(IORef Word64)
   }
 
 incNodecount :: ReaderT SearchEnv IO ()
@@ -103,24 +109,60 @@ resetNodecount = do
 getNodecount :: ReaderT SearchEnv IO Int
 getNodecount = ask >>= (lift . readIORef) . sEnvNodecount
 
+data OutOfTime = OutOfTime deriving (Eq, Show)
+
+instance Exception OutOfTime
+
+-- every x nodes, check the time remaining
+timeCheckInterval :: Int
+timeCheckInterval = 1000
+
+checkTimeLeft :: ReaderT SearchEnv IO ()
+checkTimeLeft = do
+  SearchEnv
+    { sEnvStartTime = startRef,
+      sEnvTimeAllotted = allottedRef
+    } <-
+    ask
+  nodecount <- getNodecount
+  timeout <-
+    if nodecount `rem` timeCheckInterval == 0
+      then lift $ do
+        start <- readIORef startRef
+        allotted <- readIORef allottedRef
+        current <- getMonotonicTimeNSec
+        pure (current - start >= allotted)
+      else pure False
+  when timeout (lift (throwIO OutOfTime))
+
+setStartTime :: ReaderT SearchEnv IO ()
+setStartTime = do
+  ref <- sEnvStartTime <$> ask
+  time <- lift getMonotonicTimeNSec
+  lift $ writeIORef ref time
+
 newEnv :: Int -> IO SearchEnv
 newEnv n = do
   tt <- TT.new n
   history <- MV.replicate (2 * 6 * 64) 0
   nodes <- newIORef 0
-  pure (SearchEnv tt history nodes)
+  startRef <- newIORef 0
+  allottedRef <- newIORef maxBound
+  pure (SearchEnv tt history nodes startRef allottedRef)
 
 refreshEnv :: ReaderT SearchEnv IO ()
 refreshEnv = do
-  (SearchEnv {sEnvHistory = history}) <- ask
+  SearchEnv {sEnvHistory = history} <- ask
   lift $ decayHistory history
   resetNodecount
 
 clearEnv :: SearchEnv -> IO ()
-clearEnv (SearchEnv tt history nodes) = do
+clearEnv (SearchEnv tt history nodes startRef allottedRef) = do
   TT.clear tt
   MV.set history 0
   writeIORef nodes 0
+  writeIORef startRef 0
+  writeIORef allottedRef 0
 
 -- no check detection, just sends it
 staticExchEval :: Board -> Int -> PieceType -> Int
@@ -333,6 +375,7 @@ search
         lift $ TT.insert (gameBoard game) newEntry tt
         pure (score, [])
     | otherwise = do
+        checkTimeLeft
         incNodecount
 
         SearchEnv {sEnvTT = tt} <- ask
@@ -594,9 +637,11 @@ aspirate depth !initialGuess !game =
         alpha = lowerBound - lowerMargin
         beta = upperBound + upperMargin
 
-bestMove :: Int16 -> Game -> ReaderT SearchEnv IO (Int, [Move])
-bestMove depth game = do
-  (SearchEnv {sEnvTT = tt}) <- ask
+bestMove :: Word64 -> Int16 -> Game -> ReaderT SearchEnv IO (Int, [Move])
+bestMove timeNs depth game = do
+  setStartTime
+  (SearchEnv {sEnvTT = tt, sEnvTimeAllotted = allottedVar}) <- ask
+  lift $ writeIORef allottedVar timeNs
   guess <- maybe 0 (nodeResScore . entryScore) <$> lift (TT.lookup (gameBoard game) tt)
   (score, pvLine) <- aspirate depth guess game
   lift $ insertAll tt score 1 depth game pvLine

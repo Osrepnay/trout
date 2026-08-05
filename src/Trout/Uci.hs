@@ -6,23 +6,19 @@ import Control.Concurrent
     forkIO,
     killThread,
     newEmptyMVar,
-    newMVar,
     putMVar,
-    readMVar,
     swapMVar,
-    tryReadMVar,
     tryTakeMVar,
   )
-import Control.Exception (evaluate, finally)
+import Control.Exception (catch, evaluate)
 import Control.Monad.Trans.Reader (ReaderT (runReaderT))
 import Data.Bifunctor (first, second)
 import Data.Function ((&))
 import Data.Int (Int16)
 import Data.Maybe (fromMaybe, listToMaybe)
-import Data.Time (diffUTCTime, getCurrentTime, nominalDiffTimeToSeconds)
 import Foreign.Storable (sizeOf)
+import GHC.Clock (getMonotonicTimeNSec)
 import System.IO (hFlush, hPutStrLn, stderr, stdout)
-import System.Timeout (timeout)
 import Text.Printf (printf)
 import Text.Read (readEither)
 import Trout.Fen.Parse (fenToGame)
@@ -40,7 +36,7 @@ import Trout.Game.Move
     uciShowMove,
   )
 import Trout.Piece (Color (..))
-import Trout.Search (SearchEnv, bestMove, clearEnv, getNodecount, newEnv, refreshEnv)
+import Trout.Search (OutOfTime, SearchEnv, bestMove, clearEnv, getNodecount, newEnv, refreshEnv)
 import Trout.Search.TranspositionTable (TTEntry)
 import Trout.Uci.Parse
   ( CommGoArg (..),
@@ -54,22 +50,19 @@ data UciState = UciState
   { uciGame :: Game,
     uciIsDebug :: Bool,
     uciSearch :: Maybe (ThreadId, MVar Move),
-    uciSearchEnv :: MVar SearchEnv
+    uciSearchEnv :: SearchEnv
   }
 
 calcNumEntries :: Int -> Int
 calcNumEntries hashMB = hashMB * 1000000 `quot` sizeOf (undefined :: TTEntry)
 
 newUciState :: IO UciState
-newUciState =
-  UciState startingGame False Nothing
-    <$> (newEnv (calcNumEntries 16) >>= newMVar)
+newUciState = UciState startingGame False Nothing <$> newEnv (calcNumEntries 16)
 
 modUciStateHash :: Int -> UciState -> IO UciState
 modUciStateHash hashMB state = do
   newSearchEnv <- newEnv (calcNumEntries hashMB)
-  var <- newMVar newSearchEnv
-  pure $ state {uciSearchEnv = var}
+  pure $ state {uciSearchEnv = newSearchEnv}
 
 data PlayerTime = PlayerTime
   { playerTime :: Int,
@@ -101,22 +94,23 @@ reportMove moveVar = do
   putStrLn ("bestmove " ++ move)
   hFlush stdout
 
-launchGo :: MVar Move -> MVar SearchEnv -> Game -> GoSettings -> IO ()
-launchGo moveVar stateEnvVar game (GoSettings movetime times incs maxDepth) =
-  flip finally final $
+launchGo :: MVar Move -> SearchEnv -> Game -> GoSettings -> IO ()
+launchGo moveVar stateEnv game (GoSettings movetime times incs maxDepth) =
+  flip catch (\(_ :: OutOfTime) -> final) $
     do
-      startTime <- getCurrentTime
+      startTime <- getMonotonicTimeNSec
       putMVar moveVar NullMove
-      _ <- timeout (time * 999) (searches startTime 1)
-      reportMove moveVar
+      searches startTime 1
   where
     final = do
-      stateEnv <- readMVar stateEnvVar
+      reportMove moveVar
       runReaderT refreshEnv stateEnv
     searches startTime depth
       | depth <= maxDepth = do
-          stateEnv <- readMVar stateEnvVar
-          (score, pvLine) <- runReaderT (bestMove depth game) stateEnv
+          thisStartTime <- getMonotonicTimeNSec
+          let delta = thisStartTime - startTime
+          let timeRemaining = if delta > timeNs then 0 else timeNs - delta
+          (score, pvLine) <- runReaderT (bestMove timeRemaining depth game) stateEnv
           let move = fromMaybe NullMove (listToMaybe pvLine)
           _ <- evaluate score
           _ <- swapMVar moveVar move
@@ -126,10 +120,11 @@ launchGo moveVar stateEnvVar game (GoSettings movetime times incs maxDepth) =
                   then ""
                   else " pv" ++ pvMoves
           nodes <- runReaderT getNodecount stateEnv
-          currTime <- getCurrentTime
-          let elapsedSecs = max 0.000000000001 $ nominalDiffTimeToSeconds $ diffUTCTime currTime startTime
-          let elapsedMs :: Int = round (elapsedSecs * 1000)
-          let nps = round (fromIntegral nodes / elapsedSecs) :: Int
+          currTime <- getMonotonicTimeNSec
+          let elapsedNs = max 1 (currTime - startTime)
+          let elapsedMs = max 1 (elapsedNs `quot` 1_000_000)
+          let elapsedSecs = max 1 (elapsedMs `quot` 1000)
+          let nps = fromIntegral nodes `quot` elapsedSecs
           printf
             "info depth %d score cp %d time %d nodes %d nps %d%s\n"
             depth
@@ -141,7 +136,10 @@ launchGo moveVar stateEnvVar game (GoSettings movetime times incs maxDepth) =
           hFlush stdout
           searches startTime (depth + 1)
       | otherwise = pure ()
-    time = fromMaybe (getter times `quot` 20 + getter incs `quot` 2) movetime
+    timeNs =
+      1_000_000
+        * fromIntegral
+          (fromMaybe (getter times `quot` 20 + getter incs `quot` 2) movetime)
     getter = case boardTurn (gameBoard game) of
       White -> fst
       Black -> snd
@@ -186,11 +184,7 @@ doUci uciState = do
       doUci uciState'
     Right (CommRegister _) -> doUci uciState
     Right CommUcinewgame -> do
-      let envMVar = uciSearchEnv uciState
-      maybeEnv <- tryReadMVar envMVar
-      case maybeEnv of
-        Just env -> clearEnv env
-        Nothing -> pure ()
+      clearEnv (uciSearchEnv uciState)
       doUci $
         uciState {uciGame = startingGame}
     Right (CommPosition posInit moves) ->
@@ -206,20 +200,17 @@ doUci uciState = do
               doUci (uciState {uciGame = game})
     Right (CommGo args) -> do
       goVar <- newEmptyMVar
-      let ssVar = uciSearchEnv uciState
       thread <-
         forkIO $
           launchGo
             goVar
-            ssVar
+            (uciSearchEnv uciState)
             (uciGame uciState)
             (foldl' (&) defaultSettings (doGoArg <$> args))
       doUci
-        ( uciState
-            { uciSearch = Just (thread, goVar),
-              uciSearchEnv = ssVar
-            }
-        )
+        uciState
+          { uciSearch = Just (thread, goVar)
+          }
     Right CommStop -> case uciSearch uciState of
       Just (searchId, moveVar) -> do
         killThread searchId
