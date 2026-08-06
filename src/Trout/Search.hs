@@ -1,3 +1,6 @@
+{-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE ViewPatterns #-}
+
 module Trout.Search
   ( SearchEnv,
     OutOfTime,
@@ -15,13 +18,13 @@ where
 
 import Control.Applicative ((<|>))
 import Control.Exception (Exception, throwIO)
-import Control.Monad (join, when)
+import Control.Monad (guard, join, when)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Maybe (MaybeT (MaybeT), hoistMaybe, runMaybeT)
 import Control.Monad.Trans.Reader (ReaderT, ask)
 import Data.Bifunctor (first)
 import Data.Foldable (maximumBy, traverse_)
-import Data.Functor ((<&>))
+import Data.Functor (($>), (<&>))
 import Data.IORef (IORef, modifyIORef', newIORef, readIORef, writeIORef)
 import Data.Int (Int16)
 import Data.List ((!?))
@@ -323,16 +326,42 @@ data SearchState = SearchState
 -- positive/neutral captures
 -- history
 -- negative captures
+-- i'd love to make this properly, but benchmarks say that it's 2% slower...
 
 newtype MoveScore = MoveScore {unMoveScore :: Int} deriving (Eq, Show, Ord)
 
-ttScore :: MoveScore
-ttScore = MoveScore maxBound
+goodSEEOffset :: Int
+goodSEEOffset = maxHistory + 1
 
-mkSEEScore :: Int -> MoveScore
-mkSEEScore seeVal
-  | seeVal >= 0 = MoveScore $ seeVal + maxHistory + 1
-  | otherwise = MoveScore $ seeVal - maxHistory - 1
+badSEEOffset :: Int
+badSEEOffset = -maxHistory
+
+pattern TTScore :: MoveScore
+pattern TTScore <- MoveScore (guard . (== maxBound) -> Just _)
+  where
+    TTScore = MoveScore maxBound
+
+unSEEScore :: Int -> Maybe Int
+unSEEScore s
+  | s == maxBound = Nothing
+  | s >= goodSEEOffset = Just (s - goodSEEOffset)
+  | s < badSEEOffset = Just (s - badSEEOffset)
+  | otherwise = Nothing
+
+pattern SEEScore :: Int -> MoveScore
+pattern SEEScore see <- MoveScore (unSEEScore -> Just see)
+  where
+    SEEScore see
+      | see >= 0 = MoveScore (see + goodSEEOffset)
+      | otherwise = MoveScore (see + badSEEOffset)
+
+unHistScore :: Int -> Maybe Int
+unHistScore s = guard (abs s <= maxHistory) $> s
+
+pattern HistScore :: Int -> MoveScore
+pattern HistScore hist <- MoveScore (unHistScore -> Just hist)
+  where
+    HistScore hist = MoveScore hist
 
 isMoveQuiet :: Board -> Move -> Bool
 isMoveQuiet board move = case moveSpecial move of
@@ -348,16 +377,16 @@ scoreMoves board moves = do
   flip traverse moves $ \m ->
     fmap ((,m) . fromJust) $ runMaybeT $ do
       let isQuiet = isMoveQuiet board m
-      let tryTT = ttMaybeMove >>= \ttm -> if ttm == m then Just ttScore else Nothing
+      let tryTT = ttMaybeMove >>= \ttm -> if ttm == m then Just TTScore else Nothing
       let tryHist =
             if isQuiet
               then do
                 SearchEnv {sEnvHistory = history} <- ask
                 lift $
-                  fmap (Just . MoveScore) $
+                  fmap (Just . HistScore) $
                     getHistory history (historyIdx (boardTurn board) m)
               else pure Nothing
-      let trySEE = mkSEEScore <$> seeOfUnquiet board m
+      let trySEE = SEEScore <$> seeOfUnquiet board m
       hoistMaybe tryTT <|> MaybeT tryHist <|> hoistMaybe trySEE
 
 search :: SearchState -> ReaderT SearchEnv IO (Int, [Move])
