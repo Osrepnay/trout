@@ -389,8 +389,28 @@ scoreMoves board moves = do
       let trySEE = SEEScore <$> seeOfUnquiet board m
       hoistMaybe tryTT <|> MaybeT tryHist <|> hoistMaybe trySEE
 
+-- parameter-changing zone (it's just check extensions for now)
 search :: SearchState -> ReaderT SearchEnv IO (Int, [Move])
 search
+  ss@SearchState
+    { sStateDepth = !depth,
+      sStatePly = !_ply,
+      sStateAlpha = !_alpha,
+      sStateBeta = !_beta,
+      sStatePV = !_isPV,
+      sStateEvalHist = !_evalHist,
+      sStateGame = !game
+    } = do
+    if inCheck (boardTurn board) (boardPieces board)
+      then searchInner True ss {sStateDepth = depth + 1}
+      else searchInner False ss
+    where
+      board = gameBoard game
+{-# INLINE search #-}
+
+searchInner :: Bool -> SearchState -> ReaderT SearchEnv IO (Int, [Move])
+searchInner
+  currentlyChecked
   SearchState
     { sStateDepth = !depth,
       sStatePly = !ply,
@@ -435,7 +455,6 @@ search
       board = gameBoard game
       pieces = boardPieces board
 
-      currentlyChecked = inCheck (boardTurn board) (boardPieces board)
       staticEval = eval board
       checkedEval = if currentlyChecked then Nothing else Just staticEval
       improving = case join (evalHist !? 1 <|> evalHist !? 3) of
