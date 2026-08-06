@@ -89,7 +89,7 @@ getHistory = MV.read
 decayHistory :: HistoryTable -> IO ()
 decayHistory history =
   traverse_
-    (MV.modify history (\h -> h * 1 `quot` 5))
+    (MV.modify history (\h -> h * 1 `quot` 2))
     [0 .. MV.length history - 1]
 
 -- anything that needs to be carried up through search tree
