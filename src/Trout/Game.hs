@@ -13,7 +13,7 @@ module Trout.Game
   )
 where
 
-import Data.Bool (bool)
+import Control.Monad (guard)
 import Data.HashMap.Strict (HashMap)
 import Data.HashMap.Strict qualified as HM
 import Data.Int (Int16)
@@ -309,10 +309,10 @@ makeMove
               (movedHash .^. enPassantZobrists ! (to `rem` 8))
           )
       CastleKing -> do
-        toMaybe (inCheck turn pieces)
-        toMaybe (inCheck turn movedPieces)
+        guard (not (inCheck turn pieces))
+        guard (not (inCheck turn movedPieces))
         let oneRight = addPiece (Piece turn King) (from + 1) $ removePiece from pieces
-        toMaybe (inCheck turn oneRight)
+        guard (not (inCheck turn oneRight))
         let rookMoved = addPiece (Piece turn Rook) (to - 1) $ removePiece (from + 3) movedPieces
         mkMovedGame
           ( Board
@@ -326,10 +326,10 @@ makeMove
               )
           )
       CastleQueen -> do
-        toMaybe (inCheck turn pieces)
-        toMaybe (inCheck turn movedPieces)
+        guard (not (inCheck turn pieces))
+        guard (not (inCheck turn movedPieces))
         let oneLeft = addPiece (Piece turn King) (from - 1) $ removePiece from pieces
-        toMaybe (inCheck turn oneLeft)
+        guard (not (inCheck turn oneLeft))
         let rookMoved = addPiece (Piece turn Rook) (to + 1) $ removePiece (from - 4) movedPieces
         mkMovedGame
           ( Board
@@ -364,8 +364,6 @@ makeMove
               )
           )
     where
-      toMaybe = bool (Just ()) Nothing
-
       opp = other turn
       capturePiece = getPiece to pieces
 
