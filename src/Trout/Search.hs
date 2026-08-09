@@ -254,6 +254,16 @@ seeOfUnquiet board move =
         then Nothing
         else seeOfCapture board move
 
+seeOfQuiet :: Board -> Move -> Maybe Int
+seeOfQuiet !board move
+  | not (isMoveQuiet board move) = Nothing
+  | otherwise = Just $ -staticExchEval newBoard (moveTo move) (pieceType mover)
+  where
+    pieces = boardPieces board
+    mover = fromJust (getPiece (moveFrom move) pieces)
+    newPieces = addPiece mover (moveTo move) (removePiece (moveFrom move) pieces)
+    newBoard = board {boardPieces = newPieces, boardTurn = other (boardTurn board)}
+
 removeSingle :: (Eq a) => a -> [a] -> [a]
 removeSingle _ [] = []
 removeSingle r (x : xs)
@@ -542,12 +552,14 @@ searchInner
           then 3 + 2 * fromIntegral depth * fromIntegral depth
           else 3 + fromIntegral depth * fromIntegral depth
 
-      -- all the conditions except for isQuiet
-      doFutility =
+      -- all the conditions except for moveloop-dependent ones
+      baseFutilityConditions =
         not isPV
           && depth <= 7
           && staticEval + 400 + fromIntegral depth * 100 <= alpha
           && not currentlyChecked
+
+      baseSEEPruneConditions = depth <= 6
 
       -- move loop
       -- bestScore for fail-soft
@@ -573,7 +585,12 @@ searchInner
             go (nth + 1) movesRest failedQuiets best
         | isQuiet
             && hasUsableMove
-            && doFutility =
+            && baseFutilityConditions =
+            go (nth + 1) movesRest failedQuiets best
+        -- pvs SEE pruning
+        | hasUsableMove
+            && baseSEEPruneConditions
+            && maybe False (< seeThreshold) maybeSEE =
             go (nth + 1) movesRest failedQuiets best
         | otherwise = case makeMove game move of
             Nothing -> go nth movesRest failedQuiets best
@@ -649,7 +666,7 @@ searchInner
           -- max of alpha and best;
           -- what alpha would be in a fail-hard search
           trueAlpha = maybe alpha (max alpha . fst) best
-          ((_moveScore, move), movesRest) = singleSelect moves
+          ((moveScore, move), movesRest) = singleSelect moves
           isQuiet = isMoveQuiet board move
           -- we won't ever want to not append to this when the move is quiet
           -- because if it does fail high, we never call go again
@@ -658,6 +675,10 @@ searchInner
             | otherwise = failedQuiets
           -- has a legal move that doesn't just go to checkmate
           hasUsableMove = maybe False (not . scoreIsLosing . fst) best
+
+          (maybeSEE, seeThreshold) = case moveScore of
+            SEEScore see -> (Just see, fromIntegral depth * (-100))
+            _ -> (seeOfQuiet board move, fromIntegral depth * (-40))
 
 aspirate :: Int16 -> Int -> Game -> ReaderT SearchEnv IO (Int, [Move])
 aspirate depth !initialGuess !game =
