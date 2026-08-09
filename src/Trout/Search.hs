@@ -570,11 +570,11 @@ searchInner
             && isQuiet
             && hasUsableMove
             && nth > lmpLimit =
-            go nth [] failedQuiets best
+            go (nth + 1) movesRest failedQuiets best
         | isQuiet
             && hasUsableMove
             && doFutility =
-            go (nth + 1) movesRest newFailedQuiets best
+            go (nth + 1) movesRest failedQuiets best
         | otherwise = case makeMove game move of
             Nothing -> go nth movesRest failedQuiets best
             Just moveMade -> do
