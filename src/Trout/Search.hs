@@ -552,15 +552,6 @@ searchInner
           then 3 + 2 * fromIntegral depth * fromIntegral depth
           else 3 + fromIntegral depth * fromIntegral depth
 
-      -- all the conditions except for moveloop-dependent ones
-      baseFutilityConditions =
-        not isPV
-          && depth <= 7
-          && staticEval + 400 + fromIntegral depth * 100 <= alpha
-          && not currentlyChecked
-
-      baseSEEPruneConditions = depth <= 6
-
       -- move loop
       -- bestScore for fail-soft
       go ::
@@ -577,20 +568,7 @@ searchInner
             else pure (drawWorth, [])
         Just bestRes -> pure bestRes
       go nth moves failedQuiets best
-        -- late move pruning
-        | not isPV
-            && isQuiet
-            && hasUsableMove
-            && nth > lmpLimit =
-            go (nth + 1) movesRest failedQuiets best
-        | isQuiet
-            && hasUsableMove
-            && baseFutilityConditions =
-            go (nth + 1) movesRest failedQuiets best
-        -- pvs SEE pruning
-        | hasUsableMove
-            && baseSEEPruneConditions
-            && maybe False (< seeThreshold) maybeSEE =
+        | doLMP || doFutilityPruning || doSEEPruning =
             go (nth + 1) movesRest failedQuiets best
         | otherwise = case makeMove game move of
             Nothing -> go nth movesRest failedQuiets best
@@ -676,9 +654,30 @@ searchInner
           -- has a legal move that doesn't just go to checkmate
           hasUsableMove = maybe False (not . scoreIsLosing . fst) best
 
+          -- late move pruning
+          doLMP =
+            not isPV
+              && isQuiet
+              && hasUsableMove
+              && nth > lmpLimit
+
+          -- futility pruning
+          doFutilityPruning =
+            isQuiet
+              && hasUsableMove
+              && not isPV
+              && depth <= 7
+              && staticEval + 400 + fromIntegral depth * 100 <= alpha
+              && not currentlyChecked
+
+          -- pvs SEE pruning
           (maybeSEE, seeThreshold) = case moveScore of
             SEEScore see -> (Just see, fromIntegral depth * (-100))
             _ -> (seeOfQuiet board move, fromIntegral depth * (-40))
+          doSEEPruning =
+            hasUsableMove
+              && depth <= 6
+              && maybe False (< seeThreshold) maybeSEE
 
 aspirate :: Int16 -> Int -> Game -> ReaderT SearchEnv IO (Int, [Move])
 aspirate depth !initialGuess !game =
