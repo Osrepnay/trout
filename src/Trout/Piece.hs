@@ -30,7 +30,7 @@ other = toEnum . xor 1 . fromEnum
 colorSign :: Color -> Int
 colorSign = negate . subtract 1 . (* 2) . fromEnum
 
-newtype PieceType = PieceType Int deriving (Eq, Show)
+newtype PieceType = PieceType Int deriving (Eq)
 
 pattern Pawn, Knight, Bishop, Rook, Queen, King :: PieceType
 pattern Pawn = PieceType 0
@@ -41,6 +41,14 @@ pattern Queen = PieceType 4
 pattern King = PieceType 5
 
 {-# COMPLETE Pawn, Knight, Bishop, Rook, Queen, King #-}
+
+instance Show PieceType where
+  show Pawn = "Pawn"
+  show Knight = "Knight"
+  show Bishop = "Bishop"
+  show Rook = "Rook"
+  show Queen = "Queen"
+  show King = "King"
 
 instance Enum PieceType where
   toEnum = PieceType
