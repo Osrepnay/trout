@@ -122,40 +122,41 @@ numPassers color pawns oppPawns =
       Black -> countTrailingZeros bb
 {-# INLINEABLE numPassers #-}
 
-mobilityMults :: PV.Vector Double
+mobilityMults :: PV.Vector Int
 mobilityMults =
   PV.fromList
-    [ 11.497236189404395,
-      8.059537951231695,
-      11.68120195962409,
-      3.1364224823604294,
-      9.972000894883921,
-      4.125387713677939,
-      5.423664312678692,
-      7.342420262055399,
-      4.323891043941245,
-      8.906647816461081,
-      9.784063636143626,
-      6.766000963503464
+    [ 114,
+      80,
+      116,
+      31,
+      99,
+      41,
+      54,
+      73,
+      43,
+      89,
+      97,
+      67
     ]
 
-safetyMultMg, safetyMultEg :: Double
-(safetyMultMg, safetyMultEg) = (7.420789420585534, -0.9756663839082776)
+safetyMultMg, safetyMultEg :: Int
+(safetyMultMg, safetyMultEg) = (74, -9)
 
-passerMultMg, passerMultEg :: Double
-(passerMultMg, passerMultEg) = (-1.0697013783631468, 35.657915811214195)
+passerMultMg, passerMultEg :: Int
+(passerMultMg, passerMultEg) = (-10, 356)
 
 tempoBonus :: Int
 tempoBonus = 10
 
 eval :: Board -> Int
-eval board = tempoBonus +
-  colorSign (boardTurn board)
-    * ( pstEvalValue
-          + mobilityValue
-          + scaledKingSafety
-          + scaledPasserDiff
-      )
+eval board =
+  tempoBonus
+    + colorSign (boardTurn board)
+      * ( pstEvalValue
+            + mobilityValue
+            + scaledKingSafety
+            + scaledPasserDiff
+        )
   where
     pieces = boardPieces board
     getBB color = ($ pieces) . pieceBitboard . Piece color
@@ -177,14 +178,13 @@ eval board = tempoBonus +
         - pst (getBB Black King) King 56
 
     mobilityValue =
-      round $
+      (`quot` 240) $
         sum
-          [ (mgMult * fromIntegral mgPhase + egMult * fromIntegral egPhase)
-              * fromIntegral (colorSign c)
-              * fromIntegral (mobility board (Piece c p))
-              / 24
+          [ (mgMult * mgPhase + egMult * egPhase)
+              * colorSign c
+              * mobility board (Piece c p)
           | c <- [White, Black],
-            (p, mgMult :: Double, egMult) <-
+            (p, mgMult, egMult) <-
               [ (Pawn, mobilityMults PV.! 0, mobilityMults PV.! 1),
                 (Knight, mobilityMults PV.! 2, mobilityMults PV.! 3),
                 (Bishop, mobilityMults PV.! 4, mobilityMults PV.! 5),
@@ -196,16 +196,14 @@ eval board = tempoBonus +
 
     kingSafety = virtMobile Black pieces - virtMobile White pieces
     scaledKingSafety =
-      round $
-        fromIntegral kingSafety
-          * (fromIntegral mgPhase * safetyMultMg + fromIntegral egPhase * safetyMultEg)
-          / 24
+      (`quot` 240) $
+        kingSafety
+          * (mgPhase * safetyMultMg + egPhase * safetyMultEg)
 
     whitePawns = pieceBitboard (Piece White Pawn) pieces
     blackPawns = pieceBitboard (Piece Black Pawn) pieces
     passerDiff = numPassers White whitePawns blackPawns - numPassers Black blackPawns whitePawns
     scaledPasserDiff =
-      round $
-        fromIntegral passerDiff
-          * (fromIntegral mgPhase * passerMultMg + fromIntegral egPhase * passerMultEg)
-          / 24
+      (`quot` 240) $
+        passerDiff
+          * (mgPhase * passerMultMg + egPhase * passerMultEg)
