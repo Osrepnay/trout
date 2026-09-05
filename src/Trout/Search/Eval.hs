@@ -8,6 +8,7 @@ module Trout.Search.Eval
     safetyMultEg,
     passerMultMg,
     passerMultEg,
+    tempoBonus,
     eval,
   )
 where
@@ -123,40 +124,27 @@ numPassers color pawns oppPawns =
 {-# INLINEABLE numPassers #-}
 
 mobilityMults :: PV.Vector Int
-mobilityMults =
-  PV.fromList
-    [ 114,
-      80,
-      116,
-      31,
-      99,
-      41,
-      54,
-      73,
-      43,
-      89,
-      97,
-      67
-    ]
+mobilityMults = PV.fromList [109, 94, 128, 31, 107, 50, 57, 82, 39, 121, 118, 97]
 
 safetyMultMg, safetyMultEg :: Int
-(safetyMultMg, safetyMultEg) = (74, -9)
+(safetyMultMg, safetyMultEg) = (90, -17)
 
 passerMultMg, passerMultEg :: Int
-(passerMultMg, passerMultEg) = (-10, 356)
+(passerMultMg, passerMultEg) = (-52, 371)
 
 tempoBonus :: Int
-tempoBonus = 10
+tempoBonus = 33
 
 eval :: Board -> Int
 eval board =
-  tempoBonus
-    + colorSign (boardTurn board)
-      * ( pstEvalValue
-            + mobilityValue
-            + scaledKingSafety
-            + scaledPasserDiff
-        )
+  (`quot` 10) $
+    tempoBonus
+      + colorSign (boardTurn board)
+        * ( pstEvalValue
+              + mobilityValue
+              + scaledKingSafety
+              + scaledPasserDiff
+          )
   where
     pieces = boardPieces board
     getBB color = ($ pieces) . pieceBitboard . Piece color
@@ -178,7 +166,7 @@ eval board =
         - pst (getBB Black King) King 56
 
     mobilityValue =
-      (`quot` 240) $
+      (`quot` 24) $
         sum
           [ (mgMult * mgPhase + egMult * egPhase)
               * colorSign c
@@ -196,7 +184,7 @@ eval board =
 
     kingSafety = virtMobile Black pieces - virtMobile White pieces
     scaledKingSafety =
-      (`quot` 240) $
+      (`quot` 24) $
         kingSafety
           * (mgPhase * safetyMultMg + egPhase * safetyMultEg)
 
@@ -204,6 +192,6 @@ eval board =
     blackPawns = pieceBitboard (Piece Black Pawn) pieces
     passerDiff = numPassers White whitePawns blackPawns - numPassers Black blackPawns whitePawns
     scaledPasserDiff =
-      (`quot` 240) $
+      (`quot` 24) $
         passerDiff
           * (mgPhase * passerMultMg + egPhase * passerMultEg)

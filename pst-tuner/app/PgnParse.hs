@@ -9,7 +9,6 @@ where
 
 import Control.Applicative (many, optional, (<|>))
 import Data.Char (ord)
-import Data.Foldable (foldl')
 import Data.Functor (($>))
 import Data.Maybe (fromJust)
 import Data.Text (Text)

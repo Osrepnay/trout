@@ -1,32 +1,27 @@
 module Tuner
-  ( Tunables (..),
+  ( StructuredTunables (..),
+    Tunables,
+    structurize,
+    flatten,
     newTunables,
-    tunableMobility,
-    tunableKingSafety,
-    tunablePasserMults,
+    tunableFactors,
     tunedEval,
-    tracingQuie,
     calcSigmoidK,
     calcError,
     sgdBatch,
     tuneEpoch,
-    normalizeTunables,
+    calculateWorthiness,
   )
 where
 
-import Control.Parallel.Strategies (evalList, parListChunk, rdeepseq, rseq, withStrategy)
-import Data.Bifunctor (first)
-import Data.Foldable (foldl', maximumBy)
-import Data.Functor.Identity (runIdentity)
-import Data.Maybe (maybeToList)
-import Data.Ord (comparing)
+import Control.Parallel.Strategies (parListChunk, rseq, withStrategy)
+import Data.Functor ((<&>))
+import Data.List (scanl')
 import Data.Vector.Primitive qualified as PV
-import Trout.Bitboard (Bitboard, foldSqs, (.^.))
-import Trout.Game (Game (..), allDisquiets, makeMove, mobility)
+import Trout.Bitboard ((.^.))
+import Trout.Game (Game (..), mobility)
 import Trout.Game.Board (Board (..), getPiece, pieceBitboard)
-import Trout.Game.Move (Move (..), SpecialMove (..))
 import Trout.Piece (Color (..), Piece (..), PieceType (..), colorSign)
-import Trout.Search (seeOfCapture)
 import Trout.Search.Eval
   ( mobilityMults,
     numPassers,
@@ -34,6 +29,7 @@ import Trout.Search.Eval
     passerMultMg,
     safetyMultEg,
     safetyMultMg,
+    tempoBonus,
     totalMaterialScore,
     virtMobile,
   )
@@ -51,11 +47,6 @@ import Trout.Search.PieceSquareTables
     rookEPST,
     rookMPST,
   )
-import Trout.Search.Worthiness
-  ( lossWorth,
-    pieceWorth,
-    winWorth,
-  )
 
 mpstsBase :: PV.Vector Double
 mpstsBase = PV.map fromIntegral $ PV.concat [pawnMPST, knightMPST, bishopMPST, rookMPST, queenMPST, kingMPST]
@@ -63,258 +54,159 @@ mpstsBase = PV.map fromIntegral $ PV.concat [pawnMPST, knightMPST, bishopMPST, r
 epstsBase :: PV.Vector Double
 epstsBase = PV.map fromIntegral $ PV.concat [pawnEPST, knightEPST, bishopEPST, rookEPST, queenEPST, kingEPST]
 
--- TODO make this an actual type at some point
--- weirder to do derivatives but it is what it is
-newtype Tunables = Tunables
-  { unTunables :: PV.Vector Double
+data StructuredTunables = StructuredTunables
+  { sTunableMPST :: PV.Vector Double,
+    sTunableEPST :: PV.Vector Double,
+    sTunableMobility :: PV.Vector Double,
+    sTunableKingSafety :: (Double, Double),
+    sTunablePasserMults :: (Double, Double),
+    sTunableTempoBonus :: Double
   }
-  deriving (Show)
+  deriving (Eq, Show)
+
+-- flat vector version of StructuredTunables
+type Tunables = PV.Vector Double
+
+flatten :: StructuredTunables -> Tunables
+flatten
+  StructuredTunables
+    { sTunableMPST = mpst,
+      sTunableEPST = epst,
+      sTunableMobility = mob,
+      sTunableKingSafety = kingSafety,
+      sTunablePasserMults = passerMults,
+      sTunableTempoBonus = tempo
+    } =
+    PV.force $
+      PV.concat
+        [ mpst,
+          epst,
+          mob,
+          tupToVec kingSafety,
+          tupToVec passerMults,
+          PV.singleton tempo
+        ]
+    where
+      tupToVec (a, b) = PV.fromList [a, b]
+
+-- TODO is this optimized well?
+structurize :: Tunables -> StructuredTunables
+structurize vec = case segments of
+  [mpsts, epsts, mob, kingSafetyVec, passerMultsVec, tempoVec] ->
+    StructuredTunables
+      { sTunableMPST = mpsts,
+        sTunableEPST = epsts,
+        sTunableMobility = mob,
+        sTunableKingSafety = (kingSafetyVec PV.! 0, kingSafetyVec PV.! 1),
+        sTunablePasserMults = (passerMultsVec PV.! 0, passerMultsVec PV.! 1),
+        sTunableTempoBonus = tempoVec PV.! 0
+      }
+  _ -> error "wrong number of segments"
+  where
+    segmentLengths =
+      [ PV.length mpstsBase,
+        PV.length epstsBase,
+        PV.length mobilityMults,
+        2,
+        2,
+        1
+      ]
+    -- accumulates the lengths to find indices
+    indices = init (scanl' (+) 0 segmentLengths)
+    segments = zipWith (\i l -> PV.slice i l vec) indices segmentLengths
 
 newTunables :: Tunables
-newTunables =
-  Tunables
-    ( PV.concat
-        [ mpstsBase,
-          epstsBase,
-          mobilityMults,
-          PV.fromList [safetyMultMg, safetyMultEg],
-          PV.fromList [passerMultMg, passerMultEg]
-        ]
-    )
+newTunables = PV.fromList [0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,473.8762095533246,573.8469072677277,625.4296072292713,535.153166236501,539.3242686191991,947.9732646009969,1246.0443052899218,563.6212507052796,534.7822288626724,591.9951862111965,717.4538968509568,828.1398669624548,775.8400689186229,891.5942870482055,1114.3980756483447,712.2534232534947,582.0132035392274,722.7087091609773,713.0412597754586,914.7079465240579,840.6229487481143,980.4350753194175,893.3856866694691,480.71724169829787,488.2742080384701,614.6161013913521,841.7923148286939,823.775931623007,1027.2663015053758,859.5552295003981,844.1049428187598,775.4364553624723,495.08687965355625,1361.6877704378967,1253.2874774653162,1372.0036520382482,1141.8685480330028,1715.647009608041,1232.7279341750407,858.2705362837484,1760.8779321113777,1725.8901897828543,2085.0397375994066,1997.294455823652,1687.027286349913,1664.560939365602,1296.4909492154836,1432.5614199029897,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,3021.4479865289363,3512.8186677525123,3064.586376969347,2934.291408551289,3251.2237972444755,3238.0037817559723,3314.6128578850507,3245.0610498862025,3302.371194856586,3297.625255759313,3194.5426293895007,3483.6327604466724,3294.735226989764,3569.6554742152016,2606.0253643324004,3578.5840815048773,3232.0846782115927,3275.7143880090584,3287.6565919019968,3390.5143707210414,3289.7578937976386,3398.1172397353434,3358.70002532675,3261.786678970233,3413.5104223830376,3543.733927871062,3423.7948884408415,3334.696248328535,3422.1898893937323,3329.232554793161,3727.36416327928,3423.5093401741833,3430.5101881064943,3421.821002860433,3604.969424847011,3941.5964363368507,3360.6356533898283,3810.5679554006006,3486.819416445198,3557.200121973169,3598.0652872399464,3747.6023589401416,3822.647776274294,3999.091177380999,4274.687817984698,4197.889089740861,3416.723188473837,3590.2306964508407,3391.350099184576,3247.9825834782687,3520.9026898942634,3427.0193293926814,3630.334739435985,3779.62552586232,3327.69212804145,3568.0516979976383,2891.4239615482857,3440.254399142663,3507.7333687054524,3450.3567195409896,3512.307818970976,3536.8464546121522,3428.6056163341505,2946.7452177428763,3434.066063741699,3787.3052029190126,3894.9938833293613,3370.426096059007,3633.062241116287,3594.72838288602,3968.15196392891,3506.476221702323,3740.2564637773553,3838.8114897811347,3884.9247913904737,3680.316437291955,3792.9904945759095,3902.6557669521844,3998.4217346414484,3756.189567396007,3858.0357590079643,3988.8540740298276,3964.545481167726,3773.068331698196,3783.9453485158488,4000.552113210181,3852.6161156257704,3702.1702249808677,3751.7342589481555,3776.7131157982944,3645.894491007924,3937.848497977247,3958.130196223746,3696.032441316589,3572.5363780103494,4012.659318998413,3603.4622567607244,3751.208484288979,3980.469714987094,4216.742017674711,3915.3824732652583,3851.7376290215393,3747.304639464644,3630.93072144269,3580.5877728449254,3869.1238543844925,3455.6847228944903,4075.6247384265444,3819.350749868066,4552.358659579095,3613.8917739644644,3970.080352291548,3571.9057302066794,3787.5214894930596,3687.5938039939138,3951.7375557179544,3793.8787074174425,3633.806464185848,3742.343448309675,3567.9790384594435,3488.4733689044897,3620.4702018095313,3795.8678517871836,3616.8119748458744,3692.85097932764,3789.1815327286185,3840.2052006051695,3888.486988733356,5411.684606691146,5531.628050020323,5494.427178393801,5628.66650733412,5620.561415760301,5463.735223106909,5309.371713816791,5454.4307972799,4924.96695250623,5327.814316167512,5514.482007323631,5621.735081146504,5385.682004612539,5098.635559877809,5205.446511373955,5153.218210265549,4948.476238463577,5195.9135623382035,5316.7176502109905,5291.041994968739,5239.640406823541,5368.570901125556,5636.061768823023,5173.553630754463,5198.262220713752,5149.365739028627,5208.614968229415,5340.102452921281,5358.205271304339,5245.068327734532,5401.610085329377,5370.612013765905,5420.585505718769,5105.983668897219,5701.464188740837,5631.0446697508605,5510.849426521983,5373.1769346765595,5711.530073434578,5629.272183357717,5757.301458706211,5902.720202917491,5937.875002760831,5891.506175845667,6148.300411631603,6384.000583125656,6077.75982044872,6069.6793112457635,5722.198419268644,5903.090185978494,6124.474682738991,6359.3683280880105,6027.5499965873605,6272.2628086252225,6222.810091114606,6059.275152474176,5952.254401174347,5865.048468972607,5693.459788541612,6010.364477027683,6299.690484669215,5853.825259464994,5821.099142569666,5701.586547544327,10446.655628386516,10655.22039503147,10772.850112572258,10850.272459115835,10758.807604724916,10392.137925235693,10287.101914392257,10552.648522537149,10601.79065693456,10668.260708059952,10744.955917554083,10769.12931682317,10820.291278971343,10672.899100538585,10381.69556063719,10473.537411446294,10597.085150389144,10696.76553369465,10435.511363098349,10493.32169950469,10446.36406636518,10807.248324957633,10878.12494888167,10847.648193805018,10617.353002813543,10397.194555705035,10522.514464904843,10395.30561110115,10560.904507834954,10689.943784098894,10695.4998068983,10863.590548617622,10324.618733675905,10224.47472867745,10396.612135881462,10371.65906099934,10720.214768325872,10752.38244760285,10585.251232532446,10720.862673219417,10595.895283079588,10604.413969154628,10542.328898925365,10694.507609906364,11173.649233962666,11629.56966109338,11330.371335731477,10860.369309628608,10492.478674700316,10247.567912486858,10635.194409767362,10715.55512488748,10804.506345592665,11245.763745309112,10685.295547642174,11190.333268926091,10528.946882843327,10668.874223632945,10790.327816802203,10944.974056828618,10962.590388065908,10969.031324715672,10880.79834862056,10819.861511421655,307.1177932664369,305.5786050544952,228.43281208632814,-481.64118606451206,541.0394572206632,-448.72829650985676,712.2500852167082,698.4286987086982,152.7406154623744,198.6356779142024,-174.49945149477406,-309.9488078715111,-517.0020453190442,-367.8679847185636,495.95706769243367,494.33917145765,-310.35223658941567,-423.3067470488066,132.0521521272291,-304.2772488932375,-659.3953338719203,-138.61220283717486,14.448826553284142,23.491313306579915,13.167869320997609,171.36239162968016,-175.55438640174717,64.11319948711747,-36.354700496961755,204.3459117316642,-19.297361641731776,-225.11940388643964,-57.57221925416068,99.81409660824214,-100.79545287408725,-120.29237725157147,-194.44336521840205,47.52166098261244,187.16668336117485,160.6465745523457,12.523772164542244,91.08600762306831,45.40961754261304,58.03563361150553,-119.62114892206665,-21.744788686684686,122.53438226987315,86.32342101726792,30.693657460038846,-9.128202941006585,122.31303548800246,181.81044561163117,150.62938526603702,81.50854843701153,58.82948635477847,88.67926873021055,-0.1497590492989761,-29.53156578704183,-9.31106979318168,109.89301916661452,150.37977739314616,130.38207260060193,121.29790555392262,19.56724339143732,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,1456.8123098202366,1386.1090441325039,1206.6099856607862,1059.4348818090673,1315.561980918522,1202.4462510329338,1172.2009264478809,1048.2864777907923,1409.5149900473964,1366.275562192674,1185.1970468867526,1228.875449116269,1204.2242445001768,1216.8238501958438,1259.837996232331,1153.2404457229866,1539.323704168903,1444.1842655803207,1270.5504493185902,1113.4550329134422,1103.7686629583438,1126.0009019757304,1322.5917361566649,1227.097470935951,1839.9850695100454,1654.384487122688,1480.2161164014692,1289.909204155604,1243.2895330299652,1143.2594047100015,1454.5974354718844,1345.1128086659312,2618.840818646304,2416.253652363259,2425.346660418003,2053.900617104665,2054.827354229659,1760.8130544588055,2013.8955359117822,2176.6876130788305,3028.5884357127525,3132.8842252658083,3056.721371585389,2613.266168083745,2631.686198952967,3195.756986187677,3000.748990751586,2712.543501212836,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,3543.3517298471897,2492.8876191614804,3219.386068143261,3253.1444879167548,3176.480145705599,3233.079273002998,2903.656540710694,3324.509853376073,3063.2347829623213,2877.9213691209693,3158.7764164776677,3174.05919079041,3202.065835187778,2726.744366894236,3058.2642956485693,3001.858961185563,3149.9580310677034,3252.7527622376724,3237.3472636245187,3312.249253264861,3240.680563470376,3304.777654725666,3270.035149951437,3007.008607401642,3203.8571100386866,3536.5705376341366,3512.9990389515374,3485.693920656945,3616.664216301222,3491.559512715691,3400.370979064671,3283.368763857461,3329.428550492204,3625.744127128171,3530.4200492975633,3611.8942516270517,3611.7124285307086,3447.490685360589,3527.1311774775363,3416.5741996910715,3283.7386104682055,3343.654518171516,3463.3103332095,3631.4736446383604,3451.0908747980425,3368.1152571425446,3528.998947201598,3430.5309808403476,3140.5408158067657,3354.7476269246768,3540.5367954984576,3671.149924465949,3418.912771967311,3370.474606058311,3217.9691394422975,3327.7379518349226,2930.968823570483,3331.6947682662994,3327.981379078203,3486.988953458436,3381.9943594251195,3690.1562195327147,3236.8832520639535,3045.9442419432557,3317.6865771068055,3366.416565335805,3001.3461813118965,3577.53185703211,3379.4410137215064,3277.180659349613,3424.873806399768,3333.818023429383,3379.4879162514612,3228.0057149894624,3291.3994000526413,3505.251882408065,3328.083955274259,3302.035511469026,3330.841493001026,3197.2541230959987,3308.734773258313,3495.0425252624145,3624.346878557997,3481.175953384502,3609.6472654775166,3418.689602860254,3500.646278231852,3460.051987793948,3673.8339286652513,3432.7376374947758,3807.3210080925023,3579.0881843665566,3400.739795601871,3576.1220654528006,3665.158792190764,3215.921716523423,3642.6306301121986,3723.9677053398696,3470.2761941873223,3546.868342973661,3543.8963311721923,3518.8800595795624,3564.4476323000267,3441.455225525819,3686.0923474516044,3547.5406215440184,3770.80378466504,3562.8004147753995,3548.3724575223823,3747.351469225396,3668.8028182247344,3811.562453389193,3658.35961487601,3536.2505945487437,3595.8170424903433,3485.380951079301,3659.8552095688974,3753.6426966110294,3981.799390389654,3193.9777153050904,3824.156961935235,3706.471382619152,3593.2256232957084,3381.59574817652,3911.090356589021,3838.7932270519486,3658.973898591908,3706.1254819895753,5534.79103835441,5538.6343804447415,5610.9021756031325,5512.485298314088,5431.363489004185,5600.482306010542,5699.478970734703,5407.986502148931,5494.689926696184,5304.372859169407,5383.669281465072,5336.653619755454,5348.79733022812,5639.074224773317,5339.185374514841,5309.066476529804,5693.681284096649,5618.373479973083,5468.6057073073525,5429.697922109035,5454.084061630914,5358.401989482716,5199.746243203388,5506.87292362345,5627.98504648765,5887.827837352771,5729.172985299289,5694.881238057634,5538.197674221608,5654.856230315291,5558.451035081914,5347.897130395863,5874.760889283972,6011.448011236316,5803.279847754795,5805.304737367635,5790.421586337511,5742.8522907105325,5522.244266521376,5633.9607706242095,5839.853916553015,5819.887516042327,5803.107690159384,5877.37133987455,5790.9674043521645,5788.658149136768,5704.00453242529,5661.077990565589,5931.956033385894,5942.1539235354585,5900.5411211926275,5864.786606006336,5951.474427942195,5831.8767351007755,5803.095630027045,5675.7224129171545,5637.070833492019,5765.216050968364,5893.802037206387,5823.637607901028,5700.526248006704,5902.034997044942,5727.87516456649,5883.880649512804,10419.665158826036,10285.417689139258,10296.740711195316,10141.699619234769,10166.047454194619,10078.367592359067,10286.78539660673,10390.246706042808,10610.506808824013,10278.435369169967,10276.253515929859,10207.435123598825,10115.96927078768,9980.103121581662,10309.813199118533,10401.258649318868,10802.85719673016,10256.895932474781,10482.590798594054,10398.953284772133,10247.649114449538,10273.762727081885,10249.581053565864,10527.385694089075,10752.205572217455,10663.563486413517,10659.046331886364,10704.84113490229,10654.26832139625,10298.844396348042,11025.30019170502,10795.0900830149,10561.032307438452,10874.445099659693,10642.026303289762,10986.92927007547,10888.374439434798,10685.872210886659,10937.148988467454,11067.311212392768,10473.456623147504,10500.844543498357,10702.52303649072,10912.967018989511,10762.217213915648,10676.499678179413,10770.315614093428,10892.128601726034,10369.662973690658,10871.217530760037,10886.410574199344,11012.845200181511,11094.130279451105,11091.182647001577,10677.234646836714,10864.530172598557,10522.3279742869,10740.051129556285,10721.662114779874,10819.07372179625,10964.403174472933,10798.615617522251,10869.514383373717,10765.34433834926,-255.06239924504115,-516.1624925402613,-70.26112686132026,64.76797191766717,-503.9621100590782,66.00372261628038,-285.8737844069599,-482.0053812043005,-168.26488477573335,-155.05719842497598,69.42451195771083,37.04077402312069,183.37879155056706,89.82339472020351,-199.854177277037,-153.73551503652925,49.15228400667124,94.74485662901105,91.56486172264792,216.0951217218963,308.7677364253308,199.2126239873107,23.663128949399102,31.027495793367443,-76.262863177107,178.1617953003053,257.3329719097836,302.7738008616763,380.87621767899583,306.6617234072332,191.0872914076322,147.11810246269823,131.9045376580437,297.43208342439436,382.0500682751796,434.42422342472224,452.8845425838517,501.96188984954455,459.544733874503,439.3575253030623,347.23988871763913,378.09952523066977,412.6204320732582,452.4189636627694,515.6094559735783,576.2179919999843,554.1354408229996,626.2117083782888,231.24582876197718,201.52083379420756,179.13969996594128,246.1343297447805,291.8659607214718,377.9879581015513,539.9999053975854,539.6541965115923,-174.40973183148938,48.91225969081788,-106.00816301110012,266.88544700641677,330.80013239523464,376.46249509954293,363.9791601446255,-89.46056978679218,87.16226327926951,75.21777243818701,102.51331000642197,25.04628224101412,86.12237929845685,39.799937067499506,45.89953338070083,65.68403397461665,31.55209531579065,96.83919858261359,94.36985877404467,78.11496055066071,72.50505459448343,-13.3655038406356,-41.68147453482306,297.7056713448746,26.812648523108837]
 
-tunableMPST :: Tunables -> PV.Vector Double
-tunableMPST (Tunables vec) = PV.slice 0 (PV.length mpstsBase) vec
+{-
+  flatten $
+    StructuredTunables
+      (PV.map (* 1) mpstsBase)
+      (PV.map (* 1) epstsBase)
+      (PV.map ((/ 1) . fromIntegral) mobilityMults)
+      (fromIntegral safetyMultMg, fromIntegral safetyMultEg)
+      (fromIntegral passerMultMg, fromIntegral passerMultEg)
+      (fromIntegral tempoBonus)
+      -}
 
-tunableEPST :: Tunables -> PV.Vector Double
-tunableEPST (Tunables vec) = PV.slice (PV.length mpstsBase) (PV.length epstsBase) vec
-
-tunableMobility :: Tunables -> PV.Vector Double
-tunableMobility (Tunables vec) = PV.slice (2 * 6 * 64) 12 vec
-
-tunableKingSafety :: Tunables -> (Double, Double)
-tunableKingSafety (Tunables vec) = (ks PV.! 0, ks PV.! 1)
-  where
-    ks = PV.slice (2 * 6 * 64 + 12) 2 vec
-
-tunablePasserMults :: Tunables -> (Double, Double)
-tunablePasserMults (Tunables vec) = (ps PV.! 0, ps PV.! 1)
-  where
-    ps = PV.slice (2 * 6 * 64 + 12 + 2) 2 vec
-
-pstEval :: Tunables -> Bitboard -> PieceType -> Int -> Int -> Int -> Double
-pstEval tunables bb piece !mgPhase !egPhase !mask =
-  foldSqs
-    ( \score sqRaw ->
-        let sq = sqRaw .^. mask
-            m = mpsts PV.! (pieceOffset + sq)
-            e = epsts PV.! (pieceOffset + sq)
-         in score + ((m * fromIntegral mgPhase + e * fromIntegral egPhase) / 24)
-    )
-    0
-    bb
-  where
-    pieceOffset = fromEnum piece * 64
-    mpsts = tunableMPST tunables
-    epsts = tunableEPST tunables
-{-# INLINE pstEval #-}
-
-{-}
-data EvalData = EvalData
-  { edPstIdxs :: [Int],
-    edMobilities :: PV.Vector Int,
-    edKingSafety :: Int,
-    edPasserMult :: Int
-  }
-  deriving (Show)
-
-mkEvalData :: Board -> EvalData
-mkEvalData board = undefined
-  where
-    pieces = boardPieces board
-    getBB color = ($ pieces) . pieceBitboard . Piece color
-    mgPhase = totalMaterialScore board
-    egPhase = 24 - mgPhase
-
-    pst c p = pstEval tunables (getBB c p) p mgPhase egPhase $ case c of
-      White -> 0
-      Black -> 56
-    pstEvalValue =
-      pst White Pawn
-        - pst Black Pawn
-        + pst White Knight
-        - pst Black Knight
-        + pst White Bishop
-        - pst Black Bishop
-        + pst White Rook
-        - pst Black Rook
-        + pst White Queen
-        - pst Black Queen
-        + pst White King
-        - pst Black King
-    pstIdxs =
-      [ case getPiece sq pieces of
-        Just (Piece c p) -> (fromEnum c * 6 + fromEnum p) * 64 +
-      | sq <- [0 .. 64]
-      ]
-
-    mobilities =
-      PV.fromList
-        [ fromIntegral (colorSign c)
-            * fromIntegral (mobility board (Piece c p))
-            / 24
-        | c <- [White, Black],
-          p <- enumFromTo Pawn King
-        ]
-
-    kingSafety = virtMobile Black pieces - virtMobile White pieces
-
-    whitePawns = pieceBitboard (Piece White Pawn) pieces
-    blackPawns = pieceBitboard (Piece Black Pawn) pieces
-    passerDiff = numPassers White whitePawns blackPawns - numPassers Black blackPawns whitePawns
-    -}
-
-tunedEval :: Tunables -> Board -> Double
-tunedEval !tunables !board =
-  fromIntegral (colorSign (boardTurn board))
-    * (pstEvalValue + mobilityValue + scaledKingSafety + scaledPasserDiff)
-  where
-    pieces = boardPieces board
-    getBB color = ($ pieces) . pieceBitboard . Piece color
-    mgPhase = totalMaterialScore board
-    egPhase = 24 - mgPhase
-
-    pst c p = pstEval tunables (getBB c p) p mgPhase egPhase $ case c of
-      White -> 0
-      Black -> 56
-    pstEvalValue =
-      pst White Pawn
-        - pst Black Pawn
-        + pst White Knight
-        - pst Black Knight
-        + pst White Bishop
-        - pst Black Bishop
-        + pst White Rook
-        - pst Black Rook
-        + pst White Queen
-        - pst Black Queen
-        + pst White King
-        - pst Black King
-
-    mobs = tunableMobility tunables
-    mobilityValue =
-      sum
-        [ (mgMult * fromIntegral mgPhase + egMult * fromIntegral egPhase)
-            * fromIntegral (colorSign c)
-            * fromIntegral (mobility board (Piece c p))
-            / 24
-        | c <- [White, Black],
-          (p, mgMult, egMult) <-
-            [ (Pawn, mobs PV.! 0, mobs PV.! 1),
-              (Knight, mobs PV.! 2, mobs PV.! 3),
-              (Bishop, mobs PV.! 4, mobs PV.! 5),
-              (Rook, mobs PV.! 6, mobs PV.! 7),
-              (Queen, mobs PV.! 8, mobs PV.! 9),
-              (King, mobs PV.! 10, mobs PV.! 11)
-            ]
-        ]
-
-    (tunedSafetyMultMg, tunedSafetyMultEg) = tunableKingSafety tunables
-    kingSafety = virtMobile Black pieces - virtMobile White pieces
-    scaledKingSafety =
-      fromIntegral kingSafety
-        * (fromIntegral mgPhase * tunedSafetyMultMg + fromIntegral egPhase * tunedSafetyMultEg)
-        / 24
-
-    tunedPasserMultMg, tunedPasserMultEg :: Double
-    (tunedPasserMultMg, tunedPasserMultEg) = tunablePasserMults tunables
-    whitePawns = pieceBitboard (Piece White Pawn) pieces
-    blackPawns = pieceBitboard (Piece Black Pawn) pieces
-    passerDiff = numPassers White whitePawns blackPawns - numPassers Black blackPawns whitePawns
-    scaledPasserDiff =
-      fromIntegral passerDiff
-        * (fromIntegral mgPhase * tunedPasserMultMg + fromIntegral egPhase * tunedPasserMultEg)
-        / 24
-
-removeSingle :: (Eq a) => a -> [a] -> [a]
-removeSingle _ [] = []
-removeSingle r (x : xs)
-  | r == x = xs
-  | otherwise = x : removeSingle r xs
-
-singleSelect :: [(Int, Move)] -> ((Int, Move), [(Int, Move)])
-singleSelect moves = (best, removeSingle best moves)
-  where
-    best = maximumBy (comparing fst) moves
-
--- it's in readert st monad in real quie
--- and it was easier to jut wrap it in identity monad to keep the syntax
-tracingQuie :: Tunables -> Double -> Double -> Game -> (Double, Game)
-tracingQuie !tunables !alpha !beta !game = runIdentity $ do
-  -- stand-pat from null-move observation (tunedEval immediately = not moving)
-  let staticEval = tunedEval tunables board
-  let seeReq = max 0 (alpha - staticEval - 2 * fromIntegral (pieceWorth Pawn))
-  if staticEval >= beta
-    then pure (staticEval, game)
-    else
-      go
-        staticEval
-        game
-        (filter ((>= seeReq) . fromIntegral . fst) ((\m -> (scoreMove m, m)) <$> allDisquiets board))
+-- calculate the factors for each tunable entry
+-- basically, how much influence it has on this position
+-- sum (tunableFactors .* tunables) = absolute position eval
+tunableFactors :: Game -> Tunables
+tunableFactors game =
+  flatten $
+    StructuredTunables
+      { sTunableMPST = mpstFactors,
+        sTunableEPST = epstFactors,
+        sTunableMobility = mobilityFactors,
+        sTunableKingSafety = kingSafetyFactors,
+        sTunablePasserMults = passerFactors,
+        sTunableTempoBonus = tempoBonusFactor
+      }
   where
     board = gameBoard game
+    pieces = boardPieces board
+    mgPhase = fromIntegral (totalMaterialScore board)
+    egPhase = 24 - mgPhase
 
-    scoreMove m = case seeOfCapture board m of
-      Just s -> s
-      Nothing -> case moveSpecial m of
-        -- non-capture promotions
-        -- TODO maybe throw SEE on here too?
-        (Promotion p) -> pieceWorth p - pieceWorth Pawn
-        -- should be impossible
-        _ -> lossWorth
+    boardFactors =
+      PV.fromList $
+        [ fromIntegral $ fromEnum whiteExist - fromEnum blackExist
+        | p <- [Pawn .. King],
+          sq <- [0 .. 63],
+          let whiteSq = sq,
+          let blackSq = sq .^. 56,
+          let whiteExist = getPiece whiteSq pieces == Just (Piece White p),
+          let blackExist = getPiece blackSq pieces == Just (Piece Black p)
+        ]
+    mpstFactors = PV.map ((/ 24) . (* mgPhase)) boardFactors
+    epstFactors = PV.map ((/ 24) . (* egPhase)) boardFactors
 
-    go bestScore bestGame [] = pure (bestScore, bestGame)
-    go bestScore bestGame moves = case makeMove game move of
-      Just movedGame -> do
-        let trueAlpha = max alpha bestScore
-        let (score, endGame) = first negate $ tracingQuie tunables (-beta) (-trueAlpha) movedGame
-        if score >= beta
-          then pure (score, endGame)
-          else
-            if score > bestScore
-              then go score endGame movesRest
-              else go bestScore bestGame movesRest
-      Nothing -> go bestScore bestGame movesRest
-      where
-        ((_, move), movesRest) = singleSelect moves
+    mobilityFactors =
+      PV.fromList $
+        concat $
+          [ [mobCount * mgPhase / 24, mobCount * egPhase / 24]
+          | p <- [Pawn .. King],
+            let mkMob c = mobility board (Piece c p),
+            let mobCount = fromIntegral (mkMob White - mkMob Black)
+          ]
 
-quieWrapper :: Tunables -> Game -> (Double, Game)
-quieWrapper tunables game =
-  first
-    (* fromIntegral (colorSign (boardTurn (gameBoard game))))
-    (tracingQuie tunables (fromIntegral (lossWorth :: Int)) (fromIntegral (winWorth :: Int)) game)
+    kingSafety = fromIntegral $ virtMobile Black pieces - virtMobile White pieces
+    kingSafetyFactors = (kingSafety * mgPhase / 24, kingSafety * egPhase / 24)
+
+    whitePawns = pieceBitboard (Piece White Pawn) pieces
+    blackPawns = pieceBitboard (Piece Black Pawn) pieces
+    passerDiff = fromIntegral $ numPassers White whitePawns blackPawns - numPassers Black blackPawns whitePawns
+    passerFactors = (passerDiff * mgPhase / 24, passerDiff * egPhase / 24)
+
+    tempoBonusFactor = fromIntegral $ colorSign (boardTurn board)
+
+tunedEval :: Tunables -> Tunables -> Double
+tunedEval !factors !tunables = PV.sum (PV.zipWith (*) factors tunables) / 10
 
 sigmoid :: Double -> Double
-sigmoid x = 1.0 / (1 + exp 1 ** (-x))
+sigmoid x = 1.0 / (1 + exp (-x))
 
 -- there's the sigmoid * (1 - sigmoid) nonsense but
 -- i cba derivate that
 sigmoidDerivative :: Double -> Double
 sigmoidDerivative x = ex / (1 + ex) ** 2
   where
-    ex = exp 1 ** (-x)
+    ex = exp (-x)
 
 -- mean squared error
 calcError :: Tunables -> [(Game, Double)] -> Double -> Double
 calcError tunables games fac =
   let errParts =
-        ( \(g, res) ->
-            let (rawScore, _) = quieWrapper tunables g
+        ( \(game, res) ->
+            let rawScore = tunedEval (tunableFactors game) tunables
              in (sigmoid (rawScore * fac) - res) ** 2
         )
           <$> games
       errSum = sum $ withStrategy (parListChunk 1024 rseq) errParts
    in (errSum / fromIntegral (length games))
 
+-- iteratively estimate k term for sigmoid
 calcSigmoidK :: Tunables -> [(Game, Double)] -> Double
 calcSigmoidK tunables games
   | rootError < nudgeRight = go (-kStep) initialK rootError
@@ -323,7 +215,6 @@ calcSigmoidK tunables games
     kStep = 0.0001
     -- from previous runs
     -- cache here to save time
-    -- initialK = 0.0058
     initialK = 0.0058
     rootError = calcError tunables games initialK
     nudgeRight = calcError tunables games (initialK + kStep)
@@ -339,76 +230,24 @@ batchSize = 16384
 
 sgdBatch :: Tunables -> [(Game, Double)] -> Double -> Double -> Tunables
 sgdBatch tunables games k step =
-  Tunables
-    ( PV.zipWith
-        (\x d -> x - d / fromIntegral batchSize * step)
-        (unTunables tunables)
-        derivativesSum
-    )
+  PV.zipWith
+    (\x d -> x - (d / fromIntegral batchSize) * step)
+    tunables
+    derivativesSum
   where
     batch = take batchSize games
     calcAlterations (game, res) = alterations
       where
-        (endpointEval, quieEndpoint) = quieWrapper tunables game
-        mgPhaseFrac = fromIntegral (totalMaterialScore (gameBoard game)) / 24
-        egPhaseFrac = 1 - mgPhaseFrac
-        commonD = 2 * (sigmoid (k * endpointEval) - res) * k * sigmoidDerivative (k * endpointEval)
-        board = gameBoard quieEndpoint
-        pieces = boardPieces board
-        sqAlterations rawSq =
-          maybeToList (getPiece rawSq pieces)
-            >>= \(Piece c p) ->
-              let (sq, existMult) = case c of
-                    White -> (rawSq, 1)
-                    Black -> (rawSq .^. 56, -1)
-                  mgIdx = sq + fromEnum p * 64
-                  egIdx = mgIdx + 64 * 6
-               in [ (mgIdx, commonD * mgPhaseFrac * existMult),
-                    (egIdx, commonD * egPhaseFrac * existMult)
-                  ]
-
-        mobilityAlterations =
-          concat
-            [ [ (mobMgIdx, commonD * mgPhaseFrac * mobMult),
-                (mobEgIdx, commonD * egPhaseFrac * mobMult)
-              ]
-            | c <- [White, Black],
-              p <- enumFromTo Pawn King,
-              let piece = Piece c p
-                  mobMgIdx = 2 * 6 * 64 + fromEnum p * 2
-                  mobEgIdx = mobMgIdx + 1
-                  mobMult = fromIntegral $ colorSign c * mobility board piece
-            ]
-
-        safetyMult = fromIntegral $ virtMobile Black pieces - virtMobile White pieces
-        safetyMgIdx = 2 * 6 * 64 + 12
-        safetyEgIdx = safetyMgIdx + 1
-        kingSafetyAlterations =
-          [ (safetyMgIdx, commonD * mgPhaseFrac * safetyMult),
-            (safetyEgIdx, commonD * egPhaseFrac * safetyMult)
-          ]
-
-        whitePawns = pieceBitboard (Piece White Pawn) pieces
-        blackPawns = pieceBitboard (Piece Black Pawn) pieces
-        passerMult = fromIntegral $ numPassers White whitePawns blackPawns - numPassers Black blackPawns whitePawns
-        passerMgIdx = safetyEgIdx + 1
-        passerEgIdx = passerMgIdx + 1
-        passerMultAlterations =
-          [ (passerMgIdx, commonD * mgPhaseFrac * passerMult),
-            (passerEgIdx, commonD * egPhaseFrac * passerMult)
-          ]
-
-        alterations =
-          ([0 .. 64] >>= sqAlterations)
-            ++ mobilityAlterations
-            ++ kingSafetyAlterations
-            ++ passerMultAlterations
+        factors = tunableFactors game
+        evalScore = tunedEval factors tunables
+        commonD = (1 / 10) * 2 * (sigmoid (k * evalScore) - res) * k * sigmoidDerivative (k * evalScore)
+        alterations = PV.map (* commonD) factors
 
     derivativesSum =
       foldl'
-        (PV.accum (+))
-        (PV.replicate (PV.length (unTunables tunables)) 0)
-        (withStrategy (parListChunk 1024 (evalList rdeepseq)) (calcAlterations <$> batch))
+        (PV.zipWith (+))
+        (PV.replicate (PV.length tunables) 0)
+        (withStrategy (parListChunk 1024 rseq) (calcAlterations <$> batch))
 
 tuneEpoch :: Tunables -> [(Game, Double)] -> Double -> Double -> Tunables
 tuneEpoch startingTunables games k step
@@ -417,10 +256,29 @@ tuneEpoch startingTunables games k step
   where
     fullRetuned = sgdBatch startingTunables games k step
 
--- middlegame pawn = 100cp
-normalizeTunables :: Tunables -> Tunables
-normalizeTunables tunables = Tunables $ PV.map (* scale) $ unTunables tunables
+-- should be better than straight average b/c of e.g.
+-- terrible squares that are very rare
+-- unnormalized!!
+calculateWorthiness :: [Game] -> Tunables -> PV.Vector Double
+calculateWorthiness games tunables = PV.fromList worths
   where
-    scale = 100 / avg
-    -- divide by 48 to discount the first and last rows
-    avg = PV.sum (PV.slice 0 64 (tunableMPST tunables)) / 48
+    piecesList = boardPieces . gameBoard <$> games
+    changes =
+      piecesList >>= \pieces ->
+        [0 .. 63] >>= \sq -> case getPiece sq pieces of
+          Nothing -> []
+          Just (Piece c p) ->
+            let mask = if c == White then 0 else 56
+                newSq = sq .^. mask
+                idx = fromEnum p * 64 + newSq
+             in [(idx, 1)]
+    weights = PV.accum (+) (PV.replicate (6 * 64) 0) changes
+
+    mpst = sTunableMPST (structurize tunables)
+    weightedMPST = PV.zipWith (*) mpst weights
+
+    worths =
+      [Pawn .. King] <&> \p ->
+        let slicer = PV.slice (fromEnum p * 64) 64
+            totalWeight = PV.sum (slicer weights)
+         in (/ 10) $ PV.sum $ PV.map (/ totalWeight) (slicer weightedMPST)
