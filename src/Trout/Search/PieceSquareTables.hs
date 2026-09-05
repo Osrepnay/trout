@@ -213,7 +213,7 @@ pstEval bb piece !mgPhase !egPhase !mask =
         let sq = sqRaw .^. mask
             m = mpsts `V.unsafeIndex` (pieceOffset + sq)
             e = epsts `V.unsafeIndex` (pieceOffset + sq)
-         in score + (m * mgPhase + e * egPhase) `quot` 24
+         in score + (m * mgPhase + e * egPhase)
     )
     0
     bb

@@ -157,6 +157,7 @@ eval board =
             + scaledKingSafety
             + scaledPasserDiff
         )
+      `quot` 240
   where
     pieces = boardPieces board
     getBB color = ($ pieces) . pieceBitboard . Piece color
@@ -164,46 +165,40 @@ eval board =
     egPhase = 24 - mgPhase
     pst bb p = pstEval bb p mgPhase egPhase
     pstEvalValue =
-      pst (getBB White Pawn) Pawn 0
-        - pst (getBB Black Pawn) Pawn 56
-        + pst (getBB White Knight) Knight 0
-        - pst (getBB Black Knight) Knight 56
-        + pst (getBB White Bishop) Bishop 0
-        - pst (getBB Black Bishop) Bishop 56
-        + pst (getBB White Rook) Rook 0
-        - pst (getBB Black Rook) Rook 56
-        + pst (getBB White Queen) Queen 0
-        - pst (getBB Black Queen) Queen 56
-        + pst (getBB White King) King 0
-        - pst (getBB Black King) King 56
+      (10 *) $
+        pst (getBB White Pawn) Pawn 0
+          - pst (getBB Black Pawn) Pawn 56
+          + pst (getBB White Knight) Knight 0
+          - pst (getBB Black Knight) Knight 56
+          + pst (getBB White Bishop) Bishop 0
+          - pst (getBB Black Bishop) Bishop 56
+          + pst (getBB White Rook) Rook 0
+          - pst (getBB Black Rook) Rook 56
+          + pst (getBB White Queen) Queen 0
+          - pst (getBB Black Queen) Queen 56
+          + pst (getBB White King) King 0
+          - pst (getBB Black King) King 56
 
     mobilityValue =
-      (`quot` 240) $
-        sum
-          [ (mgMult * mgPhase + egMult * egPhase)
-              * colorSign c
-              * mobility board (Piece c p)
-          | c <- [White, Black],
-            (p, mgMult, egMult) <-
-              [ (Pawn, mobilityMults PV.! 0, mobilityMults PV.! 1),
-                (Knight, mobilityMults PV.! 2, mobilityMults PV.! 3),
-                (Bishop, mobilityMults PV.! 4, mobilityMults PV.! 5),
-                (Rook, mobilityMults PV.! 6, mobilityMults PV.! 7),
-                (Queen, mobilityMults PV.! 8, mobilityMults PV.! 9),
-                (King, mobilityMults PV.! 10, mobilityMults PV.! 11)
-              ]
-          ]
+      sum
+        [ (mgMult * mgPhase + egMult * egPhase)
+            * colorSign c
+            * mobility board (Piece c p)
+        | c <- [White, Black],
+          (p, mgMult, egMult) <-
+            [ (Pawn, mobilityMults PV.! 0, mobilityMults PV.! 1),
+              (Knight, mobilityMults PV.! 2, mobilityMults PV.! 3),
+              (Bishop, mobilityMults PV.! 4, mobilityMults PV.! 5),
+              (Rook, mobilityMults PV.! 6, mobilityMults PV.! 7),
+              (Queen, mobilityMults PV.! 8, mobilityMults PV.! 9),
+              (King, mobilityMults PV.! 10, mobilityMults PV.! 11)
+            ]
+        ]
 
     kingSafety = virtMobile Black pieces - virtMobile White pieces
-    scaledKingSafety =
-      (`quot` 240) $
-        kingSafety
-          * (mgPhase * safetyMultMg + egPhase * safetyMultEg)
+    scaledKingSafety = kingSafety * (mgPhase * safetyMultMg + egPhase * safetyMultEg)
 
     whitePawns = pieceBitboard (Piece White Pawn) pieces
     blackPawns = pieceBitboard (Piece Black Pawn) pieces
     passerDiff = numPassers White whitePawns blackPawns - numPassers Black blackPawns whitePawns
-    scaledPasserDiff =
-      (`quot` 240) $
-        passerDiff
-          * (mgPhase * passerMultMg + egPhase * passerMultEg)
+    scaledPasserDiff = passerDiff * (mgPhase * passerMultMg + egPhase * passerMultEg)
