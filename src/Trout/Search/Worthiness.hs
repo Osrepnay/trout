@@ -26,15 +26,15 @@ rookWorth :: Int
 queenWorth :: Int
 kingWorth :: Int
 -- mind the first and last row being 0
-pawnWorth = PV.sum pawnMPST `quot` 48
+pawnWorth = 100
 
-knightWorth = PV.sum knightMPST `quot` 64
+knightWorth = 435
 
-bishopWorth = PV.sum bishopMPST `quot` 64
+bishopWorth = 487
 
-rookWorth = PV.sum rookMPST `quot` 64
+rookWorth = 703
 
-queenWorth = PV.sum queenMPST `quot` 64
+queenWorth = 1360
 
 kingWorth = 100000000
 

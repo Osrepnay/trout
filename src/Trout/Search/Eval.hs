@@ -8,11 +8,14 @@ module Trout.Search.Eval
     safetyMultEg,
     passerMultMg,
     passerMultEg,
+    bishopPairMg,
+    bishopPairEg,
     tempoBonus,
     eval,
   )
 where
 
+import Data.Bits ((!>>.))
 import Data.Maybe (fromMaybe)
 import Data.Vector.Primitive qualified as PV
 import Trout.Bitboard
@@ -124,16 +127,19 @@ numPassers color pawns oppPawns =
 {-# INLINEABLE numPassers #-}
 
 mobilityMults :: PV.Vector Int
-mobilityMults = PV.fromList [109, 94, 128, 31, 107, 50, 57, 82, 39, 121, 118, 97]
+mobilityMults = PV.fromList [77, 38, 100, 1, 72, 18, 42, 32, 31, 54, 93, 61]
 
 safetyMultMg, safetyMultEg :: Int
-(safetyMultMg, safetyMultEg) = (90, -17)
+(safetyMultMg, safetyMultEg) = (66, -11)
 
 passerMultMg, passerMultEg :: Int
-(passerMultMg, passerMultEg) = (-52, 371)
+(passerMultMg, passerMultEg) = (-86, 189)
+
+bishopPairMg, bishopPairEg :: Int
+(bishopPairMg, bishopPairEg) = (68, 73)
 
 tempoBonus :: Int
-tempoBonus = 33
+tempoBonus = 28
 
 eval :: Board -> Int
 eval board =
@@ -144,6 +150,7 @@ eval board =
               + mobilityValue
               + scaledKingSafety
               + scaledPasserDiff
+              + scaledBishopPairDiff
           )
   where
     pieces = boardPieces board
@@ -165,6 +172,7 @@ eval board =
         + pst (getBB White King) King 0
         - pst (getBB Black King) King 56
 
+    -- TODO get rid of quot
     mobilityValue =
       (`quot` 24) $
         sum
@@ -195,3 +203,10 @@ eval board =
       (`quot` 24) $
         passerDiff
           * (mgPhase * passerMultMg + egPhase * passerMultEg)
+
+    hasPair c = popCount (pieceBitboard (Piece c Bishop) pieces) !>>. 1
+    bishopPairDiff = hasPair White - hasPair Black
+    scaledBishopPairDiff =
+      (`quot` 24) $
+        bishopPairDiff
+          * (mgPhase * bishopPairMg + egPhase * bishopPairEg)

@@ -65,6 +65,9 @@ formatTunables tunables =
     ++ "passer mults:\n"
     ++ show passers
     ++ "\n"
+    ++ "bishop pair:\n"
+    ++ show bishop
+    ++ "\n"
     ++ "tempo bonus:\n"
     ++ show tempo
   where
@@ -98,6 +101,7 @@ formatTunables tunables =
     formatMob = "[" ++ intercalate ", " (show <$> PV.toList mobs) ++ "]"
     safeties = roundTup $ sTunableKingSafety sTun
     passers = roundTup $ sTunablePasserMults sTun
+    bishop = roundTup $ sTunableBishopPair sTun
     tempo = intRound $ sTunableTempoBonus sTun
 
 removeSingle :: (Eq a) => a -> [a] -> [a]
@@ -201,9 +205,11 @@ main = do
 
       let startingWorthiness = calculateWorthiness (fst <$> uniqueGames) startingTunables
       let startingNormFac = 100 / startingWorthiness PV.! 0
+      let poop = 1000 / (PV.sum (PV.slice 0 64 startingTunables) / 48)
+      print poop
       print startingWorthiness
       let normedStartingWorthiness = PV.map (* startingNormFac) startingWorthiness
-      let normedStartingTunables = PV.map (* startingNormFac) startingTunables
+      let normedStartingTunables = PV.map (* poop) startingTunables
       putStrLn $ formatTunables normedStartingTunables
       printf "worthiness: %s\n" (show normedStartingWorthiness)
 
@@ -212,7 +218,7 @@ main = do
             putStrLn $ "previous tunables: " ++ show currTunables
             gen <- newStdGen
             let shuffledGames = shuffle' uniqueGames (length uniqueGames) gen
-            let steppedTunables = tuneEpoch currTunables shuffledGames k 20000
+            let steppedTunables = tuneEpoch currTunables shuffledGames k 500000
             let newErr = calcError steppedTunables uniqueGames k
             if newErr > prevErr
               then pure currTunables
