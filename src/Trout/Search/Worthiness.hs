@@ -14,9 +14,7 @@ module Trout.Search.Worthiness
   )
 where
 
-import Data.Vector.Primitive qualified as PV
 import Trout.Piece (PieceType (..))
-import Trout.Search.PieceSquareTables (bishopMPST, knightMPST, pawnMPST, queenMPST, rookMPST)
 
 -- based on centipawns
 pawnWorth :: Int

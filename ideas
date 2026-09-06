@@ -85,6 +85,5 @@ make see use psqts?
 weighted average for pieceWorth
 adaptive pieceWorth
 fix aspiration windows for mate scores (minor i think because exponential)
-side to move bonus
 more history penaltying (on alpha raise, lmp)
 nmp depth guard, again
