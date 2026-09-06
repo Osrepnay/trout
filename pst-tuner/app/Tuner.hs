@@ -1,39 +1,40 @@
 module Tuner
-  ( Tunables (..),
+  ( StructuredTunables (..),
+    Tunables,
+    structurize,
+    flattenTunables,
     newTunables,
-    tunableMobility,
-    tunableKingSafety,
-    tunablePasserMults,
+    tunableFactors,
     tunedEval,
-    tracingQuie,
     calcSigmoidK,
     calcError,
     sgdBatch,
     tuneEpoch,
-    normalizeTunables,
+    calculateWorthiness,
   )
 where
 
-import Control.Parallel.Strategies (evalList, parListChunk, rdeepseq, rseq, withStrategy)
-import Data.Bifunctor (first)
-import Data.Foldable (foldl', maximumBy)
-import Data.Functor.Identity (runIdentity)
-import Data.Maybe (maybeToList)
-import Data.Ord (comparing)
+import Control.Parallel.Strategies (parListChunk, rseq, withStrategy)
+import Data.Bits (popCount, (!>>.))
+import Data.Functor ((<&>))
+import Data.List (foldl1', scanl')
 import Data.Vector.Primitive qualified as PV
-import Trout.Bitboard (Bitboard, foldSqs, (.^.))
-import Trout.Game (Game (..), allDisquiets, makeMove, mobility)
+import Numeric.LinearAlgebra (Matrix, matrix, scale, sumElements, toLists)
+import Trout.Bitboard ((.^.))
+import Trout.Game (Game (..), mobility)
 import Trout.Game.Board (Board (..), getPiece, pieceBitboard)
-import Trout.Game.Move (Move (..), SpecialMove (..))
 import Trout.Piece (Color (..), Piece (..), PieceType (..), colorSign)
-import Trout.Search (seeOfCapture)
 import Trout.Search.Eval
-  ( mobilityMults,
+  ( bishopPairEg,
+    bishopPairMg,
+    mobilityMults,
     numPassers,
     passerMultEg,
     passerMultMg,
     safetyMultEg,
     safetyMultMg,
+    tempoEg,
+    tempoMg,
     totalMaterialScore,
     virtMobile,
   )
@@ -51,11 +52,6 @@ import Trout.Search.PieceSquareTables
     rookEPST,
     rookMPST,
   )
-import Trout.Search.Worthiness
-  ( lossWorth,
-    pieceWorth,
-    winWorth,
-  )
 
 mpstsBase :: PV.Vector Double
 mpstsBase = PV.map fromIntegral $ PV.concat [pawnMPST, knightMPST, bishopMPST, rookMPST, queenMPST, kingMPST]
@@ -63,259 +59,172 @@ mpstsBase = PV.map fromIntegral $ PV.concat [pawnMPST, knightMPST, bishopMPST, r
 epstsBase :: PV.Vector Double
 epstsBase = PV.map fromIntegral $ PV.concat [pawnEPST, knightEPST, bishopEPST, rookEPST, queenEPST, kingEPST]
 
--- TODO make this an actual type at some point
--- weirder to do derivatives but it is what it is
-newtype Tunables = Tunables
-  { unTunables :: PV.Vector Double
+data StructuredTunables = StructuredTunables
+  { sTunableMPST :: PV.Vector Double,
+    sTunableEPST :: PV.Vector Double,
+    sTunableMobility :: PV.Vector Double,
+    sTunableKingSafety :: (Double, Double),
+    sTunablePasserMults :: (Double, Double),
+    sTunableBishopPair :: (Double, Double),
+    sTunableTempo :: (Double, Double)
   }
-  deriving (Show)
+  deriving (Eq, Show)
+
+-- flat version of StructuredTunables
+type Tunables = Matrix Double
+
+flattenTunables :: StructuredTunables -> Tunables
+flattenTunables
+  StructuredTunables
+    { sTunableMPST = mpst,
+      sTunableEPST = epst,
+      sTunableMobility = mob,
+      sTunableKingSafety = kingSafety,
+      sTunablePasserMults = passerMults,
+      sTunableBishopPair = bishopPair,
+      sTunableTempo = tempo
+    } =
+    matrix 1 $
+      PV.toList $
+        PV.concat
+          [ mpst,
+            epst,
+            mob,
+            tupToVec kingSafety,
+            tupToVec passerMults,
+            tupToVec bishopPair,
+            tupToVec tempo
+          ]
+    where
+      tupToVec (a, b) = PV.fromList [a, b]
+
+-- TODO is this optimized well?
+structurize :: Tunables -> StructuredTunables
+structurize mat = case segments of
+  [mpsts, epsts, mob, kingSafetyVec, passerMultsVec, bishopPairVec, tempoVec] ->
+    StructuredTunables
+      { sTunableMPST = mpsts,
+        sTunableEPST = epsts,
+        sTunableMobility = mob,
+        sTunableKingSafety = (kingSafetyVec PV.! 0, kingSafetyVec PV.! 1),
+        sTunablePasserMults = (passerMultsVec PV.! 0, passerMultsVec PV.! 1),
+        sTunableBishopPair = (bishopPairVec PV.! 0, bishopPairVec PV.! 1),
+        sTunableTempo = (tempoVec PV.! 0, tempoVec PV.! 1)
+      }
+  _ -> error "wrong number of segments"
+  where
+    -- TODO hack
+    vec = PV.fromList $ concat $ toLists mat
+    segmentLengths =
+      [ PV.length mpstsBase,
+        PV.length epstsBase,
+        PV.length mobilityMults,
+        2,
+        2,
+        2,
+        2
+      ]
+    -- accumulates the lengths to find indices
+    indices = init (scanl' (+) 0 segmentLengths)
+    segments = zipWith (\i l -> PV.slice i l vec) indices segmentLengths
 
 newTunables :: Tunables
 newTunables =
-  Tunables
-    ( PV.concat
-        [ mpstsBase,
-          epstsBase,
-          mobilityMults,
-          PV.fromList [safetyMultMg, safetyMultEg],
-          PV.fromList [passerMultMg, passerMultEg]
-        ]
-    )
+  flattenTunables $
+    StructuredTunables
+      (PV.map (* 1) mpstsBase)
+      (PV.map (* 1) epstsBase)
+      (PV.map fromIntegral mobilityMults)
+      (fromIntegral safetyMultMg, fromIntegral safetyMultEg)
+      (fromIntegral passerMultMg, fromIntegral passerMultEg)
+      (fromIntegral bishopPairMg, fromIntegral bishopPairEg)
+      (fromIntegral tempoMg, fromIntegral tempoEg)
 
-tunableMPST :: Tunables -> PV.Vector Double
-tunableMPST (Tunables vec) = PV.slice 0 (PV.length mpstsBase) vec
-
-tunableEPST :: Tunables -> PV.Vector Double
-tunableEPST (Tunables vec) = PV.slice (PV.length mpstsBase) (PV.length epstsBase) vec
-
-tunableMobility :: Tunables -> PV.Vector Double
-tunableMobility (Tunables vec) = PV.slice (2 * 6 * 64) 12 vec
-
-tunableKingSafety :: Tunables -> (Double, Double)
-tunableKingSafety (Tunables vec) = (ks PV.! 0, ks PV.! 1)
-  where
-    ks = PV.slice (2 * 6 * 64 + 12) 2 vec
-
-tunablePasserMults :: Tunables -> (Double, Double)
-tunablePasserMults (Tunables vec) = (ps PV.! 0, ps PV.! 1)
-  where
-    ps = PV.slice (2 * 6 * 64 + 12 + 2) 2 vec
-
-pstEval :: Tunables -> Bitboard -> PieceType -> Int -> Int -> Int -> Double
-pstEval tunables bb piece !mgPhase !egPhase !mask =
-  foldSqs
-    ( \score sqRaw ->
-        let sq = sqRaw .^. mask
-            m = mpsts PV.! (pieceOffset + sq)
-            e = epsts PV.! (pieceOffset + sq)
-         in score + ((m * fromIntegral mgPhase + e * fromIntegral egPhase) / 24)
-    )
-    0
-    bb
-  where
-    pieceOffset = fromEnum piece * 64
-    mpsts = tunableMPST tunables
-    epsts = tunableEPST tunables
-{-# INLINE pstEval #-}
-
-{-}
-data EvalData = EvalData
-  { edPstIdxs :: [Int],
-    edMobilities :: PV.Vector Int,
-    edKingSafety :: Int,
-    edPasserMult :: Int
-  }
-  deriving (Show)
-
-mkEvalData :: Board -> EvalData
-mkEvalData board = undefined
-  where
-    pieces = boardPieces board
-    getBB color = ($ pieces) . pieceBitboard . Piece color
-    mgPhase = totalMaterialScore board
-    egPhase = 24 - mgPhase
-
-    pst c p = pstEval tunables (getBB c p) p mgPhase egPhase $ case c of
-      White -> 0
-      Black -> 56
-    pstEvalValue =
-      pst White Pawn
-        - pst Black Pawn
-        + pst White Knight
-        - pst Black Knight
-        + pst White Bishop
-        - pst Black Bishop
-        + pst White Rook
-        - pst Black Rook
-        + pst White Queen
-        - pst Black Queen
-        + pst White King
-        - pst Black King
-    pstIdxs =
-      [ case getPiece sq pieces of
-        Just (Piece c p) -> (fromEnum c * 6 + fromEnum p) * 64 +
-      | sq <- [0 .. 64]
-      ]
-
-    mobilities =
-      PV.fromList
-        [ fromIntegral (colorSign c)
-            * fromIntegral (mobility board (Piece c p))
-            / 24
-        | c <- [White, Black],
-          p <- enumFromTo Pawn King
-        ]
-
-    kingSafety = virtMobile Black pieces - virtMobile White pieces
-
-    whitePawns = pieceBitboard (Piece White Pawn) pieces
-    blackPawns = pieceBitboard (Piece Black Pawn) pieces
-    passerDiff = numPassers White whitePawns blackPawns - numPassers Black blackPawns whitePawns
-    -}
-
-tunedEval :: Tunables -> Board -> Double
-tunedEval !tunables !board =
-  fromIntegral (colorSign (boardTurn board))
-    * (pstEvalValue + mobilityValue + scaledKingSafety + scaledPasserDiff)
-  where
-    pieces = boardPieces board
-    getBB color = ($ pieces) . pieceBitboard . Piece color
-    mgPhase = totalMaterialScore board
-    egPhase = 24 - mgPhase
-
-    pst c p = pstEval tunables (getBB c p) p mgPhase egPhase $ case c of
-      White -> 0
-      Black -> 56
-    pstEvalValue =
-      pst White Pawn
-        - pst Black Pawn
-        + pst White Knight
-        - pst Black Knight
-        + pst White Bishop
-        - pst Black Bishop
-        + pst White Rook
-        - pst Black Rook
-        + pst White Queen
-        - pst Black Queen
-        + pst White King
-        - pst Black King
-
-    mobs = tunableMobility tunables
-    mobilityValue =
-      sum
-        [ (mgMult * fromIntegral mgPhase + egMult * fromIntegral egPhase)
-            * fromIntegral (colorSign c)
-            * fromIntegral (mobility board (Piece c p))
-            / 24
-        | c <- [White, Black],
-          (p, mgMult, egMult) <-
-            [ (Pawn, mobs PV.! 0, mobs PV.! 1),
-              (Knight, mobs PV.! 2, mobs PV.! 3),
-              (Bishop, mobs PV.! 4, mobs PV.! 5),
-              (Rook, mobs PV.! 6, mobs PV.! 7),
-              (Queen, mobs PV.! 8, mobs PV.! 9),
-              (King, mobs PV.! 10, mobs PV.! 11)
-            ]
-        ]
-
-    (tunedSafetyMultMg, tunedSafetyMultEg) = tunableKingSafety tunables
-    kingSafety = virtMobile Black pieces - virtMobile White pieces
-    scaledKingSafety =
-      fromIntegral kingSafety
-        * (fromIntegral mgPhase * tunedSafetyMultMg + fromIntegral egPhase * tunedSafetyMultEg)
-        / 24
-
-    tunedPasserMultMg, tunedPasserMultEg :: Double
-    (tunedPasserMultMg, tunedPasserMultEg) = tunablePasserMults tunables
-    whitePawns = pieceBitboard (Piece White Pawn) pieces
-    blackPawns = pieceBitboard (Piece Black Pawn) pieces
-    passerDiff = numPassers White whitePawns blackPawns - numPassers Black blackPawns whitePawns
-    scaledPasserDiff =
-      fromIntegral passerDiff
-        * (fromIntegral mgPhase * tunedPasserMultMg + fromIntegral egPhase * tunedPasserMultEg)
-        / 24
-
-removeSingle :: (Eq a) => a -> [a] -> [a]
-removeSingle _ [] = []
-removeSingle r (x : xs)
-  | r == x = xs
-  | otherwise = x : removeSingle r xs
-
-singleSelect :: [(Int, Move)] -> ((Int, Move), [(Int, Move)])
-singleSelect moves = (best, removeSingle best moves)
-  where
-    best = maximumBy (comparing fst) moves
-
--- it's in readert st monad in real quie
--- and it was easier to jut wrap it in identity monad to keep the syntax
-tracingQuie :: Tunables -> Double -> Double -> Game -> (Double, Game)
-tracingQuie !tunables !alpha !beta !game = runIdentity $ do
-  -- stand-pat from null-move observation (tunedEval immediately = not moving)
-  let staticEval = tunedEval tunables board
-  let seeReq = max 0 (alpha - staticEval - 2 * fromIntegral (pieceWorth Pawn))
-  if staticEval >= beta
-    then pure (staticEval, game)
-    else
-      go
-        staticEval
-        game
-        (filter ((>= seeReq) . fromIntegral . fst) ((\m -> (scoreMove m, m)) <$> allDisquiets board))
+-- calculate the factors for each tunable entry
+-- basically, how much influence it has on this position
+-- sum (tunableFactors .* tunables) = absolute position eval
+tunableFactors :: Game -> Tunables
+tunableFactors game =
+  flattenTunables $
+    StructuredTunables
+      { sTunableMPST = mpstFactors,
+        sTunableEPST = epstFactors,
+        sTunableMobility = mobilityFactors,
+        sTunableKingSafety = kingSafetyFactors,
+        sTunablePasserMults = passerFactors,
+        sTunableBishopPair = bishopPairFactors,
+        sTunableTempo = tempoBonusFactors
+      }
   where
     board = gameBoard game
+    pieces = boardPieces board
+    mgPhase = fromIntegral (totalMaterialScore board)
+    egPhase = 24 - mgPhase
 
-    scoreMove m = case seeOfCapture board m of
-      Just s -> s
-      Nothing -> case moveSpecial m of
-        -- non-capture promotions
-        -- TODO maybe throw SEE on here too?
-        (Promotion p) -> pieceWorth p - pieceWorth Pawn
-        -- should be impossible
-        _ -> lossWorth
+    boardFactors =
+      PV.fromList $
+        [ fromIntegral $ fromEnum whiteExist - fromEnum blackExist
+        | p <- [Pawn .. King],
+          sq <- [0 .. 63],
+          let whiteSq = sq,
+          let blackSq = sq .^. 56,
+          let whiteExist = getPiece whiteSq pieces == Just (Piece White p),
+          let blackExist = getPiece blackSq pieces == Just (Piece Black p)
+        ]
+    mpstFactors = PV.map ((/ 24) . (* mgPhase)) boardFactors
+    epstFactors = PV.map ((/ 24) . (* egPhase)) boardFactors
 
-    go bestScore bestGame [] = pure (bestScore, bestGame)
-    go bestScore bestGame moves = case makeMove game move of
-      Just movedGame -> do
-        let trueAlpha = max alpha bestScore
-        let (score, endGame) = first negate $ tracingQuie tunables (-beta) (-trueAlpha) movedGame
-        if score >= beta
-          then pure (score, endGame)
-          else
-            if score > bestScore
-              then go score endGame movesRest
-              else go bestScore bestGame movesRest
-      Nothing -> go bestScore bestGame movesRest
-      where
-        ((_, move), movesRest) = singleSelect moves
+    mobilityFactors =
+      PV.fromList $
+        concat $
+          [ [mobCount * mgPhase / 24, mobCount * egPhase / 24]
+          | p <- [Pawn .. King],
+            let mkMob c = mobility board (Piece c p),
+            let mobCount = fromIntegral (mkMob White - mkMob Black)
+          ]
 
-quieWrapper :: Tunables -> Game -> (Double, Game)
-quieWrapper tunables game =
-  first
-    (* fromIntegral (colorSign (boardTurn (gameBoard game))))
-    (tracingQuie tunables (fromIntegral (lossWorth :: Int)) (fromIntegral (winWorth :: Int)) game)
+    kingSafety = fromIntegral $ virtMobile Black pieces - virtMobile White pieces
+    kingSafetyFactors = (kingSafety * mgPhase / 24, kingSafety * egPhase / 24)
+
+    whitePawns = pieceBitboard (Piece White Pawn) pieces
+    blackPawns = pieceBitboard (Piece Black Pawn) pieces
+    passerDiff = fromIntegral $ numPassers White whitePawns blackPawns - numPassers Black blackPawns whitePawns
+    passerFactors = (passerDiff * mgPhase / 24, passerDiff * egPhase / 24)
+
+    hasPair c = popCount (pieceBitboard (Piece c Bishop) pieces) !>>. 1
+    bishopPairDiff = fromIntegral $ hasPair White - hasPair Black
+    bishopPairFactors = (bishopPairDiff * mgPhase / 24, bishopPairDiff * egPhase / 24)
+
+    tempoBonus = fromIntegral $ colorSign (boardTurn board)
+    tempoBonusFactors = (tempoBonus * mgPhase / 24, tempoBonus * egPhase / 24)
+
+tunedEval :: Tunables -> Tunables -> Double
+tunedEval !factors !tunables = sumElements (factors * tunables) / 10
 
 sigmoid :: Double -> Double
-sigmoid x = 1.0 / (1 + exp 1 ** (-x))
+sigmoid x = 1.0 / (1 + exp (-x))
 
 -- there's the sigmoid * (1 - sigmoid) nonsense but
 -- i cba derivate that
 sigmoidDerivative :: Double -> Double
 sigmoidDerivative x = ex / (1 + ex) ** 2
   where
-    ex = exp 1 ** (-x)
+    ex = exp (-x)
 
 -- mean squared error
-calcError :: Tunables -> [(Game, Double)] -> Double -> Double
+calcError :: Tunables -> [(Tunables, Double)] -> Double -> Double
 calcError tunables games fac =
   let errParts =
-        ( \(g, res) ->
-            let (rawScore, _) = quieWrapper tunables g
+        ( \(facs, res) ->
+            let rawScore = tunedEval facs tunables
              in (sigmoid (rawScore * fac) - res) ** 2
         )
           <$> games
       errSum = sum $ withStrategy (parListChunk 1024 rseq) errParts
    in (errSum / fromIntegral (length games))
 
-calcSigmoidK :: Tunables -> [(Game, Double)] -> Double
+-- iteratively estimate k term for sigmoid
+calcSigmoidK :: Tunables -> [(Tunables, Double)] -> Double
 calcSigmoidK tunables games
   | rootError < nudgeRight = go (-kStep) initialK rootError
   | otherwise = go kStep (initialK + kStep) nudgeRight
@@ -323,7 +232,6 @@ calcSigmoidK tunables games
     kStep = 0.0001
     -- from previous runs
     -- cache here to save time
-    -- initialK = 0.0058
     initialK = 0.0058
     rootError = calcError tunables games initialK
     nudgeRight = calcError tunables games (initialK + kStep)
@@ -337,90 +245,51 @@ calcSigmoidK tunables games
 batchSize :: Int
 batchSize = 16384
 
-sgdBatch :: Tunables -> [(Game, Double)] -> Double -> Double -> Tunables
-sgdBatch tunables games k step =
-  Tunables
-    ( PV.zipWith
-        (\x d -> x - d / fromIntegral batchSize * step)
-        (unTunables tunables)
-        derivativesSum
-    )
+sgdBatch :: Tunables -> [(Tunables, Double)] -> Double -> Double -> Tunables
+sgdBatch tunables games k step = tunables - (scale (step / fromIntegral batchSize) derivativesSum)
   where
     batch = take batchSize games
-    calcAlterations (game, res) = alterations
+    calcAlterations (factors, res) = alterations
       where
-        (endpointEval, quieEndpoint) = quieWrapper tunables game
-        mgPhaseFrac = fromIntegral (totalMaterialScore (gameBoard game)) / 24
-        egPhaseFrac = 1 - mgPhaseFrac
-        commonD = 2 * (sigmoid (k * endpointEval) - res) * k * sigmoidDerivative (k * endpointEval)
-        board = gameBoard quieEndpoint
-        pieces = boardPieces board
-        sqAlterations rawSq =
-          maybeToList (getPiece rawSq pieces)
-            >>= \(Piece c p) ->
-              let (sq, existMult) = case c of
-                    White -> (rawSq, 1)
-                    Black -> (rawSq .^. 56, -1)
-                  mgIdx = sq + fromEnum p * 64
-                  egIdx = mgIdx + 64 * 6
-               in [ (mgIdx, commonD * mgPhaseFrac * existMult),
-                    (egIdx, commonD * egPhaseFrac * existMult)
-                  ]
-
-        mobilityAlterations =
-          concat
-            [ [ (mobMgIdx, commonD * mgPhaseFrac * mobMult),
-                (mobEgIdx, commonD * egPhaseFrac * mobMult)
-              ]
-            | c <- [White, Black],
-              p <- enumFromTo Pawn King,
-              let piece = Piece c p
-                  mobMgIdx = 2 * 6 * 64 + fromEnum p * 2
-                  mobEgIdx = mobMgIdx + 1
-                  mobMult = fromIntegral $ colorSign c * mobility board piece
-            ]
-
-        safetyMult = fromIntegral $ virtMobile Black pieces - virtMobile White pieces
-        safetyMgIdx = 2 * 6 * 64 + 12
-        safetyEgIdx = safetyMgIdx + 1
-        kingSafetyAlterations =
-          [ (safetyMgIdx, commonD * mgPhaseFrac * safetyMult),
-            (safetyEgIdx, commonD * egPhaseFrac * safetyMult)
-          ]
-
-        whitePawns = pieceBitboard (Piece White Pawn) pieces
-        blackPawns = pieceBitboard (Piece Black Pawn) pieces
-        passerMult = fromIntegral $ numPassers White whitePawns blackPawns - numPassers Black blackPawns whitePawns
-        passerMgIdx = safetyEgIdx + 1
-        passerEgIdx = passerMgIdx + 1
-        passerMultAlterations =
-          [ (passerMgIdx, commonD * mgPhaseFrac * passerMult),
-            (passerEgIdx, commonD * egPhaseFrac * passerMult)
-          ]
-
-        alterations =
-          ([0 .. 64] >>= sqAlterations)
-            ++ mobilityAlterations
-            ++ kingSafetyAlterations
-            ++ passerMultAlterations
+        evalScore = tunedEval factors tunables
+        commonD = (1 / 10) * 2 * (sigmoid (k * evalScore) - res) * k * sigmoidDerivative (k * evalScore)
+        alterations = scale commonD factors
 
     derivativesSum =
-      foldl'
-        (PV.accum (+))
-        (PV.replicate (PV.length (unTunables tunables)) 0)
-        (withStrategy (parListChunk 1024 (evalList rdeepseq)) (calcAlterations <$> batch))
+      foldl1'
+        (+)
+        (withStrategy (parListChunk 1024 rseq) (calcAlterations <$> batch))
 
-tuneEpoch :: Tunables -> [(Game, Double)] -> Double -> Double -> Tunables
+tuneEpoch :: Tunables -> [(Tunables, Double)] -> Double -> Double -> Tunables
 tuneEpoch startingTunables games k step
   | length games < batchSize = startingTunables
   | otherwise = tuneEpoch fullRetuned (drop batchSize games) k step
   where
     fullRetuned = sgdBatch startingTunables games k step
 
--- middlegame pawn = 100cp
-normalizeTunables :: Tunables -> Tunables
-normalizeTunables tunables = Tunables $ PV.map (* scale) $ unTunables tunables
+-- should be better than straight average b/c of e.g.
+-- terrible squares that are very rare
+-- unnormalized!!
+calculateWorthiness :: [Game] -> Tunables -> PV.Vector Double
+calculateWorthiness games tunables = PV.fromList worths
   where
-    scale = 100 / avg
-    -- divide by 48 to discount the first and last rows
-    avg = PV.sum (PV.slice 0 64 (tunableMPST tunables)) / 48
+    piecesList = boardPieces . gameBoard <$> games
+    changes =
+      piecesList >>= \pieces ->
+        [0 .. 63] >>= \sq -> case getPiece sq pieces of
+          Nothing -> []
+          Just (Piece c p) ->
+            let mask = if c == White then 0 else 56
+                newSq = sq .^. mask
+                idx = fromEnum p * 64 + newSq
+             in [(idx, 1)]
+    weights = PV.accum (+) (PV.replicate (6 * 64) 0) changes
+
+    mpst = sTunableMPST (structurize tunables)
+    weightedMPST = PV.zipWith (*) mpst weights
+
+    worths =
+      [Pawn .. King] <&> \p ->
+        let slicer = PV.slice (fromEnum p * 64) 64
+            totalWeight = PV.sum (slicer weights)
+         in (/ 10) $ PV.sum $ PV.map (/ totalWeight) (slicer weightedMPST)

@@ -8,10 +8,15 @@ module Trout.Search.Eval
     safetyMultEg,
     passerMultMg,
     passerMultEg,
+    bishopPairMg,
+    bishopPairEg,
+    tempoMg,
+    tempoEg,
     eval,
   )
 where
 
+import Data.Bits ((!>>.))
 import Data.Maybe (fromMaybe)
 import Data.Vector.Primitive qualified as PV
 import Trout.Bitboard
@@ -123,41 +128,31 @@ numPassers color pawns oppPawns =
 {-# INLINEABLE numPassers #-}
 
 mobilityMults :: PV.Vector Int
-mobilityMults =
-  PV.fromList
-    [ 114,
-      80,
-      116,
-      31,
-      99,
-      41,
-      54,
-      73,
-      43,
-      89,
-      97,
-      67
-    ]
+mobilityMults = PV.fromList [93, 84, 116, 24, 83, 35, 47, 66, 30, 100, 102, 85]
 
 safetyMultMg, safetyMultEg :: Int
-(safetyMultMg, safetyMultEg) = (74, -9)
+(safetyMultMg, safetyMultEg) = (75, -10)
 
 passerMultMg, passerMultEg :: Int
-(passerMultMg, passerMultEg) = (-10, 356)
+(passerMultMg, passerMultEg) = (-41, 322)
 
-tempoBonus :: Int
-tempoBonus = 10
+bishopPairMg, bishopPairEg :: Int
+(bishopPairMg, bishopPairEg) = (159, 388)
+
+tempoMg, tempoEg :: Int
+(tempoMg, tempoEg) = (62, 9)
 
 eval :: Board -> Int
 eval board =
-  tempoBonus
-    + colorSign (boardTurn board)
-      * ( pstEvalValue
-            + mobilityValue
-            + scaledKingSafety
-            + scaledPasserDiff
-        )
-      `quot` 240
+  (`quot` 240) $
+    tempoBonus
+      + colorSign (boardTurn board)
+        * ( pstEvalValue
+              + mobilityValue
+              + scaledKingSafety
+              + scaledPasserDiff
+              + scaledBishopPairDiff
+          )
   where
     pieces = boardPieces board
     getBB color = ($ pieces) . pieceBitboard . Piece color
@@ -179,6 +174,7 @@ eval board =
           + pst (getBB White King) King 0
           - pst (getBB Black King) King 56
 
+    -- TODO get rid of quot
     mobilityValue =
       sum
         [ (mgMult * mgPhase + egMult * egPhase)
@@ -202,3 +198,9 @@ eval board =
     blackPawns = pieceBitboard (Piece Black Pawn) pieces
     passerDiff = numPassers White whitePawns blackPawns - numPassers Black blackPawns whitePawns
     scaledPasserDiff = passerDiff * (mgPhase * passerMultMg + egPhase * passerMultEg)
+
+    hasPair c = popCount (pieceBitboard (Piece c Bishop) pieces) !>>. 1
+    bishopPairDiff = hasPair White - hasPair Black
+    scaledBishopPairDiff = bishopPairDiff * (mgPhase * bishopPairMg + egPhase * bishopPairEg)
+
+    tempoBonus = mgPhase * tempoMg + egPhase * tempoEg

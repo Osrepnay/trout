@@ -9,6 +9,7 @@ module Trout.Search
     clearEnv,
     staticExchEval,
     seeOfCapture,
+    seeOfUnquiet,
     bestMove,
     EngineMessage (..),
     TimeLimit (..),

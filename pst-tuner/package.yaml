@@ -33,6 +33,7 @@ dependencies:
 - deepseq
 - hashable
 - unordered-containers
+- hmatrix
 
 language: GHC2021
 
