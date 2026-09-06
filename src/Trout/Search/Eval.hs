@@ -10,7 +10,8 @@ module Trout.Search.Eval
     passerMultEg,
     bishopPairMg,
     bishopPairEg,
-    tempoBonus,
+    tempoMg,
+    tempoEg,
     eval,
   )
 where
@@ -127,23 +128,23 @@ numPassers color pawns oppPawns =
 {-# INLINEABLE numPassers #-}
 
 mobilityMults :: PV.Vector Int
-mobilityMults = PV.fromList [77, 38, 100, 1, 72, 18, 42, 32, 31, 54, 93, 61]
+mobilityMults = PV.fromList [93, 84, 116, 24, 83, 35, 47, 66, 30, 100, 102, 85]
 
 safetyMultMg, safetyMultEg :: Int
-(safetyMultMg, safetyMultEg) = (66, -11)
+(safetyMultMg, safetyMultEg) = (75, -10)
 
 passerMultMg, passerMultEg :: Int
-(passerMultMg, passerMultEg) = (-86, 189)
+(passerMultMg, passerMultEg) = (-41, 322)
 
 bishopPairMg, bishopPairEg :: Int
-(bishopPairMg, bishopPairEg) = (68, 73)
+(bishopPairMg, bishopPairEg) = (159, 388)
 
-tempoBonus :: Int
-tempoBonus = 28
+tempoMg, tempoEg :: Int
+(tempoMg, tempoEg) = (62, 9)
 
 eval :: Board -> Int
 eval board =
-  (`quot` 10) $
+  (`quot` 240) $
     tempoBonus
       + colorSign (boardTurn board)
         * ( pstEvalValue
@@ -174,39 +175,31 @@ eval board =
 
     -- TODO get rid of quot
     mobilityValue =
-      (`quot` 24) $
-        sum
-          [ (mgMult * mgPhase + egMult * egPhase)
-              * colorSign c
-              * mobility board (Piece c p)
-          | c <- [White, Black],
-            (p, mgMult, egMult) <-
-              [ (Pawn, mobilityMults PV.! 0, mobilityMults PV.! 1),
-                (Knight, mobilityMults PV.! 2, mobilityMults PV.! 3),
-                (Bishop, mobilityMults PV.! 4, mobilityMults PV.! 5),
-                (Rook, mobilityMults PV.! 6, mobilityMults PV.! 7),
-                (Queen, mobilityMults PV.! 8, mobilityMults PV.! 9),
-                (King, mobilityMults PV.! 10, mobilityMults PV.! 11)
-              ]
-          ]
+      sum
+        [ (mgMult * mgPhase + egMult * egPhase)
+            * colorSign c
+            * mobility board (Piece c p)
+        | c <- [White, Black],
+          (p, mgMult, egMult) <-
+            [ (Pawn, mobilityMults PV.! 0, mobilityMults PV.! 1),
+              (Knight, mobilityMults PV.! 2, mobilityMults PV.! 3),
+              (Bishop, mobilityMults PV.! 4, mobilityMults PV.! 5),
+              (Rook, mobilityMults PV.! 6, mobilityMults PV.! 7),
+              (Queen, mobilityMults PV.! 8, mobilityMults PV.! 9),
+              (King, mobilityMults PV.! 10, mobilityMults PV.! 11)
+            ]
+        ]
 
     kingSafety = virtMobile Black pieces - virtMobile White pieces
-    scaledKingSafety =
-      (`quot` 24) $
-        kingSafety
-          * (mgPhase * safetyMultMg + egPhase * safetyMultEg)
+    scaledKingSafety = kingSafety * (mgPhase * safetyMultMg + egPhase * safetyMultEg)
 
     whitePawns = pieceBitboard (Piece White Pawn) pieces
     blackPawns = pieceBitboard (Piece Black Pawn) pieces
     passerDiff = numPassers White whitePawns blackPawns - numPassers Black blackPawns whitePawns
-    scaledPasserDiff =
-      (`quot` 24) $
-        passerDiff
-          * (mgPhase * passerMultMg + egPhase * passerMultEg)
+    scaledPasserDiff = passerDiff * (mgPhase * passerMultMg + egPhase * passerMultEg)
 
     hasPair c = popCount (pieceBitboard (Piece c Bishop) pieces) !>>. 1
     bishopPairDiff = hasPair White - hasPair Black
-    scaledBishopPairDiff =
-      (`quot` 24) $
-        bishopPairDiff
-          * (mgPhase * bishopPairMg + egPhase * bishopPairEg)
+    scaledBishopPairDiff = bishopPairDiff * (mgPhase * bishopPairMg + egPhase * bishopPairEg)
+
+    tempoBonus = mgPhase * tempoMg + egPhase * tempoEg

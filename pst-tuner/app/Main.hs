@@ -10,6 +10,7 @@ import Data.Maybe (fromJust)
 import Data.Ord (comparing)
 import Data.Text.IO qualified as TIO
 import Data.Vector.Primitive qualified as PV
+import Numeric.LinearAlgebra (Extractor (..), flatten, scale, toLists, (??))
 import PgnParse (parsePgns, playPgn)
 import System.Environment (getArgs)
 import System.Random (newStdGen)
@@ -30,11 +31,12 @@ import Tuner
     calculateWorthiness,
     newTunables,
     structurize,
+    tunableFactors,
     tuneEpoch,
   )
 
 formatTunables :: Tunables -> String
-formatTunables tunables =
+formatTunables tunablesMat =
   "piece-square tables:\n"
     ++ intercalate
       "\n\n"
@@ -71,6 +73,9 @@ formatTunables tunables =
     ++ "tempo bonus:\n"
     ++ show tempo
   where
+    -- TODO hack
+    tunables = PV.fromList $ concat $ toLists tunablesMat
+
     intRound :: Double -> Int
     intRound = round
 
@@ -95,14 +100,14 @@ formatTunables tunables =
                   PV.slice (nthBoard * 64) 64 tunables
         formattedBoard = "  [ " ++ intercalate ",\n    " (show <$> twoDimBoard) ++ "\n  ]"
 
-    sTun = structurize tunables
+    sTun = structurize tunablesMat
 
     mobs = roundAll $ sTunableMobility sTun
     formatMob = "[" ++ intercalate ", " (show <$> PV.toList mobs) ++ "]"
     safeties = roundTup $ sTunableKingSafety sTun
     passers = roundTup $ sTunablePasserMults sTun
     bishop = roundTup $ sTunableBishopPair sTun
-    tempo = intRound $ sTunableTempoBonus sTun
+    tempo = roundTup $ sTunableTempo sTun
 
 removeSingle :: (Eq a) => a -> [a] -> [a]
 removeSingle _ [] = []
@@ -196,6 +201,7 @@ main = do
               allGames
       let quiedGames = first (snd . quieWrapper) <$> trimmedGames
       let uniqueGames = fastNub (gameBoard . fst) quiedGames
+      let factorizedGames = first tunableFactors <$> uniqueGames
       putStrLn $ "number of positions: " ++ show (length uniqueGames)
       putStrLn $ "positions trimmed: " ++ show (length allGames - length trimmedGames)
       putStrLn $ "duplicates removed: " ++ show (length quiedGames - length uniqueGames)
@@ -205,28 +211,27 @@ main = do
 
       let startingWorthiness = calculateWorthiness (fst <$> uniqueGames) startingTunables
       let startingNormFac = 100 / startingWorthiness PV.! 0
-      let poop = 1000 / (PV.sum (PV.slice 0 64 startingTunables) / 48)
-      print poop
-      print startingWorthiness
       let normedStartingWorthiness = PV.map (* startingNormFac) startingWorthiness
-      let normedStartingTunables = PV.map (* poop) startingTunables
+      let startingNormFac = 1000 / (sum (concat (toLists (startingTunables ?? (Take 64, All)))) / 48)
+      let normedStartingTunables = scale startingNormFac startingTunables
       putStrLn $ formatTunables normedStartingTunables
       printf "worthiness: %s\n" (show normedStartingWorthiness)
 
       let keepTuning prevErr currTunables = do
             putStrLn $ "previous error: " ++ show prevErr
-            putStrLn $ "previous tunables: " ++ show currTunables
+            putStrLn $ "previous tunables: " ++ show (flatten currTunables)
             gen <- newStdGen
-            let shuffledGames = shuffle' uniqueGames (length uniqueGames) gen
-            let steppedTunables = tuneEpoch currTunables shuffledGames k 500000
-            let newErr = calcError steppedTunables uniqueGames k
+            let shuffledGames = shuffle' factorizedGames (length factorizedGames) gen
+            let steppedTunables = tuneEpoch currTunables shuffledGames k 10000
+            let newErr = calcError steppedTunables factorizedGames k
             if newErr > prevErr
               then pure currTunables
               else keepTuning newErr steppedTunables
-      finalTunables <- keepTuning (calcError startingTunables uniqueGames k) startingTunables
+      finalTunables <- keepTuning (calcError startingTunables factorizedGames k) startingTunables
       let worthiness = calculateWorthiness (fst <$> uniqueGames) finalTunables
       let normFac = 100 / worthiness PV.! 0
       let normedWorthiness = PV.map (* normFac) worthiness
       printf "worthiness: %s\n" (show normedWorthiness)
-      let normed = PV.map (* normFac) finalTunables
+      let normFac = 1000 / (sum (concat (toLists (finalTunables ?? (Take 64, All)))) / 48)
+      let normed = scale normFac finalTunables
       putStrLn $ formatTunables normed
