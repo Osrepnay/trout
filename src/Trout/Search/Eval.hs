@@ -160,19 +160,18 @@ eval board =
     egPhase = 24 - mgPhase
     pst bb p = pstEval bb p mgPhase egPhase
     pstEvalValue =
-      (10 *) $
-        pst (getBB White Pawn) Pawn 0
-          - pst (getBB Black Pawn) Pawn 56
-          + pst (getBB White Knight) Knight 0
-          - pst (getBB Black Knight) Knight 56
-          + pst (getBB White Bishop) Bishop 0
-          - pst (getBB Black Bishop) Bishop 56
-          + pst (getBB White Rook) Rook 0
-          - pst (getBB Black Rook) Rook 56
-          + pst (getBB White Queen) Queen 0
-          - pst (getBB Black Queen) Queen 56
-          + pst (getBB White King) King 0
-          - pst (getBB Black King) King 56
+      pst (getBB White Pawn) Pawn 0
+        - pst (getBB Black Pawn) Pawn 56
+        + pst (getBB White Knight) Knight 0
+        - pst (getBB Black Knight) Knight 56
+        + pst (getBB White Bishop) Bishop 0
+        - pst (getBB Black Bishop) Bishop 56
+        + pst (getBB White Rook) Rook 0
+        - pst (getBB Black Rook) Rook 56
+        + pst (getBB White Queen) Queen 0
+        - pst (getBB Black Queen) Queen 56
+        + pst (getBB White King) King 0
+        - pst (getBB Black King) King 56
 
     -- TODO get rid of quot
     mobilityValue =
