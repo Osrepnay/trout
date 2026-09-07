@@ -2,12 +2,12 @@ module Trout.Search.Eval
   ( totalMaterialScore,
     materialScore,
     virtMobile,
-    numPassers,
+    passerRows,
     mobilityMults,
     safetyMultMg,
     safetyMultEg,
-    passerMultMg,
-    passerMultEg,
+    passersMg,
+    passersEg,
     bishopPairMg,
     bishopPairEg,
     tempoMg,
@@ -17,7 +17,7 @@ module Trout.Search.Eval
 where
 
 import Data.Bits ((!>>.))
-import Data.Maybe (fromMaybe)
+import Data.Maybe (catMaybes, fromMaybe)
 import Data.Vector.Primitive qualified as PV
 import Trout.Bitboard
   ( Bitboard,
@@ -84,9 +84,11 @@ virtMobile color pieces = popCount movez
 {-# INLINEABLE virtMobile #-}
 
 -- crude and not fully correct but it doesn't really need to be (?)
-numPassers :: Color -> Bitboard -> Bitboard -> Int
-numPassers color pawns oppPawns =
-  sum $
+-- returns the number of passed pawns in each row
+-- TODO maybe search by-row?
+passerRows :: Color -> Bitboard -> Bitboard -> [Int]
+passerRows color pawns oppPawns =
+  catMaybes $
     ( \(col, neighbors) ->
         -- pawn on column exists and
         -- all relevant columns (neighbors and current) are free of opponent pawns
@@ -94,9 +96,10 @@ numPassers color pawns oppPawns =
         let pawnSq = sqFinder (pawns .&. col)
             hasPawn = pawnSq >= 0 && pawnSq < 64
             pawnRow = pawnSq `quot` 8
+            decoloredRow = if color == White then pawnRow else 7 - pawnRow
          in if hasPawn && (neighbors .&. activeMasks PV.! pawnRow .&. oppPawns) == 0
-              then 1
-              else 0
+              then Just decoloredRow
+              else Nothing
     )
       <$> relevantCols
   where
@@ -125,22 +128,23 @@ numPassers color pawns oppPawns =
     sqFinder bb = case color of
       White -> 63 - countLeadingZeros bb
       Black -> countTrailingZeros bb
-{-# INLINEABLE numPassers #-}
+{-# INLINE passerRows #-}
 
 mobilityMults :: PV.Vector Int
-mobilityMults = PV.fromList [93, 84, 116, 24, 83, 35, 47, 66, 30, 100, 102, 85]
+mobilityMults = PV.fromList [94, 79, 111, 21, 80, 34, 45, 63, 31, 92, 107, 77]
 
 safetyMultMg, safetyMultEg :: Int
-(safetyMultMg, safetyMultEg) = (75, -10)
+(safetyMultMg, safetyMultEg) = (78, -14)
 
-passerMultMg, passerMultEg :: Int
-(passerMultMg, passerMultEg) = (-41, 322)
+passersMg, passersEg :: PV.Vector Int
+passersMg = PV.fromList [0, -130, -105, -45, 68, 11, -55, 0]
+passersEg = PV.fromList [0, 158, 188, 389, 492, 399, 253, 0]
 
 bishopPairMg, bishopPairEg :: Int
-(bishopPairMg, bishopPairEg) = (159, 388)
+(bishopPairMg, bishopPairEg) = (145, 384)
 
 tempoMg, tempoEg :: Int
-(tempoMg, tempoEg) = (62, 9)
+(tempoMg, tempoEg) = (31, 23)
 
 eval :: Board -> Int
 eval board =
@@ -150,7 +154,7 @@ eval board =
         * ( pstEvalValue
               + mobilityValue
               + scaledKingSafety
-              + scaledPasserDiff
+              + scaledPasserScore
               + scaledBishopPairDiff
           )
   where
@@ -195,8 +199,16 @@ eval board =
 
     whitePawns = pieceBitboard (Piece White Pawn) pieces
     blackPawns = pieceBitboard (Piece Black Pawn) pieces
-    passerDiff = numPassers White whitePawns blackPawns - numPassers Black blackPawns whitePawns
-    scaledPasserDiff = passerDiff * (mgPhase * passerMultMg + egPhase * passerMultEg)
+    mkPasserScore rs =
+      sum $
+        ( \r ->
+            mgPhase * passersMg `PV.unsafeIndex` r
+              + egPhase * passersEg `PV.unsafeIndex` r
+        )
+          <$> rs
+    scaledPasserScore =
+      mkPasserScore (passerRows White whitePawns blackPawns)
+        - mkPasserScore (passerRows Black blackPawns whitePawns)
 
     hasPair c = popCount (pieceBitboard (Piece c Bishop) pieces) !>>. 1
     bishopPairDiff = hasPair White - hasPair Black

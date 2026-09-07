@@ -28,9 +28,9 @@ import Trout.Search.Eval
   ( bishopPairEg,
     bishopPairMg,
     mobilityMults,
-    numPassers,
-    passerMultEg,
-    passerMultMg,
+    passerRows,
+    passersEg,
+    passersMg,
     safetyMultEg,
     safetyMultMg,
     tempoEg,
@@ -64,7 +64,7 @@ data StructuredTunables = StructuredTunables
     sTunableEPST :: PV.Vector Double,
     sTunableMobility :: PV.Vector Double,
     sTunableKingSafety :: (Double, Double),
-    sTunablePasserMults :: (Double, Double),
+    sTunablePassers :: PV.Vector Double,
     sTunableBishopPair :: (Double, Double),
     sTunableTempo :: (Double, Double)
   }
@@ -80,7 +80,7 @@ flattenTunables
       sTunableEPST = epst,
       sTunableMobility = mob,
       sTunableKingSafety = kingSafety,
-      sTunablePasserMults = passerMults,
+      sTunablePassers = passers,
       sTunableBishopPair = bishopPair,
       sTunableTempo = tempo
     } =
@@ -91,7 +91,7 @@ flattenTunables
             epst,
             mob,
             tupToVec kingSafety,
-            tupToVec passerMults,
+            passers,
             tupToVec bishopPair,
             tupToVec tempo
           ]
@@ -101,13 +101,13 @@ flattenTunables
 -- TODO is this optimized well?
 structurize :: Tunables -> StructuredTunables
 structurize mat = case segments of
-  [mpsts, epsts, mob, kingSafetyVec, passerMultsVec, bishopPairVec, tempoVec] ->
+  [mpsts, epsts, mob, kingSafetyVec, passers, bishopPairVec, tempoVec] ->
     StructuredTunables
       { sTunableMPST = mpsts,
         sTunableEPST = epsts,
         sTunableMobility = mob,
         sTunableKingSafety = (kingSafetyVec PV.! 0, kingSafetyVec PV.! 1),
-        sTunablePasserMults = (passerMultsVec PV.! 0, passerMultsVec PV.! 1),
+        sTunablePassers = passers,
         sTunableBishopPair = (bishopPairVec PV.! 0, bishopPairVec PV.! 1),
         sTunableTempo = (tempoVec PV.! 0, tempoVec PV.! 1)
       }
@@ -119,10 +119,10 @@ structurize mat = case segments of
       [ PV.length mpstsBase,
         PV.length epstsBase,
         PV.length mobilityMults,
-        2,
-        2,
-        2,
-        2
+        2, -- safety
+        PV.length passersMg * 2,
+        2, -- bishop pair
+        2 -- tempo
       ]
     -- accumulates the lengths to find indices
     indices = init (scanl' (+) 0 segmentLengths)
@@ -136,7 +136,7 @@ newTunables =
       (PV.map (* 1) epstsBase)
       (PV.map fromIntegral mobilityMults)
       (fromIntegral safetyMultMg, fromIntegral safetyMultEg)
-      (fromIntegral passerMultMg, fromIntegral passerMultEg)
+      (PV.map fromIntegral (passersMg PV.++ passersEg))
       (fromIntegral bishopPairMg, fromIntegral bishopPairEg)
       (fromIntegral tempoMg, fromIntegral tempoEg)
 
@@ -151,7 +151,7 @@ tunableFactors game =
         sTunableEPST = epstFactors,
         sTunableMobility = mobilityFactors,
         sTunableKingSafety = kingSafetyFactors,
-        sTunablePasserMults = passerFactors,
+        sTunablePassers = passerFactors,
         sTunableBishopPair = bishopPairFactors,
         sTunableTempo = tempoBonusFactors
       }
@@ -188,8 +188,16 @@ tunableFactors game =
 
     whitePawns = pieceBitboard (Piece White Pawn) pieces
     blackPawns = pieceBitboard (Piece Black Pawn) pieces
-    passerDiff = fromIntegral $ numPassers White whitePawns blackPawns - numPassers Black blackPawns whitePawns
-    passerFactors = (passerDiff * mgPhase / 24, passerDiff * egPhase / 24)
+    mkPasserVec rs = PV.accum (+) (PV.replicate 8 0) ((,1) <$> rs)
+    passerBaseVec =
+      PV.zipWith
+        (-)
+        (mkPasserVec (passerRows White whitePawns blackPawns))
+        (mkPasserVec (passerRows Black blackPawns whitePawns))
+    passerFactors =
+      PV.map (/ 24) $
+        PV.map (* mgPhase) passerBaseVec
+          PV.++ PV.map (* egPhase) passerBaseVec
 
     hasPair c = popCount (pieceBitboard (Piece c Bishop) pieces) !>>. 1
     bishopPairDiff = fromIntegral $ hasPair White - hasPair Black

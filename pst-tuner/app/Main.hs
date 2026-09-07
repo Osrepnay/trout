@@ -13,7 +13,7 @@ import Data.Vector.Primitive qualified as PV
 import Numeric.LinearAlgebra (Extractor (..), flatten, scale, toLists, (??))
 import PgnParse (parsePgns, playPgn)
 import System.Environment (getArgs)
-import System.Random (newStdGen)
+import System.Random (newStdGen, mkStdGen, setStdGen)
 import System.Random.Shuffle (shuffle')
 import Text.Megaparsec (errorBundlePretty, parse)
 import Text.Printf (printf)
@@ -64,8 +64,11 @@ formatTunables tunablesMat =
     ++ "king safety:\n"
     ++ show safeties
     ++ "\n"
-    ++ "passer mults:\n"
-    ++ show passers
+    ++ "mg passers:\n"
+    ++ show passersMg
+    ++ "\n"
+    ++ "eg passers:\n"
+    ++ show passersEg
     ++ "\n"
     ++ "bishop pair:\n"
     ++ show bishop
@@ -105,7 +108,8 @@ formatTunables tunablesMat =
     mobs = roundAll $ sTunableMobility sTun
     formatMob = "[" ++ intercalate ", " (show <$> PV.toList mobs) ++ "]"
     safeties = roundTup $ sTunableKingSafety sTun
-    passers = roundTup $ sTunablePasserMults sTun
+    passersMg = roundAll $ PV.slice 0 8 $ sTunablePassers sTun
+    passersEg = roundAll $ PV.slice 8 8 $ sTunablePassers sTun
     bishop = roundTup $ sTunableBishopPair sTun
     tempo = roundTup $ sTunableTempo sTun
 
@@ -181,6 +185,8 @@ fastNub keyFunc xs =
 
 main :: IO ()
 main = do
+  setStdGen (mkStdGen 0)
+
   args <- getArgs
   let filename = case args of
         (x : _) -> x
@@ -222,7 +228,7 @@ main = do
             putStrLn $ "previous tunables: " ++ show (flatten currTunables)
             gen <- newStdGen
             let shuffledGames = shuffle' factorizedGames (length factorizedGames) gen
-            let steppedTunables = tuneEpoch currTunables shuffledGames k 10000
+            let steppedTunables = tuneEpoch currTunables shuffledGames k 100000
             let newErr = calcError steppedTunables factorizedGames k
             if newErr > prevErr
               then pure currTunables
