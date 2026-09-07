@@ -1,10 +1,10 @@
 name:                trout
-version:             1.1.0.0
+version:             2.0.0.0
 github:              "Osrepnay/trout"
 license:             MIT
 author:              "Osrepnay"
 maintainer:          "example@example.com"
-copyright:           "2022 Osrepnay"
+copyright:           "2022-2026 Osrepnay"
 
 extra-source-files:
 - README.md
@@ -17,7 +17,7 @@ extra-source-files:
 # To avoid duplicated efforts in documentation and dealing with the
 # complications of embedding Haddock markup inside cabal files, it is
 # common to point users to the README.md file.
-description: Please see the README on GitHub at <https://github.com/githubuser/trout#readme>
+description: Please see the README on GitHub at <https://github.com/Osrepnay/trout#readme>
 
 dependencies:
 - base >= 4.7 && < 5
@@ -56,6 +56,8 @@ executables:
     - -threaded
     - -rtsopts
     - -with-rtsopts=-N1
+    # -O2 is slower, idk why
+    - -O1
     dependencies:
     - trout
 

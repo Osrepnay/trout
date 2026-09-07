@@ -5,13 +5,13 @@ cabal-version: 1.12
 -- see: https://github.com/sol/hpack
 
 name:           trout
-version:        1.1.0.0
-description:    Please see the README on GitHub at <https://github.com/githubuser/trout#readme>
+version:        2.0.0.0
+description:    Please see the README on GitHub at <https://github.com/Osrepnay/trout#readme>
 homepage:       https://github.com/Osrepnay/trout#readme
 bug-reports:    https://github.com/Osrepnay/trout/issues
 author:         Osrepnay
 maintainer:     example@example.com
-copyright:      2022 Osrepnay
+copyright:      2022-2026 Osrepnay
 license:        MIT
 license-file:   LICENSE
 build-type:     Simple
@@ -66,7 +66,7 @@ executable trout-exe
       Paths_trout
   hs-source-dirs:
       app
-  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N1
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N1 -O1
   build-depends:
       base >=4.7 && <5
     , containers
