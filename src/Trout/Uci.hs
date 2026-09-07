@@ -71,7 +71,8 @@ newUciState = do
 
 modUciStateHash :: Int -> UciState -> IO UciState
 modUciStateHash hashMB state = do
-  newSearchEnv <- newEnv (calcNumEntries hashMB)
+  let boundedHash = max 1 hashMB
+  newSearchEnv <- newEnv (calcNumEntries boundedHash)
   pure $ state {uciSearchEnv = newSearchEnv}
 
 data PlayerTime = PlayerTime
@@ -145,6 +146,10 @@ launchGo moveOverheadMs moveVar stateEnv game (GoSettings movetime times incs ma
       White -> fst
       Black -> snd
 
+-- most guis don't like it when i show maxBound :: Int
+uciMax :: Int
+uciMax = 2147483647
+
 doUci :: UciState -> IO ()
 doUci uciState = do
   line <- getLine
@@ -153,8 +158,8 @@ doUci uciState = do
     Right CommUci -> do
       putStrLn "id name Trout"
       putStrLn "id author Osrepnay"
-      putStrLn $ "option name Hash type spin default 16 min 1 max " ++ show (maxBound :: Int)
-      putStrLn $ "option name Move Overhead type spin default 20 min 0 max " ++ show (maxBound :: Int)
+      putStrLn $ "option name Hash type spin default 16 min 1 max " ++ show uciMax
+      putStrLn $ "option name Move Overhead type spin default 20 min 0 max " ++ show uciMax
       putStrLn "uciok"
       hFlush stdout
       doUci uciState
