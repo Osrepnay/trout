@@ -1,0 +1,27 @@
+name: build windows binaries
+
+on:
+  # Runs on pushes targeting the default branch
+  push:
+    branches: ["main"]
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install GHCup
+        uses: haskell/ghcup-setup@v1
+        with:
+          cabal: "3.16.1.0"
+          ghc: "9.10.3"
+      - name: Build
+        run: cabal update && cabal install --installdir=.
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          path: trout-exe.exe
