@@ -412,16 +412,23 @@ search
       sStateEvalHist = !_evalHist,
       sStateGame = !game
     } = do
-    if inCheck (boardTurn board) (boardPieces board)
-      then searchInner True ss {sStateDepth = depth + 1}
-      else searchInner False ss
+    let currentlyChecked = inCheck (boardTurn board) (boardPieces board)
+    let checkExt = if currentlyChecked then 1 else 0
+
+    SearchEnv {sEnvTT = tt} <- ask
+    maybeEntry <- lift $ TT.lookup board tt
+    let iir = if depth >= 5 && isNothing maybeEntry then (-1) else 0
+
+    let newDepth = depth + checkExt + iir
+    searchInner currentlyChecked maybeEntry ss {sStateDepth = newDepth}
     where
       board = gameBoard game
 {-# INLINE search #-}
 
-searchInner :: Bool -> SearchState -> ReaderT SearchEnv IO (Int, [Move])
+searchInner :: Bool -> Maybe TTEntry -> SearchState -> ReaderT SearchEnv IO (Int, [Move])
 searchInner
   currentlyChecked
+  maybeEntry
   SearchState
     { sStateDepth = !depth,
       sStatePly = !ply,
@@ -434,7 +441,7 @@ searchInner
     | isDrawn game && ply /= 0 = pure (drawWorth, [])
     | depth <= 0 || ply >= maxPly = do
         -- don't incNodecount, quiescence does it for the same node
-        (SearchEnv {sEnvTT = tt}) <- ask
+        SearchEnv {sEnvTT = tt} <- ask
         score <- quieSearch alpha beta game
         let newEntry = TTEntry (mkNodeResult alpha beta score) NullMove (gameHalfmove game) 0
         lift $ TT.insert (gameBoard game) newEntry tt
@@ -446,7 +453,7 @@ searchInner
         SearchEnv {sEnvTT = tt} <- ask
         prunes <-
           runMaybeT $
-            pruneTT
+            hoistMaybe pruneTT
               <|> hoistMaybe pruneRFP
               <|> MaybeT pruneRazor
               <|> MaybeT pruneNMP
@@ -472,24 +479,21 @@ searchInner
         Nothing -> False
         Just oldEval -> staticEval > oldEval
 
-      pruneTT :: MaybeT (ReaderT SearchEnv IO) Int
+      pruneTT :: Maybe Int
       pruneTT = do
-        SearchEnv {sEnvTT = tt} <- lift ask
         TTEntry
           { entryScore = res,
             entryMove = move,
             entryDepth = d
           } <-
-          MaybeT $ lift $ TT.lookup board tt
-        MaybeT $
-          pure $
-            if not isPV
-              && d >= depth
-              && nodeUsable alpha beta res
-              -- sanity check in case of full hash collision
-              && maybe False ((== movePiece move) . pieceType) (getPiece (moveFrom move) pieces)
-              then Just (nodeResScore res)
-              else Nothing
+          maybeEntry
+        if not isPV
+          && d >= depth
+          && nodeUsable alpha beta res
+          -- sanity check in case of full hash collision
+          && maybe False ((== movePiece move) . pieceType) (getPiece (moveFrom move) pieces)
+          then Just (nodeResScore res)
+          else Nothing
 
       pruneRFP :: Maybe Int
       pruneRFP
